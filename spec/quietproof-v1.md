@@ -1,8 +1,14 @@
 # QuietProof v1 specification
 
 Status: normative draft. An implementation claiming QuietProof v1 compatibility
-MUST follow this document exactly. The format remains experimental until an
-independent cryptographic and protocol audit is complete.
+MUST follow this document exactly.
+
+::: warning
+This is free and open source software provided without warranty under
+the terms of the GNU GPL v3 license. Professional support,
+maintenance, integration services, and contractual warranty options
+are available separately. Please contact us for further information.
+:::
 
 QuietProof v1 is an off-chain proof of control for a bounded set of native P2WPKH
 outputs. It neither spends nor locks Bitcoin. P2SH-wrapped P2WPKH, P2WSH,

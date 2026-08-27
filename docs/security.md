@@ -1,3 +1,9 @@
+---
+title: Security claim matrix
+description: The enforcing component, evidence, and residual limitation for each QuietProof v1 claim.
+outline: deep
+---
+
 # QuietProof v1 security-claim matrix
 
 This matrix is the review map for the current QuietProof implementation.  It

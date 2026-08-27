@@ -1,8 +1,18 @@
+---
+title: Operations and production controls
+description: Build, Bitcoin network, challenge, Core RPC, production controls, and release gate.
+---
+
 # QuietProof operations
 
-QuietProof is experimental and MUST NOT authorize production funds or minting
-until an independent cryptographic/protocol audit is complete. The controls
-below are mandatory for production-oriented testing.
+The controls below are mandatory for production-oriented testing.
+
+::: warning
+This is free and open source software provided without warranty under
+the terms of the GNU GPL v3 license. Professional support,
+maintenance, integration services, and contractual warranty options
+are available separately. Please contact us for further information.
+:::
 
 ## Build and quick verification
 

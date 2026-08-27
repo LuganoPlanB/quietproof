@@ -1,3 +1,8 @@
+---
+title: Performance and portability
+description: Current proof family, measurement method, resource boundary, and supported platform.
+---
+
 # QuietProof v1 performance and portability
 
 PoKC v1 has two fixed native circuit shapes: one or two distinct P2WPKH
