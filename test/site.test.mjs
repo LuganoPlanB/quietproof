@@ -111,3 +111,25 @@ test("site navigation exposes operations, security, performance, circuit, and pr
 
   assert.match(config, /attrSet\("tabindex", "0"\)/);
 });
+
+test("GitHub Pages deployment is reproducible and base-path aware", () => {
+  const config = read("docs/.vitepress/config.mjs");
+  const home = read("docs/.vitepress/theme/components/HomePage.vue");
+  const workflow = read(".github/workflows/deploy-pages.yml");
+
+  assert.match(config, /const siteBase = process\.env\.DOCS_BASE \|\| "\/"/);
+  assert.match(config, /base: siteBase/);
+  assert.match(config, /href: `\$\{siteBase\}quietproof-mark\.svg`/);
+  assert.match(home, /import \{ withBase \} from "vitepress"/);
+  assert.doesNotMatch(home, /(?<!:)href="\//);
+
+  assert.match(workflow, /repository: LuganoPlanB\/vite-theme/);
+  assert.match(workflow, /ref: a7fde3404a5e2b32bf57b4bcb99337479c5c75b2/);
+  assert.match(workflow, /npm ci/);
+  assert.match(workflow, /npm run test:site/);
+  assert.match(workflow, /npm run docs:build/);
+  assert.match(workflow, /DOCS_BASE: "\$\{\{ steps\.pages\.outputs\.base_path \}\}\/"/);
+  assert.match(workflow, /path: quietproof\/docs\/\.vitepress\/dist/);
+  assert.match(workflow, /pages: write/);
+  assert.match(workflow, /id-token: write/);
+});

@@ -11,8 +11,8 @@
             revealing a public key, or creating a Bitcoin-valid signature.
           </p>
           <div class="quietproof-actions">
-            <a class="planb-button-link" href="/what-it-proves">See what it proves</a>
-            <a class="quietproof-text-action" href="/technical/architecture">Read the technical docs</a>
+            <a class="planb-button-link" :href="withBase('/what-it-proves')">See what it proves</a>
+            <a class="quietproof-text-action" :href="withBase('/technical/architecture')">Read the technical docs</a>
           </div>
         </div>
 
@@ -77,7 +77,7 @@
           Single observations from 21 August 2026 on Linux x86-64, Intel Core i9-12900HK,
           Debian clang 19.1.7, C++17 hardened release. Verification followed proving in the same
           process, so its expected-circuit-digest cache was warm. These figures are indicative,
-          not performance requirements. <a href="/performance">Methodology and raw sizes</a>
+          not performance requirements. <a :href="withBase('/performance')">Methodology and raw sizes</a>
         </p>
 
         <div class="quietproof-contract">
@@ -169,7 +169,7 @@
             <p>Verify that proposed participants control their inputs before a CoinJoin or other coordinated transaction begins.</p>
           </article>
         </div>
-        <a class="quietproof-inline-link" href="/use-cases">Explore all use cases <span aria-hidden="true">→</span></a>
+        <a class="quietproof-inline-link" :href="withBase('/use-cases')">Explore all use cases <span aria-hidden="true">→</span></a>
       </section>
 
       <section class="planb-panel quietproof-flow" aria-labelledby="flow-title">
@@ -198,7 +198,7 @@
             <div><h3>Decide</h3><p>The application decides whether to continue. A valid proof is evidence, not an automatic authorization.</p></div>
           </li>
         </ol>
-        <a class="quietproof-inline-link" href="/guide/how-it-works">Follow the proof step by step <span aria-hidden="true">→</span></a>
+        <a class="quietproof-inline-link" :href="withBase('/guide/how-it-works')">Follow the proof step by step <span aria-hidden="true">→</span></a>
       </section>
 
       <section class="quietproof-two-key" aria-labelledby="two-key-title">
@@ -231,9 +231,9 @@
           </p>
         </div>
         <nav aria-label="Documentation depth">
-          <a href="/guide/"><span>Practical guides</span><small>Workflows and commands</small></a>
-          <a href="/security"><span>Security matrix</span><small>Claims, checks, residual limits</small></a>
-          <a href="/technical/protocol"><span>Normative protocol</span><small>QuietProof v1, field by field</small></a>
+          <a :href="withBase('/guide/')"><span>Practical guides</span><small>Workflows and commands</small></a>
+          <a :href="withBase('/security')"><span>Security matrix</span><small>Claims, checks, residual limits</small></a>
+          <a :href="withBase('/technical/protocol')"><span>Normative protocol</span><small>QuietProof v1, field by field</small></a>
         </nav>
       </section>
 
@@ -248,8 +248,12 @@ maintenance, integration services, and contractual warranty options
 are available separately. Please <a href="mailto:info@plan-b.foundation">contact us for further information</a>.
           </p>
         </section>
-        <a href="/limitations">Understand the limits</a>
+        <a :href="withBase('/limitations')">Understand the limits</a>
       </aside>
     </div>
   </div>
 </template>
+
+<script setup>
+import { withBase } from "vitepress";
+</script>

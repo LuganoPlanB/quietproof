@@ -4,8 +4,10 @@ import { fileURLToPath } from "node:url";
 import { searchForWorkspaceRoot } from "vite";
 
 const projectRoot = fileURLToPath(new URL("../..", import.meta.url));
+const siteBase = process.env.DOCS_BASE || "/";
 
 export default defineConfig({
+  base: siteBase,
   lang: "en",
   title: "QuietProof",
   titleTemplate: ":title · QuietProof",
@@ -15,7 +17,7 @@ export default defineConfig({
   lastUpdated: true,
   head: [
     ["meta", { name: "theme-color", content: "#fffefa" }],
-    ["link", { rel: "icon", href: "/quietproof-mark.svg", type: "image/svg+xml" }],
+    ["link", { rel: "icon", href: `${siteBase}quietproof-mark.svg`, type: "image/svg+xml" }],
   ],
   markdown: {
     config(md) {
