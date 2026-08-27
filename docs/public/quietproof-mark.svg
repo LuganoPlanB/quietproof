@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-labelledby="title">
+  <title id="title">QuietProof</title>
+  <defs>
+    <linearGradient id="signal" x1="4" y1="40" x2="44" y2="8" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffb604"/>
+      <stop offset=".35" stop-color="#ff5db1"/>
+      <stop offset=".68" stop-color="#7468ff"/>
+      <stop offset="1" stop-color="#23f5ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="48" height="48" rx="12" fill="#082952"/>
+  <path d="M13 18.5a11 11 0 0 1 19.4-7.1M35 29.5a11 11 0 0 1-19.4 7.1" fill="none" stroke="url(#signal)" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="13" cy="24" r="4" fill="#ffb604"/>
+  <circle cx="35" cy="24" r="4" fill="#23f5ff"/>
+  <path d="M19 24h10" stroke="#fffefa" stroke-width="3" stroke-linecap="round"/>
+</svg>

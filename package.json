@@ -1,0 +1,20 @@
+{
+  "name": "quietproof-documentation",
+  "private": true,
+  "type": "module",
+  "allowScripts": {},
+  "scripts": {
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
+    "test:site": "node --test test/site.test.mjs"
+  },
+  "devDependencies": {
+    "lugano-planb-vite-theme": "file:../vite-theme",
+    "vitepress": "1.6.4",
+    "vue": "3.5.42"
+  },
+  "overrides": {
+    "vite": "6.4.3"
+  }
+}
