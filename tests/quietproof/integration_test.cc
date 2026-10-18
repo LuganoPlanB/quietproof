@@ -223,6 +223,122 @@ void TestBitcoinAmounts() {
           "duplicate top-level amount accepted");
 }
 
+void TestCoreSharedFields() {
+  quietproof_internal::Tip text_tip, fields_tip;
+  const auto text = TipJson("signet");
+  Require(quietproof_internal::ParseTip(text, &text_tip) &&
+              quietproof_internal::ParseTipFields(nlohmann::json::parse(text),
+                                                 &fields_tip) &&
+              text_tip.chain == fields_tip.chain &&
+              text_tip.best_block_hash == fields_tip.best_block_hash &&
+              text_tip.height == fields_tip.height,
+          "text and decoded tip validation differ");
+  for (const auto& invalid : {std::string("null"), std::string("[]"),
+                              std::string("{}"), std::string("{"),
+                              TipJson("signet", 'A')}) {
+    Require(!quietproof_internal::ParseTip(invalid, &fields_tip) &&
+                fields_tip.chain == text_tip.chain &&
+                fields_tip.best_block_hash == text_tip.best_block_hash &&
+                fields_tip.height == text_tip.height,
+            "bad tip accepted or output changed");
+  }
+  Require(!quietproof_internal::ParseTip(
+              std::string(kQuietProofMaxRpcOutputBytes + 1, ' '), &fields_tip),
+          "oversized tip accepted");
+  uint64_t number = 0;
+  Require(quietproof_internal::JsonUnsigned(nlohmann::json(uint64_t{42}), &number) &&
+              number == 42 &&
+              quietproof_internal::JsonUnsigned(nlohmann::json(int64_t{7}), &number) &&
+              number == 7,
+          "integer helper changed");
+  for (const auto& invalid : {nlohmann::json(-1), nlohmann::json(1.0),
+                              nlohmann::json("1"), nlohmann::json(true)}) {
+    Require(!quietproof_internal::JsonUnsigned(invalid, &number),
+            "non-unsigned field accepted");
+  }
+  std::vector<uint8_t> script;
+  uint64_t amount = 0, confirmations = 0;
+  // The original decimal token is independent of the DOM's double value.
+  const auto txout = nlohmann::json::parse(TxoutJson("12345678.12345678"));
+  Require(quietproof_internal::TxOutShapeValid(txout) &&
+              quietproof_internal::ParseTxOutFields(
+                  txout, "12345678.12345678", std::string(64, 'a'), &amount,
+                  &confirmations, &script) &&
+              amount == 1234567812345678ULL && confirmations == 2 &&
+              script.size() == 22 && script[0] == 0 && script[1] == 0x14 &&
+              script[2] == 4,
+          "decoded txout fields changed");
+  Require(!quietproof_internal::ParseTxOutFields(
+              txout, "1e-8", std::string(64, 'a'), &amount, &confirmations,
+              &script) &&
+              !quietproof_internal::ParseTxOutFields(
+                  txout, "0.1", std::string(64, 'b'), &amount, &confirmations,
+                  &script) &&
+              !quietproof_internal::TxOutShapeValid(nullptr),
+          "noncanonical txout accepted");
+}
+
+void TestCoreFieldFailures() {
+  QuietProofChainRequest request;
+  request.network = QuietProofNetwork::kSignet;
+  request.txid[0] = 3;
+  struct Case {
+    std::string response;
+    QuietProofChainStatus status;
+    const char* detail;
+  };
+  const Case cases[] = {
+      {"{", QuietProofChainStatus::kMalformed, "gettxout returned invalid JSON"},
+      {"[]", QuietProofChainStatus::kMalformed,
+       "gettxout response has an unexpected shape"},
+      {"{}", QuietProofChainStatus::kMalformed,
+       "gettxout response has an unexpected shape"},
+      {TxoutJson("0.00000007", 'b'), QuietProofChainStatus::kMalformed,
+       "gettxout fields are not canonical"},
+      {TxoutJson("1e-8"), QuietProofChainStatus::kMalformed,
+       "gettxout fields are not canonical"},
+      {TxoutJson("\"0.00000007\""), QuietProofChainStatus::kMalformed,
+       "gettxout fields are not canonical"},
+      {TxoutJson("21000000.00000001"), QuietProofChainStatus::kMalformed,
+       "gettxout fields are not canonical"},
+      {TxoutJson("-0.00000001"), QuietProofChainStatus::kMalformed,
+       "gettxout fields are not canonical"},
+  };
+  for (const auto& test : cases) {
+    int calls = 0;
+    BitcoinCoreCurrentTipProvider provider(
+        "/usr/bin/bitcoin-cli", request.network,
+        [&](const std::vector<std::string>& arguments) {
+          ++calls;
+          return QuietProofProcessResult{
+              0, arguments.back() == "getblockchaininfo" ? TipJson("signet")
+                                                       : test.response,
+              ""};
+        });
+    const auto evidence = provider.Lookup(request);
+    Require(evidence.status == test.status && evidence.detail == test.detail &&
+                calls == 2 && evidence.script_pub_key.empty() &&
+                evidence.amount_sats == 0 && evidence.confirmations == 0,
+            "legacy malformed-field classification changed");
+  }
+  for (const auto& field : {std::string("confirmations"), std::string("scriptPubKey")}) {
+    auto response = nlohmann::json::parse(TxoutJson("1"));
+    if (field == "confirmations") response[field] = -1;
+    else response[field]["hex"] = "0014FF";
+    const std::string malformed = response.dump();
+    BitcoinCoreCurrentTipProvider provider(
+        "/usr/bin/bitcoin-cli", request.network,
+        [&](const std::vector<std::string>& arguments) {
+          return QuietProofProcessResult{
+              0, arguments.back() == "getblockchaininfo" ? TipJson("signet")
+                                                       : malformed,
+              ""};
+        });
+    Require(provider.Lookup(request).status == QuietProofChainStatus::kMalformed,
+            "bad confirmations or hex accepted");
+  }
+}
+
 void TestCoreNetworks() {
   struct NetworkCase { QuietProofNetwork network; const char* chain; const char* flag; };
   const NetworkCase networks[] = {
@@ -249,9 +365,16 @@ void TestCoreNetworks() {
     request.network = network.network;
     request.txid[0] = 3;
     const auto evidence = provider.Lookup(request);
+    std::array<uint8_t, 32> expected_block;
+    expected_block.fill(0xaa);
     Require(evidence.status == QuietProofChainStatus::kUnspent &&
+                evidence.network == network.network &&
                 evidence.amount_sats == 7 && evidence.confirmations == 2 &&
-                evidence.height == 100 && calls == 3,
+                evidence.height == 100 && evidence.block == expected_block &&
+                evidence.script_pub_key.size() == 22 &&
+                evidence.script_pub_key[0] == 0 &&
+                evidence.script_pub_key[1] == 0x14 &&
+                evidence.script_pub_key[2] == 4 && calls == 3,
             "realistic gettxout response rejected");
   }
 }
@@ -289,7 +412,11 @@ void TestCoreFailures() {
         }
         return QuietProofProcessResult{0, TxoutJson(), ""};
       });
-  Require(reorg.Lookup(request).status == QuietProofChainStatus::kInconclusive,
+  const auto raced = reorg.Lookup(request);
+  Require(raced.status == QuietProofChainStatus::kInconclusive &&
+              raced.detail == "chain tip changed during lookup" &&
+              raced.script_pub_key.size() == 22 && raced.amount_sats == 0 &&
+              raced.confirmations == 0 && raced.height == 0,
           "tip race accepted");
 }
 
@@ -334,6 +461,8 @@ int main() {
   try {
     proofs::TestVerifierStates();
     proofs::TestBitcoinAmounts();
+    proofs::TestCoreSharedFields();
+    proofs::TestCoreFieldFailures();
     proofs::TestCoreNetworks();
     proofs::TestCoreFailures();
     proofs::TestProcessRunner();

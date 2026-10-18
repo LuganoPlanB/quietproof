@@ -35,12 +35,12 @@
 #include <vector>
 
 #include "quietproof/bitcoin_core.h"
+#include "quietproof/challenge.h"
 #include "quietproof/envelope.h"
 #include "quietproof/nonce_store.h"
 #include "pokc/prover.h"
 #include "quietproof/verifier.h"
 #include "cli/json.hpp"
-#include "util/randombytes.h"
 
 namespace {
 
@@ -312,29 +312,28 @@ int ChallengeCreate(int argc, char** argv) {
   if (claims == options.end() || claims->second.empty() ||
       claims->second.size() > proofs::kQuietProofMaxClaims) return Usage();
 
-  proofs::QuietProofStatementV1 statement;
-  if (!proofs::QuietProofParseNetwork(network_name, &statement.network)) return Usage();
-  statement.verifier = verifier;
-  statement.purpose = purpose;
-  for (size_t attempt = 0; proofs::QuietProofAllZero(statement.nonce); ++attempt) {
-    if (attempt == 4 ||
-        randombytes(statement.nonce.data(), statement.nonce.size()) != 0)
-      return kIoError;
-  }
-  statement.bip322_message_hash = proofs::QuietProofBip322MessageHash(
-      reinterpret_cast<const uint8_t*>(message.data()), message.size());
-  const auto now = std::chrono::system_clock::to_time_t(
-      std::chrono::system_clock::now());
-  if (now < 0 || static_cast<uint64_t>(now) >
-                     std::numeric_limits<uint64_t>::max() - lifetime) return kIoError;
-  statement.not_before = static_cast<uint64_t>(now);
-  statement.expires_at = statement.not_before + lifetime;
+  proofs::QuietProofChallengeOptions challenge_options;
+  if (!proofs::QuietProofParseNetwork(network_name, &challenge_options.network))
+    return Usage();
+  challenge_options.verifier = verifier;
+  challenge_options.purpose = purpose;
+  challenge_options.message = message;
+  challenge_options.lifetime_seconds = lifetime;
+  std::vector<proofs::QuietProofClaimV1> parsed_claims;
   for (const auto& encoded_claim : claims->second) {
     proofs::QuietProofClaimV1 claim;
     if (!ParseClaim(encoded_claim, &claim)) return Usage();
-    statement.claims.push_back(claim);
+    parsed_claims.push_back(claim);
   }
-  std::sort(statement.claims.begin(), statement.claims.end());
+  proofs::QuietProofStatementV1 statement;
+  proofs::QuietProofChallengeError error;
+  if (!proofs::CreateQuietProofChallenge(parsed_claims, challenge_options,
+                                        &statement, &error)) {
+    if (error == proofs::QuietProofChallengeError::kClock ||
+        error == proofs::QuietProofChallengeError::kRandom) return kIoError;
+    std::cerr << "challenge violates the QuietProof v1 statement contract\n";
+    return kData;
+  }
   std::vector<uint8_t> request;
   if (!proofs::EncodeQuietProofStatement(statement, &request)) {
     std::cerr << "challenge violates the QuietProof v1 statement contract\n";

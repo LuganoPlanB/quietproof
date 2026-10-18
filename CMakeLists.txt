@@ -64,6 +64,7 @@ if(BUILD_TESTING)
   add_pokc_test(key-ownership-test tests/quietproof/key_ownership_test.cc)
   add_pokc_test(ripemd160-test tests/quietproof/ripemd160_test.cc)
   add_pokc_test(quietproof-protocol-test tests/quietproof/protocol_test.cc)
+  add_pokc_test(quietproof-challenge-test tests/quietproof/challenge_test.cc)
   add_pokc_test(quietproof-integration-test tests/quietproof/integration_test.cc)
   add_pokc_test(pokc-sage-test tests/quietproof/pokc_sage_vector_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/testdata/pokc_sage_vectors.json)
