@@ -27,7 +27,8 @@ namespace proofs {
 enum class QuietProofProviderKind : uint8_t { kCurrentTip, kHistoricalSnapshot };
 enum class QuietProofChainStatus : uint8_t { kUnspent, kSpent, kInconclusive, kUnavailable, kMalformed, kWrongNetwork, kStale };
 struct QuietProofChainRequest {
-  QuietProofNetwork network;
+  // Callers must select a network; an incomplete request fails before I/O.
+  QuietProofNetwork network = static_cast<QuietProofNetwork>(0xff);
   std::array<uint8_t, 32> txid{};
   uint32_t vout = 0;
   bool has_snapshot = false;

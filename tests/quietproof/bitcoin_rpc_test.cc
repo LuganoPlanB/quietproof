@@ -888,6 +888,24 @@ void TestLookup() {
   Require(native.kind() == QuietProofProviderKind::kCurrentTip, "native provider kind");
   request.has_snapshot = true;
   Require(native.Lookup(request).status == Status::kInconclusive, "public native snapshot rejection");
+  // A caller that omits the network must never silently select mainnet or
+  // issue native/legacy RPCs, even when the remaining outpoint fields are set.
+  QuietProofChainRequest unspecified;
+  unspecified.txid[0] = 3;
+  Require(!QuietProofNetworkValid(unspecified.network), "default request selects a network");
+  reset();
+  RpcClient mainnet(BitcoinCoreRpcConfig{QuietProofNetwork::kMainnet}, LookupHttp);
+  Require(LookupCurrentTip(mainnet, unspecified).status == Status::kInconclusive &&
+          lookup_fixture.requests.empty(), "default request reached native RPC");
+  size_t legacy_calls = 0;
+  BitcoinCoreCurrentTipProvider legacy("/fixture/bitcoin-cli", QuietProofNetwork::kMainnet,
+      [&](const std::vector<std::string>&) {
+        ++legacy_calls;
+        return QuietProofProcessResult{1, "", ""};
+      });
+  Require(legacy.Lookup(unspecified).status == Status::kInconclusive && legacy_calls == 0,
+          "default request reached legacy RPC");
+  ++cases;
   std::cout << "Lookup fixtures passed: " << cases + 2 << '\n';
 }
 

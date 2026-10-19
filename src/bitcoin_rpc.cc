@@ -327,9 +327,12 @@ bool PostRpcHttp(const BitcoinCoreRpcConfig& config, const std::string& request,
   Headers headers;
   Easy easy(curl_easy_init());
   for (const char* value : {"Content-Type: application/json", "Accept-Encoding: identity", "Expect:"}) {
-    auto* updated = curl_slist_append(headers.get(), value);
-    if (!updated) return Fail(error, BitcoinRpcErrorCode::kConnection, "HTTP initialization failed");
-    headers.release();
+    auto* current = headers.release();
+    auto* updated = curl_slist_append(current, value);
+    if (!updated) {
+      headers.reset(current);  // A failed append leaves the existing list intact.
+      return Fail(error, BitcoinRpcErrorCode::kConnection, "HTTP initialization failed");
+    }
     headers.reset(updated);
   }
   if (!easy) return Fail(error, BitcoinRpcErrorCode::kConnection, "HTTP initialization failed");

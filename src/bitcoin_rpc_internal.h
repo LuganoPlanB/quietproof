@@ -10,8 +10,8 @@
 #include "quietproof/bitcoin_rpc.h"
 
 namespace proofs::bitcoin_rpc_internal {
-inline constexpr std::size_t kMaxBodyBytes = 1024 * 1024;
-inline constexpr std::size_t kMaxHeaderBytes = 32 * 1024;
+inline constexpr std::size_t kMaxBodyBytes = std::size_t{1024} * 1024;
+inline constexpr std::size_t kMaxHeaderBytes = std::size_t{32} * 1024;
 inline constexpr std::size_t kMaxCookieBytes = 4096;
 struct ResolvedRpcConfig {
   std::string url;
