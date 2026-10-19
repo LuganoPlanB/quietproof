@@ -36,6 +36,25 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if mode in ('timeout', 'scan-timeout', 'scan-deadline'):
                 time.sleep(0.35)
+            if mode.startswith('provider-'):
+                request = json.loads(body)
+                block = '0123456789abcdef' * 4
+                if request['method'] == 'getblockchaininfo':
+                    result = json.dumps({'chain': 'regtest', 'blocks': 100,
+                                         'bestblockhash': block}).encode()
+                elif mode == 'provider-null':
+                    result = b'null'
+                else:
+                    result = (b'{"bestblock":"' + block.encode() +
+                              b'","confirmations":2,"value":0.00000001,'
+                              b'"scriptPubKey":{"hex":"0014' + b'a' * 40 + b'"}}')
+                payload = (b'{"jsonrpc":"2.0","id":' + json.dumps(request['id']).encode() +
+                           b',"result":' + result + b'}')
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
             if mode.startswith('rpc-'):
                 request = json.loads(body)
                 identifier = request['id']
@@ -192,6 +211,21 @@ def main():
                     request = json.loads(payload)
                     assert request['id'] == str(index) and isinstance(request['id'], str), 'RPC ID sequence/type'
                     assert request['params'] == ['quoted"\\\ninput'], 'RPC parameter escaping'
+                    assert path == '/' and headers.get('Authorization') == expected_auth
+            for mode in ('provider-ok', 'provider-null'):
+                origin.scenario = mode
+                count = len(origin.records)
+                run(['--provider', url, str(cookie), mode], env)
+                methods = ['getblockchaininfo', 'gettxout']
+                if mode == 'provider-ok':
+                    methods.append('getblockchaininfo')
+                methods *= 2  # Direct Lookup then fresh public-provider verification.
+                records = origin.records[count:]
+                assert len(records) == len(methods), 'provider request count'
+                for index, ((path, headers, payload), method) in enumerate(zip(records, methods), 1):
+                    params = ['03' + '00' * 31, 0, True] if method == 'gettxout' else []
+                    assert json.loads(payload) == {'jsonrpc': '2.0', 'id': str(index),
+                                                   'method': method, 'params': params}
                     assert path == '/' and headers.get('Authorization') == expected_auth
             origin.scenario = 'ok'
             run(['--rotate' , url, str(cookie)], env)

@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "bitcoin_rpc_internal.h"
 #include "bitcoin_rpc_json.h"
+#include "quietproof/detail/bitcoin_core_parse.h"
+#include "quietproof/bitcoin_core.h"
+#include "quietproof/verifier.h"
 
 #include <array>
 #include <algorithm>
@@ -380,6 +383,481 @@ void TestRequests() {
   Require(independent.Call("fixture", nlohmann::json::array(), false, &response, &error) &&
           mock.requests.back()["id"] == "1", "IDs not owned per client");
 }
+
+struct LookupFixture {
+  std::vector<std::string> results;
+  std::vector<nlohmann::json> requests;
+  size_t fail_at = std::numeric_limits<size_t>::max();
+  BitcoinRpcErrorCode failure = BitcoinRpcErrorCode::kTimeout;
+  int http_status = 200;
+  bool rpc_error = false;
+} lookup_fixture;
+const std::string kLookupBlock = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+std::string LookupTip(const std::string& chain = "regtest",
+                      const std::string& block = kLookupBlock, uint64_t height = 100) {
+  return nlohmann::json{{"chain", chain}, {"bestblockhash", block}, {"blocks", height}}.dump();
+}
+std::string LookupTxOut(const std::string& amount = "0.00000001",
+                       const std::string& confirmations = "2",
+                       const std::string& script = "0014" + std::string(40, 'a'),
+                       const std::string& block = kLookupBlock) {
+  return "{\"bestblock\":\"" + block + "\",\"confirmations\":" + confirmations +
+      ",\"value\":" + amount + ",\"scriptPubKey\":{\"hex\":\"" + script + "\"}}";
+}
+bool LookupHttp(const BitcoinCoreRpcConfig&, const std::string& text, bool scan,
+                HttpResponse* response, BitcoinRpcError* error) {
+  Require(!scan, "lookup used scan deadline");
+  auto request = nlohmann::json::parse(text);
+  const size_t index = lookup_fixture.requests.size();
+  lookup_fixture.requests.push_back(request);
+  if (index == lookup_fixture.fail_at) {
+    if (error) *error = {lookup_fixture.failure, 0, std::nullopt, "redacted fixture failure"};
+    return false;
+  }
+  Require(index < lookup_fixture.results.size(), "unexpected lookup RPC");
+  response->status = lookup_fixture.http_status;
+  response->body = "{\"jsonrpc\":\"2.0\",\"id\":" + request["id"].dump() +
+      (lookup_fixture.rpc_error ? ",\"error\":{\"code\":-8,\"message\":\"server-secret\"}}" :
+       ",\"result\":" + lookup_fixture.results[index] + "}");
+  if (response->status >= 300) {
+    if (error) *error = {BitcoinRpcErrorCode::kHttp, response->status, std::nullopt, "HTTP failure"};
+    return false;
+  }
+  return true;
+}
+void TestLookup() {
+  using Status = QuietProofChainStatus;
+  QuietProofChainRequest request{QuietProofNetwork::kRegtest};
+  for (size_t i = 0; i < request.txid.size(); ++i) request.txid[i] = static_cast<uint8_t>(i);
+  request.vout = std::numeric_limits<uint32_t>::max();
+  const std::string txid = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+  size_t cases = 0;
+  auto run = [&](Status expected, size_t calls, QuietProofNetwork configured = QuietProofNetwork::kRegtest) {
+    auto config = Config();
+    config.network = configured;
+    RpcClient client(config, LookupHttp);
+    const auto evidence = LookupCurrentTip(client, request);
+    Require(evidence.status == expected && evidence.status != Status::kSpent, "lookup status");
+    Require(lookup_fixture.requests.size() == calls, "lookup RPC count");
+    for (size_t i = 0; i < calls; ++i) {
+      const auto& rpc = lookup_fixture.requests[i];
+      const auto params = i == 1 ? nlohmann::json::array({txid, request.vout, true}) : nlohmann::json::array();
+      Require(rpc == nlohmann::json{{"jsonrpc", "2.0"}, {"id", std::to_string(i + 1)},
+              {"method", i == 1 ? "gettxout" : "getblockchaininfo"}, {"params", params}},
+              "lookup RPC order/params/display txid");
+    }
+    Require(evidence.detail.find("server-secret") == std::string::npos, "lookup leaked server text");
+    ++cases;
+    return evidence;
+  };
+  auto reset = [&] {
+    lookup_fixture = {};
+    lookup_fixture.results = {LookupTip(), LookupTxOut(), LookupTip()};
+  };
+  for (unsigned i = 0; i < 5; ++i) {
+    reset();
+    request.network = static_cast<QuietProofNetwork>(i);
+    const auto chain = QuietProofBitcoinCoreChainName(request.network);
+    lookup_fixture.results[0] = lookup_fixture.results[2] = LookupTip(chain);
+    const auto evidence = run(Status::kUnspent, 3, request.network);
+    Require(evidence.network == request.network && evidence.height == 100 &&
+            evidence.confirmations == 2 && evidence.amount_sats == 1 &&
+            evidence.script_pub_key == std::vector<uint8_t>({0, 20, 170, 170, 170, 170, 170, 170,
+                170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170}), "lookup evidence fields");
+    for (size_t j = 0; j < 32; ++j)
+      Require(evidence.block[j] == static_cast<uint8_t>((j % 8) * 34 + 1), "block bytes reversed");
+  }
+  request.network = QuietProofNetwork::kRegtest;
+  reset(); request.has_snapshot = true; run(Status::kInconclusive, 0); request.has_snapshot = false;
+  reset(); run(Status::kInconclusive, 0, QuietProofNetwork::kMainnet);
+  reset(); request.network = static_cast<QuietProofNetwork>(255);
+  run(Status::kInconclusive, 0, request.network); request.network = QuietProofNetwork::kRegtest;
+  for (const auto& chain : {"main", "test", "signet", "testnet4", "unknown", "testnet"}) {
+    reset(); lookup_fixture.results[0] = LookupTip(chain); run(Status::kWrongNetwork, 1);
+  }
+  reset(); lookup_fixture.results[1] = "null"; run(Status::kInconclusive, 2);
+  for (const auto& tip : {LookupTip("regtest", std::string(64, 'b')),
+                         LookupTip("regtest", kLookupBlock, 101), LookupTip("main")}) {
+    reset(); lookup_fixture.results[2] = tip; run(Status::kInconclusive, 3);
+  }
+  for (const auto& hash : {std::string(63, 'a'), std::string(64, 'A'), std::string(64, 'g')}) {
+    for (size_t at : {size_t{0}, size_t{2}}) {
+      reset(); lookup_fixture.results[at] = LookupTip("regtest", hash); run(Status::kMalformed, at + 1);
+    }
+  }
+  for (const auto& bad_tip : std::vector<std::string>{"null", "[]", "{}", "{\"chain\":7}",
+       "{\"chain\":\"regtest\",\"bestblockhash\":\"" + kLookupBlock + "\",\"blocks\":-1}"}) {
+    reset(); lookup_fixture.results[0] = bad_tip; run(Status::kMalformed, 1);
+  }
+  for (const auto& blocks : {"true", "1.5", "18446744073709551616", "\"100\""}) {
+    for (size_t at : {size_t{0}, size_t{2}}) {
+      reset();
+      lookup_fixture.results[at] = "{\"chain\":\"regtest\",\"bestblockhash\":\"" +
+          kLookupBlock + "\",\"blocks\":" + blocks + "}";
+      run(Status::kMalformed, at + 1);
+    }
+  }
+  // Required txout shape is checked independently from exact-money extraction.
+  for (const auto& field : {"bestblock", "confirmations", "value", "scriptPubKey"}) {
+    reset();
+    auto malformed = nlohmann::json::parse(LookupTxOut("1"));
+    malformed.erase(field);
+    lookup_fixture.results[1] = malformed.dump();
+    run(Status::kMalformed, 2);
+  }
+  for (const auto& shape : {"null", "[]", "7", "{}", "{\"hex\":7}"}) {
+    reset();
+    lookup_fixture.results[1] = "{\"bestblock\":\"" + kLookupBlock +
+        "\",\"confirmations\":2,\"value\":1,\"scriptPubKey\":" + shape + "}";
+    run(Status::kMalformed, 2);
+  }
+  reset();
+  request.vout = 0;
+  run(Status::kUnspent, 3);
+  request.vout = std::numeric_limits<uint32_t>::max();
+  for (const auto& amount : {"0", "-1", "21000000.00000001", "0.000000001", "1e-8", "\"0.1\"", "null", "true"}) {
+    reset(); lookup_fixture.results[1] = LookupTxOut(amount); run(Status::kMalformed, 2);
+  }
+  for (const auto& amount : {"0.1", "20999999.99999999", "21000000", "1.23456789"}) {
+    reset(); lookup_fixture.results[1] = LookupTxOut(amount);
+    uint64_t expected = 0;
+    Require(proofs::quietproof_internal::BitcoinAmountToSats(amount, &expected), "fixture amount");
+    Require(run(Status::kUnspent, 3).amount_sats == expected, "lookup lost exact money");
+  }
+  for (const auto& conf : {"-1", "1.5", "1e0", "18446744073709551616", "\"2\"", "null", "true"}) {
+    reset(); lookup_fixture.results[1] = LookupTxOut("0.1", conf); run(Status::kMalformed, 2);
+  }
+  for (const auto& conf : {"0", "18446744073709551615"}) {
+    reset(); lookup_fixture.results[1] = LookupTxOut("0.1", conf); run(Status::kUnspent, 3);
+  }
+  for (const auto& script : {std::string(), "0014" + std::string(38, 'a'), "0014" + std::string(42, 'a'),
+                            "0014" + std::string(40, 'A'), "0020" + std::string(64, 'a'),
+                            "5114" + std::string(40, 'a')}) {
+    reset(); lookup_fixture.results[1] = LookupTxOut("0.1", "2", script); run(Status::kMalformed, 2);
+  }
+  reset(); lookup_fixture.results[1] = LookupTxOut("0.1", "2", "0014" + std::string(40, 'a'), std::string(64, 'b'));
+  run(Status::kMalformed, 2);  // Preserve legacy mismatched-bestblock classification.
+  for (const auto& bad : {"[]", "{}", "{\"value\":0.1}", "true", "{"}) {
+    reset(); lookup_fixture.results[1] = bad; run(Status::kMalformed, 2);
+  }
+  for (size_t at = 0; at < 3; ++at) {
+    for (auto code : {BitcoinRpcErrorCode::kTimeout, BitcoinRpcErrorCode::kAuthentication,
+                     BitcoinRpcErrorCode::kConnection, BitcoinRpcErrorCode::kCookie}) {
+      reset(); lookup_fixture.fail_at = at; lookup_fixture.failure = code; run(Status::kUnavailable, at + 1);
+    }
+    reset(); lookup_fixture.results[at] = "{"; run(Status::kMalformed, at + 1);
+  }
+  for (int status : {200, 403, 500}) {
+    reset(); lookup_fixture.rpc_error = true; lookup_fixture.http_status = status; run(Status::kUnavailable, 1);
+  }
+  reset(); lookup_fixture.http_status = 500; run(Status::kUnavailable, 1);
+  // Each Lookup performs independent RPCs, even on the same client and outpoint.
+  reset(); lookup_fixture.results.insert(lookup_fixture.results.end(), {LookupTip(), "null"});
+  RpcClient client(Config(), LookupHttp);
+  Require(LookupCurrentTip(client, request).status == Status::kUnspent &&
+          LookupCurrentTip(client, request).status == Status::kInconclusive &&
+          lookup_fixture.requests.size() == 5 && lookup_fixture.requests.back()["id"] == "5", "lookup cached evidence");
+  BitcoinCoreRpc native(Config());
+  Require(native.kind() == QuietProofProviderKind::kCurrentTip, "native provider kind");
+  request.has_snapshot = true;
+  Require(native.Lookup(request).status == Status::kInconclusive, "public native snapshot rejection");
+  std::cout << "Lookup fixtures passed: " << cases + 2 << '\n';
+}
+
+// Test adapter calls the exact production operation without adding a public RPC API.
+class NativeFixtureProvider final : public QuietProofChainProvider {
+ public:
+  explicit NativeFixtureProvider(QuietProofNetwork network) : client_(BitcoinCoreRpcConfig{network}, LookupHttp) {}
+  QuietProofProviderKind kind() const override { return QuietProofProviderKind::kCurrentTip; }
+  QuietProofChainEvidence Lookup(const QuietProofChainRequest& request) override {
+    return LookupCurrentTip(client_, request);
+  }
+ private:
+  RpcClient client_;
+};
+void SameEvidence(const QuietProofChainEvidence& a, const QuietProofChainEvidence& b) {
+  Require(a.status == b.status && a.network == b.network && a.block == b.block &&
+          a.height == b.height && a.confirmations == b.confirmations &&
+          a.amount_sats == b.amount_sats && a.script_pub_key == b.script_pub_key,
+          "legacy/native evidence differs");
+  // Details are adapter-authored diagnostics, not authorization inputs.
+}
+QuietProofEnvelopeV1 ParityEnvelope(QuietProofNetwork network = QuietProofNetwork::kRegtest) {
+  QuietProofEnvelopeV1 envelope;
+  auto& statement = envelope.statement;
+  statement.network = network;
+  statement.verifier = "verifier";
+  statement.purpose = "proof-of-funds";
+  statement.not_before = 1;
+  statement.expires_at = 9;
+  statement.nonce[0] = 1;
+  statement.bip322_message_hash[0] = 2;
+  QuietProofClaimV1 claim;
+  claim.txid[0] = 3;
+  claim.amount_sats = 1;
+  claim.program.fill(0xaa);
+  statement.claims = {claim};
+  envelope.proof.circuit_digest[0] = 1;
+  envelope.proof.bytes = {1};
+  return envelope;
+}
+std::vector<std::string> ParityResponses(const std::string& chain = "regtest") {
+  return {LookupTip(chain), LookupTxOut(), LookupTip(chain)};
+}
+void TestProviderParity() {
+  using Status = QuietProofChainStatus;
+  size_t cases = 0;
+  auto compare = [&](const std::vector<std::string>& results, QuietProofChainRequest request,
+                     Status legacy_status, Status native_status, size_t fail_at = size_t(-1)) {
+    size_t cursor = 0;
+    BitcoinCoreCurrentTipProvider legacy("/fixture/bitcoin-cli", request.network,
+        [&](const std::vector<std::string>& argv) {
+          Require(cursor < results.size(), "legacy parity fixture exhausted");
+          const auto index = cursor++;
+          const auto offset = request.network == QuietProofNetwork::kMainnet ? size_t{1} : size_t{2};
+          Require(argv[offset] == (index == 1 ? "gettxout" : "getblockchaininfo"), "legacy parity method order");
+          if (index == fail_at) return QuietProofProcessResult{1, "", ""};
+          return QuietProofProcessResult{0, results[index], ""};
+        });
+    const auto left = legacy.Lookup(request);
+    lookup_fixture = {};
+    lookup_fixture.results = results;
+    lookup_fixture.fail_at = fail_at;
+    NativeFixtureProvider native(request.network);
+    const auto right = native.Lookup(request);
+    Require(left.status == legacy_status && right.status == native_status, "parity status classification");
+    Require(left.status != Status::kSpent && right.status != Status::kSpent, "RPC inferred spent evidence");
+    if (legacy_status == native_status && legacy_status == Status::kUnspent) SameEvidence(left, right);
+    if (left.status != Status::kUnspent)
+      Require(right.status != Status::kUnspent, "legacy rejection became native evidence");
+    ++cases;
+  };
+  for (unsigned i = 0; i < 5; ++i) {
+    const auto network = static_cast<QuietProofNetwork>(i);
+    QuietProofChainRequest request{network}; request.txid[0] = 3;
+    const auto chain = QuietProofBitcoinCoreChainName(network);
+    compare(ParityResponses(chain), request, Status::kUnspent, Status::kUnspent);
+    request.has_snapshot = true;
+    compare({}, request, Status::kInconclusive, Status::kInconclusive);
+  }
+  QuietProofChainRequest request{QuietProofNetwork::kRegtest}; request.txid[0] = 3;
+  for (const auto& amount : {"0.00000001", "0.1", "12345678.12345678", "21000000"}) {
+    auto results = ParityResponses(); results[1] = LookupTxOut(amount);
+    compare(results, request, Status::kUnspent, Status::kUnspent);
+  }
+  for (const auto& txout : {std::string("null"), LookupTxOut("1e-8"), LookupTxOut("-1"),
+       LookupTxOut("0.000000001"), LookupTxOut("\"0.1\""), LookupTxOut("21000000.00000001"),
+       LookupTxOut("1", "-1"), LookupTxOut("1", "1.5"), LookupTxOut("1", "18446744073709551616"),
+       LookupTxOut("1", "2", "0014FF"), LookupTxOut("1", "2", "0014" + std::string(40, 'a'), std::string(64, 'b')),
+       std::string("{"), std::string("{}")}) {
+    auto results = ParityResponses(); results[1] = txout;
+    const auto expected = txout == "null" ? Status::kInconclusive : Status::kMalformed;
+    compare(results, request, expected, expected);
+  }
+  for (const auto& tip : {LookupTip("regtest", std::string(64, 'b')),
+                        LookupTip("regtest", kLookupBlock, 101), LookupTip("main")}) {
+    auto results = ParityResponses(); results[2] = tip;
+    compare(results, request, Status::kInconclusive, Status::kInconclusive);
+  }
+  auto wrong = ParityResponses("unknown");
+  compare(wrong, request, Status::kWrongNetwork, Status::kWrongNetwork);
+  // Intentional native hardening: malformed JSON/tip data have explicit malformed
+  // diagnostics; legacy collapses the initial failure into unavailable and the
+  // final one into inconclusive. Neither can authorize verification.
+  for (size_t at : {size_t{0}, size_t{2}}) {
+    auto results = ParityResponses(); results[at] = "{}";
+    compare(results, request, at == 0 ? Status::kUnavailable : Status::kInconclusive, Status::kMalformed);
+  }
+  for (size_t at = 0; at < 3; ++at)
+    compare(ParityResponses(), request, at == 2 ? Status::kInconclusive : Status::kUnavailable,
+            Status::kUnavailable, at);
+  // Zero amounts and non-P2WPKH decoded scripts are legacy evidence but cannot
+  // match a valid positive P2WPKH claim. Native rejects them earlier.
+  for (const auto& txout : {LookupTxOut("0"), LookupTxOut("1", "2", "0020" + std::string(64, 'a')),
+                           LookupTxOut("1", "2", "0014" + std::string(42, 'a'))}) {
+    auto results = ParityResponses(); results[1] = txout;
+    compare(results, request, Status::kUnspent, Status::kMalformed);
+  }
+  // Duplicate non-money JSON keys are rejected by native SAX validation; legacy
+  // DOM parsing keeps the final value. A duplicate monetary key fails both.
+  auto duplicate = ParityResponses();
+  duplicate[1] = LookupTxOut(); duplicate[1].insert(1, "\"confirmations\":3,");
+  compare(duplicate, request, Status::kUnspent, Status::kMalformed);
+  duplicate[1] = LookupTxOut(); duplicate[1].insert(1, "\"value\":1,");
+  compare(duplicate, request, Status::kMalformed, Status::kMalformed);
+  std::cout << "Provider parity fixtures passed: " << cases << '\n';
+}
+void TestVerifierParity() {
+  using Result = QuietProofVerifyResult;
+  size_t cases = 0;
+  using Configure = std::function<void(QuietProofVerifierConfig&)>;
+  auto check = [&](const QuietProofEnvelopeV1& envelope, const std::vector<std::string>& results,
+                   Result expected, Configure configure = {}, bool replay = false,
+                   size_t fail_at = size_t(-1), bool same_claim_evidence = true) {
+    std::vector<uint8_t> wire;
+    Require(EncodeQuietProofEnvelope(envelope, &wire), "encode verifier parity envelope");
+    QuietProofVerification previous;
+    size_t previous_calls = 0;
+    for (bool use_native : {false, true}) {
+      lookup_fixture = {}; lookup_fixture.results = results; lookup_fixture.fail_at = fail_at;
+      size_t cursor = 0;
+      BitcoinCoreCurrentTipProvider legacy("/fixture/bitcoin-cli", envelope.statement.network,
+          [&](const std::vector<std::string>&) {
+            Require(cursor < results.size(), "verifier parity fixture exhausted");
+            const auto index = cursor++;
+            return QuietProofProcessResult{index == fail_at ? 1 : 0, results[index], ""};
+          });
+      NativeFixtureProvider native(envelope.statement.network);
+      QuietProofVerifierConfig config;
+      config.provider = use_native ? static_cast<QuietProofChainProvider*>(&native) : &legacy;
+      config.policy.now = 2;
+      config.policy.verifier = "verifier";
+      config.policy.purpose = envelope.statement.purpose;
+      config.min_confirmations = 1;
+      size_t nonce_attempts = 0, consumed = 0;
+      bool seen = false;
+      config.policy.nonce_seen = [&](const auto&) { return seen; };
+      config.policy.consume_nonce = [&](const auto& nonce) {
+        Require(nonce == envelope.statement.nonce, "verifier changed nonce");
+        ++nonce_attempts;
+        if (seen) return false;
+        seen = true; ++consumed; return true;
+      };
+      config.verify_proof = [](const auto&) { return true; };
+      if (configure) configure(config);
+      const auto outcome = VerifyQuietProof(wire, config);
+      const size_t calls = use_native ? lookup_fixture.requests.size() : cursor;
+      Require(outcome.result == expected, "legacy/native verifier result");
+      const bool success = expected == Result::kValidCurrent;
+      Require(consumed == (success ? 1 : 0) && nonce_attempts == (success ? 1 : 0),
+              "failed verification consumed or attempted nonce");
+      if (use_native) {
+        Require(outcome.result == previous.result && outcome.total_sats == previous.total_sats,
+                "legacy rejection became native authorization");
+        if (same_claim_evidence) {
+          Require(outcome.claims.size() == previous.claims.size() && calls == previous_calls,
+                  "verifier evidence/call parity");
+          for (size_t i = 0; i < outcome.claims.size(); ++i) SameEvidence(outcome.claims[i], previous.claims[i]);
+        }
+      }
+      if (replay) {
+        Require(success && VerifyQuietProof(wire, config).result == Result::kInvalidProof &&
+                consumed == 1 && nonce_attempts == 1 &&
+                (use_native ? lookup_fixture.requests.size() : cursor) == calls,
+                "replay reached RPC or consumed nonce twice");
+      }
+      previous = outcome; previous_calls = calls;
+    }
+    ++cases;
+  };
+  auto envelope = ParityEnvelope();
+  auto responses = ParityResponses();
+  for (unsigned i = 0; i < 5; ++i) {
+    auto network = static_cast<QuietProofNetwork>(i);
+    check(ParityEnvelope(network), ParityResponses(QuietProofBitcoinCoreChainName(network)), Result::kValidCurrent, {}, true);
+  }
+  check(envelope, responses, Result::kStaleSnapshot, [](auto& c) { c.min_confirmations = 3; });
+  check(envelope, responses, Result::kStateInconclusive, [](auto& c) { c.minimum_total_sats = 2; });
+  for (const Configure& policy : std::vector<Configure>{
+       [](auto& c) { c.policy.verifier = "other"; }, [](auto& c) { c.policy.purpose = "other"; },
+       [](auto& c) { c.policy.now = 9; }, [](auto& c) { c.policy.now = 0; },
+       [](auto& c) { c.policy.max_lifetime = 1; },
+       [](auto& c) { c.policy.nonce_seen = [](const auto&) { return true; }; },
+       [](auto& c) { c.verify_proof = [](const auto&) { return false; }; }})
+    check(envelope, {}, Result::kInvalidProof, policy);
+  check(envelope, responses, Result::kInvalidProof, [](auto& c) { c.policy.consume_nonce = {}; });
+  check(envelope, {}, Result::kUnsupported, [](auto& c) { c.supports = [](const auto&) { return false; }; });
+  auto historical = envelope; historical.statement.has_snapshot = true;
+  historical.statement.snapshot[0] = 1; historical.statement.snapshot_height = 100;
+  check(historical, {}, Result::kStateInconclusive);
+  auto bound = envelope; bound.statement.has_bridge_binding = true;
+  bound.statement.purpose = "bridge-authorization";
+  bound.statement.bridge.destination_commitment[0] = 1;
+  bound.statement.bridge.lock_id[0] = 1;
+  bound.statement.bridge.asset_id = "asset";
+  check(bound, responses, Result::kBridgeRejected);
+  check(bound, responses, Result::kBridgeRejected, [](auto& c) { c.bridge_authorized = [](const auto&) { return false; }; });
+  check(bound, responses, Result::kValidCurrent, [](auto& c) { c.bridge_authorized = [](const auto&) { return true; }; });
+  auto multiple = envelope; auto second = multiple.statement.claims[0]; second.txid[0] = 4;
+  multiple.statement.claims.push_back(second);
+  auto both = responses; both.insert(both.end(), responses.begin(), responses.end());
+  check(multiple, both, Result::kValidCurrent, {}, true);
+  for (bool change_height : {false, true}) {
+    auto changed = both;
+    const auto hash = change_height ? kLookupBlock : std::string(64, 'b');
+    changed[3] = changed[5] = LookupTip("regtest", hash, change_height ? 101 : 100);
+    changed[4] = LookupTxOut("0.00000001", "2", "0014" + std::string(40, 'a'), hash);
+    check(multiple, changed, Result::kStateInconclusive);
+  }
+  for (const auto& txout : {std::string("null"), LookupTxOut("0.00000002"),
+       LookupTxOut("0.00000001", "2", "0014" + std::string(40, 'b')),
+       LookupTxOut("0.00000001", "2", "0014" + std::string(40, 'a'), std::string(64, 'b')),
+       LookupTxOut("1e-8"), LookupTxOut("0.000000001"), LookupTxOut("1", "-1"),
+       LookupTxOut("-1"), LookupTxOut("21000000.00000001"), LookupTxOut("\"0.1\""),
+       LookupTxOut("1", "18446744073709551616"), LookupTxOut("1", "1.5"),
+       LookupTxOut("1", "2", "0014FF"), std::string("{"), std::string("{}")}) {
+    auto failed = responses; failed[1] = txout;
+    check(envelope, failed, Result::kStateInconclusive);
+  }
+  auto wrong = ParityResponses("main"); check(envelope, wrong, Result::kStateInconclusive);
+  auto moved = responses; moved[2] = LookupTip("regtest", kLookupBlock, 101);
+  check(envelope, moved, Result::kStateInconclusive, {}, false, size_t(-1), false);
+  for (size_t at = 0; at < 3; ++at)
+    check(envelope, responses, Result::kStateInconclusive, {}, false, at, false);
+  // Earlier native failures may contain less partial evidence, but the unchanged
+  // verifier rejects both backends before attempting nonce consumption.
+  for (const auto& txout : {LookupTxOut("0"), LookupTxOut("1", "2", "0020" + std::string(64, 'a'))}) {
+    auto failed = responses; failed[1] = txout;
+    check(envelope, failed, Result::kStateInconclusive, {}, false, size_t(-1), false);
+  }
+  // Atomic nonce-store rejection models another verifier winning the race
+  // after nonce_seen. Authorization fails even though all chain evidence passed.
+  for (bool use_native : {false, true}) {
+    lookup_fixture = {}; lookup_fixture.results = responses;
+    size_t cursor = 0, attempts = 0;
+    BitcoinCoreCurrentTipProvider legacy("/fixture/bitcoin-cli", envelope.statement.network,
+        [&](const auto&) { return QuietProofProcessResult{0, responses.at(cursor++), ""}; });
+    NativeFixtureProvider native(envelope.statement.network);
+    QuietProofVerifierConfig config;
+    config.provider = use_native ? static_cast<QuietProofChainProvider*>(&native) : &legacy;
+    config.policy.now = 2; config.policy.verifier = "verifier"; config.policy.purpose = "proof-of-funds";
+    config.policy.nonce_seen = [](const auto&) { return false; };
+    config.policy.consume_nonce = [&](const auto&) { ++attempts; return false; };
+    config.verify_proof = [](const auto&) { return true; };
+    std::vector<uint8_t> wire;
+    Require(EncodeQuietProofEnvelope(envelope, &wire), "encode nonce race fixture");
+    Require(VerifyQuietProof(wire, config).result == Result::kInvalidProof && attempts == 1,
+            "nonce race rejection authorized");
+  }
+  ++cases;
+  std::cout << "Verifier parity fixtures passed: " << cases << " per backend\n";
+}
+void TestPublicProviderHttp(const std::string& url, const std::string& cookie, const std::string& scenario) {
+  auto config = Config(); config.rpc_url = url; config.rpc_cookie = cookie;
+  BitcoinCoreRpc provider(config);
+  auto envelope = ParityEnvelope();
+  QuietProofChainRequest request{envelope.statement.network, envelope.statement.claims[0].txid};
+  const auto evidence = provider.Lookup(request);
+  if (scenario == "provider-ok") {
+    Require(evidence.status == QuietProofChainStatus::kUnspent && evidence.amount_sats == 1 &&
+            evidence.confirmations == 2 && evidence.height == 100 &&
+            QuietProofMatchClaim(envelope.statement.claims[0], request.network, evidence) == QuietProofChainStatus::kUnspent,
+            "public native HTTP forwarding/evidence");
+  } else Require(evidence.status == QuietProofChainStatus::kInconclusive, "public native null lookup");
+  QuietProofVerifierConfig verifier;
+  verifier.provider = &provider;
+  verifier.policy.now = 2; verifier.policy.verifier = "verifier"; verifier.policy.purpose = "proof-of-funds";
+  size_t consumed = 0;
+  verifier.policy.consume_nonce = [&](const auto&) { ++consumed; return true; };
+  verifier.verify_proof = [](const auto&) { return true; };
+  verifier.min_confirmations = 1;
+  std::vector<uint8_t> wire;
+  Require(EncodeQuietProofEnvelope(envelope, &wire), "public provider envelope");
+  const auto result = VerifyQuietProof(wire, verifier);
+  Require(result.result == (scenario == "provider-ok" ? QuietProofVerifyResult::kValidCurrent :
+                                                       QuietProofVerifyResult::kStateInconclusive) &&
+          consumed == (scenario == "provider-ok" ? 1 : 0), "public provider verifier/nonce contract");
+}
 void TestHttp(const std::string& url, const std::string& cookie, const std::string& scenario) {
   auto config = Config();
   config.rpc_url = url;
@@ -455,10 +933,11 @@ void TestRotation(const std::string& url, const std::string& cookie) {
 }  // namespace
 int main(int argc, char** argv) {
   try {
-    if (argc == 5 && std::string(argv[1]) == "--http") TestHttp(argv[2], argv[3], argv[4]);
+    if (argc == 5 && std::string(argv[1]) == "--provider") TestPublicProviderHttp(argv[2], argv[3], argv[4]);
+    else if (argc == 5 && std::string(argv[1]) == "--http") TestHttp(argv[2], argv[3], argv[4]);
     else if (argc == 5 && std::string(argv[1]) == "--rpc") TestClientHttp(argv[2], argv[3], argv[4]);
     else if (argc == 4 && std::string(argv[1]) == "--rotate") TestRotation(argv[2], argv[3]);
-    else if (argc == 1) { TestConfig(); TestCallbacks(); TestCookies(); TestEnvelopes(); TestExactMoney(); TestRequests(); }
+    else if (argc == 1) { TestConfig(); TestCallbacks(); TestCookies(); TestEnvelopes(); TestExactMoney(); TestRequests(); TestLookup(); TestProviderParity(); TestVerifierParity(); }
     else throw std::runtime_error("invalid test arguments");
     std::cout << "RPC adapter checks passed\n";
     return 0;

@@ -31,6 +31,7 @@
 
 #include "bitcoin_rpc_internal.h"
 #include "bitcoin_rpc_json.h"
+#include "quietproof/detail/bitcoin_core_parse.h"
 
 namespace proofs::bitcoin_rpc_internal {
 namespace {
@@ -381,6 +382,81 @@ bool PostRpcHttp(const BitcoinCoreRpcConfig& config, const std::string& request,
   ClearError(error);
   return true;
 }
+
+QuietProofChainEvidence LookupCurrentTip(RpcClient& client,
+                                        const QuietProofChainRequest& request) {
+  QuietProofChainEvidence evidence;
+  auto reject = [&](QuietProofChainStatus status, const char* detail) {
+    evidence.status = status;
+    evidence.detail = detail;
+    return evidence;
+  };
+  const auto network = client.config().network;
+  if (request.has_snapshot || request.network != network ||
+      !QuietProofNetworkValid(network))
+    return reject(QuietProofChainStatus::kInconclusive, "provider/request mismatch");
+
+  RpcDecodedResponse response;
+  BitcoinRpcError error;
+  auto call = [&](const char* method, const nlohmann::json& params) {
+    return client.Call(method, params, false, &response, &error);
+  };
+  auto rpc_failure = [&] {
+    return reject(error.code == BitcoinRpcErrorCode::kMalformed
+                      ? QuietProofChainStatus::kMalformed
+                      : QuietProofChainStatus::kUnavailable,
+                  "Bitcoin Core RPC request failed");
+  };
+  if (!call("getblockchaininfo", nlohmann::json::array())) return rpc_failure();
+  quietproof_internal::Tip tip;
+  if (!quietproof_internal::ParseTipFields(response.result, &tip))
+    return reject(QuietProofChainStatus::kMalformed, "getblockchaininfo fields are malformed");
+  if (tip.chain != QuietProofBitcoinCoreChainName(network))
+    return reject(QuietProofChainStatus::kWrongNetwork, "Bitcoin Core network does not match statement");
+
+  static constexpr char kHex[] = "0123456789abcdef";
+  std::string txid;
+  txid.reserve(64);
+  for (uint8_t byte : request.txid) {
+    txid.push_back(kHex[byte >> 4]);
+    txid.push_back(kHex[byte & 15]);
+  }
+  if (!call("gettxout", nlohmann::json::array({txid, request.vout, true})))
+    return rpc_failure();
+  if (response.result.is_null())
+    return reject(QuietProofChainStatus::kInconclusive,
+                  "outpoint is absent from the current UTXO set");
+  const auto money = response.money.find("/result/value");
+  uint64_t amount = 0, confirmations = 0;
+  std::vector<uint8_t> script;
+  if (money == response.money.end() ||
+      !quietproof_internal::ParseTxOutFields(response.result, money->second.token,
+          tip.best_block_hash, &amount, &confirmations, &script) ||
+      amount == 0 || amount != money->second.sats ||
+      script.size() != 22 || script[0] != 0 || script[1] != 20)
+    return reject(QuietProofChainStatus::kMalformed, "gettxout fields are not canonical");
+
+  if (!call("getblockchaininfo", nlohmann::json::array())) return rpc_failure();
+  quietproof_internal::Tip after;
+  if (!quietproof_internal::ParseTipFields(response.result, &after))
+    return reject(QuietProofChainStatus::kMalformed, "getblockchaininfo fields are malformed");
+  if (after.chain != tip.chain || after.best_block_hash != tip.best_block_hash ||
+      after.height != tip.height)
+    return reject(QuietProofChainStatus::kInconclusive, "chain tip changed during lookup");
+
+  std::vector<uint8_t> block;
+  // ParseTipFields already checked exact lowercase displayed-order hash bytes.
+  if (!quietproof_internal::DecodeHex(tip.best_block_hash, &block))
+    return reject(QuietProofChainStatus::kMalformed, "best block hash is malformed");
+  std::copy(block.begin(), block.end(), evidence.block.begin());
+  evidence.network = network;
+  evidence.height = tip.height;
+  evidence.confirmations = confirmations;
+  evidence.amount_sats = amount;
+  evidence.script_pub_key = std::move(script);
+  evidence.status = QuietProofChainStatus::kUnspent;
+  return evidence;
+}
 }  // namespace proofs::bitcoin_rpc_internal
 
 namespace proofs {
@@ -404,11 +480,7 @@ bool BitcoinCoreRpc::Discover(const BitcoinUtxoQuery&, BitcoinUtxoDiscovery*,
 QuietProofProviderKind BitcoinCoreRpc::kind() const {
   return QuietProofProviderKind::kCurrentTip;
 }
-QuietProofChainEvidence BitcoinCoreRpc::Lookup(const QuietProofChainRequest&) {
-  QuietProofChainEvidence evidence;
-  evidence.network = impl_->client_.config().network;
-  evidence.status = QuietProofChainStatus::kUnavailable;
-  evidence.detail = "Native chain lookup is not available in this build stage";
-  return evidence;
+QuietProofChainEvidence BitcoinCoreRpc::Lookup(const QuietProofChainRequest& request) {
+  return bitcoin_rpc_internal::LookupCurrentTip(impl_->client_, request);
 }
 }  // namespace proofs

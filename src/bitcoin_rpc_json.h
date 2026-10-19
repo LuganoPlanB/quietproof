@@ -42,5 +42,7 @@ class RpcClient {
   uint64_t next_id_ = 1;
   bool exhausted_ = false;
 };
+// Shared private operation used by the provider and deterministic transport tests.
+QuietProofChainEvidence LookupCurrentTip(RpcClient&, const QuietProofChainRequest&);
 }  // namespace proofs::bitcoin_rpc_internal
 #endif
