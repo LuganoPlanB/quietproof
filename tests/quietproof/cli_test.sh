@@ -81,4 +81,19 @@ if "${quietproof_bin}" prove --secret=01 --request "${request}" \
   fail "secret argv was accepted"
 fi
 
+# Discovery flags on manual requests and every RPC flag on prove are rejected.
+for flag in --rpc-url --rpc-cookie --rpc-datadir --rpc-timeout --rpc-scan-timeout --rpc-wallet --min-confirmations; do
+  if "${quietproof_bin}" challenge create --network signet \
+      --verifier auditor.example --purpose proof-of-funds --message reserve-test \
+      --claim "${claim}" --output "${test_dir}/flags.qpr" "${flag}" unused >/dev/null 2>&1; then
+    fail "manual challenge accepted ${flag}"
+  fi
+  if "${quietproof_bin}" prove --request "${request}" \
+      --output "${test_dir}/flags.qpf" "${flag}" unused >/dev/null 2>&1; then
+    fail "prove accepted ${flag}"
+  fi
+done
+[[ ! -e "${test_dir}/flags.qpr" && ! -e "${test_dir}/flags.qpf" ]] ||
+  fail "rejected flags created output"
+
 printf 'QuietProof CLI tests passed\n'

@@ -34,11 +34,10 @@
 #include <vector>
 
 #include "quietproof/chain_state.h"
-#include "cli/json.hpp"
+#include "quietproof/detail/bitcoin_core_parse.h"
 
 namespace proofs {
 
-constexpr size_t kQuietProofMaxRpcOutputBytes = size_t{1024} * 1024;
 constexpr std::chrono::seconds kQuietProofRpcTimeout{30};
 
 struct QuietProofProcessResult {
@@ -133,49 +132,6 @@ inline bool AppendAvailable(FileDescriptor* descriptor, std::string* output,
   return true;
 }
 
-inline bool IsLowerHex(const std::string& value, size_t expected_size) {
-  if (value.size() != expected_size) return false;
-  for (char byte : value) {
-    if (!((byte >= '0' && byte <= '9') || (byte >= 'a' && byte <= 'f')))
-      return false;
-  }
-  return true;
-}
-
-inline int HexNibble(char value) {
-  if (value >= '0' && value <= '9') return value - '0';
-  if (value >= 'a' && value <= 'f') return value - 'a' + 10;
-  return -1;
-}
-
-inline bool DecodeHex(const std::string& value, std::vector<uint8_t>* output) {
-  if (output == nullptr || value.size() % 2 != 0 ||
-      !IsLowerHex(value, value.size())) return false;
-  output->clear();
-  output->reserve(value.size() / 2);
-  for (size_t index = 0; index < value.size(); index += 2) {
-    const int high = HexNibble(value[index]);
-    const int low = HexNibble(value[index + 1]);
-    output->push_back(static_cast<uint8_t>((high << 4) | low));
-  }
-  return true;
-}
-
-inline bool JsonUnsigned(const nlohmann::json& value, uint64_t* output) {
-  if (output == nullptr) return false;
-  if (value.is_number_unsigned()) {
-    *output = value.get<uint64_t>();
-    return true;
-  }
-  if (value.is_number_integer()) {
-    const int64_t signed_value = value.get<int64_t>();
-    if (signed_value < 0) return false;
-    *output = static_cast<uint64_t>(signed_value);
-    return true;
-  }
-  return false;
-}
-
 // Bitcoin Core emits the top-level `value` field as a JSON decimal in BTC.
 // Keep its original token so no IEEE-754 conversion can move the amount by a
 // satoshi. The full response is independently parsed as JSON before this runs.
@@ -234,58 +190,6 @@ inline bool TopLevelNumberToken(const std::string& json, const std::string& key,
     found = true;
   }
   return found;
-}
-
-inline bool BitcoinAmountToSats(const std::string& value, uint64_t* sats) {
-  if (sats == nullptr || value.empty() || value[0] == '-') return false;
-  const size_t decimal = value.find('.');
-  if (value.find_first_of("eE") != std::string::npos ||
-      (decimal != std::string::npos && value.find('.', decimal + 1) != std::string::npos))
-    return false;
-  const std::string whole_text = value.substr(0, decimal);
-  std::string fractional = decimal == std::string::npos
-                               ? std::string()
-                               : value.substr(decimal + 1);
-  if (whole_text.empty() || fractional.size() > 8) return false;
-  uint64_t whole = 0;
-  for (char digit : whole_text) {
-    if (digit < '0' || digit > '9' ||
-        whole > (kQuietProofMaxMoneySats / 100000000ULL -
-                 static_cast<uint64_t>(digit - '0')) / 10) return false;
-    whole = whole * 10 + static_cast<uint64_t>(digit - '0');
-  }
-  uint64_t fraction = 0;
-  for (char digit : fractional) {
-    if (digit < '0' || digit > '9') return false;
-    fraction = fraction * 10 + static_cast<uint64_t>(digit - '0');
-  }
-  for (size_t index = fractional.size(); index < 8; ++index) fraction *= 10;
-  if (whole > kQuietProofMaxMoneySats / 100000000ULL) return false;
-  const uint64_t result = whole * 100000000ULL + fraction;
-  if (result > kQuietProofMaxMoneySats) return false;
-  *sats = result;
-  return true;
-}
-
-struct Tip {
-  std::string chain;
-  std::string best_block_hash;
-  uint64_t height = 0;
-};
-
-inline bool ParseTip(const std::string& text, Tip* tip) {
-  if (tip == nullptr || text.size() > kQuietProofMaxRpcOutputBytes) return false;
-  const auto json = nlohmann::json::parse(text, nullptr, false);
-  if (json.is_discarded() || !json.is_object() || !json.contains("chain") ||
-      !json["chain"].is_string() || !json.contains("bestblockhash") ||
-      !json["bestblockhash"].is_string() || !json.contains("blocks")) return false;
-  Tip parsed;
-  parsed.chain = json["chain"].get<std::string>();
-  parsed.best_block_hash = json["bestblockhash"].get<std::string>();
-  if (!IsLowerHex(parsed.best_block_hash, 64) ||
-      !JsonUnsigned(json["blocks"], &parsed.height)) return false;
-  *tip = std::move(parsed);
-  return true;
 }
 
 }  // namespace quietproof_internal
@@ -447,26 +351,18 @@ class BitcoinCoreCurrentTipProvider final : public QuietProofChainProvider {
       evidence.detail = "outpoint is absent from the current UTXO set";
       return evidence;
     }
-    if (!txout.is_object() || !txout.contains("bestblock") ||
-        !txout["bestblock"].is_string() || !txout.contains("confirmations") ||
-        !txout.contains("value") || !txout.contains("scriptPubKey") ||
-        !txout["scriptPubKey"].is_object() ||
-        !txout["scriptPubKey"].contains("hex") ||
-        !txout["scriptPubKey"]["hex"].is_string()) {
+    if (!quietproof_internal::TxOutShapeValid(txout)) {
       evidence.status = QuietProofChainStatus::kMalformed;
       evidence.detail = "gettxout response has an unexpected shape";
       return evidence;
     }
-    const std::string best_block = txout["bestblock"].get<std::string>();
-    const std::string script = txout["scriptPubKey"]["hex"].get<std::string>();
     std::string amount_token;
     uint64_t amount_sats = 0, confirmations = 0;
-    if (best_block != tip.best_block_hash ||
-        !quietproof_internal::TopLevelNumberToken(txout_result.stdout_text,
+    if (!quietproof_internal::TopLevelNumberToken(txout_result.stdout_text,
                                                 "value", &amount_token) ||
-        !quietproof_internal::BitcoinAmountToSats(amount_token, &amount_sats) ||
-        !quietproof_internal::JsonUnsigned(txout["confirmations"], &confirmations) ||
-        !quietproof_internal::DecodeHex(script, &evidence.script_pub_key)) {
+        !quietproof_internal::ParseTxOutFields(
+            txout, amount_token, tip.best_block_hash, &amount_sats,
+            &confirmations, &evidence.script_pub_key)) {
       evidence.status = QuietProofChainStatus::kMalformed;
       evidence.detail = "gettxout fields are not canonical";
       return evidence;

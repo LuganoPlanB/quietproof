@@ -21,12 +21,45 @@ target_include_directories(quietproof INTERFACE
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/longfellow-zk-quietproof>)
 target_link_libraries(quietproof INTERFACE ${LONGFELLOW_ZK_TARGET})
 
+option(QUIETPROOF_BUILD_RPC "Build the native Bitcoin Core RPC library" ON)
+if(QUIETPROOF_BUILD_RPC)
+  find_package(CURL 7.62 REQUIRED)
+  add_library(quietproof-rpc STATIC src/bitcoin_rpc.cc src/bitcoin_rpc_json.cc)
+  add_library(LongfellowZKQuietProof::rpc ALIAS quietproof-rpc)
+  set_target_properties(quietproof-rpc PROPERTIES
+    EXPORT_NAME rpc POSITION_INDEPENDENT_CODE ON)
+  target_link_libraries(quietproof-rpc
+    PUBLIC LongfellowZKQuietProof::quietproof PRIVATE CURL::libcurl)
+  install(TARGETS quietproof-rpc EXPORT LongfellowZKQuietProofRpcTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+  install(EXPORT LongfellowZKQuietProofRpcTargets
+    FILE LongfellowZKQuietProofRpcTargets.cmake NAMESPACE LongfellowZKQuietProof::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LongfellowZKQuietProof)
+endif()
+
+option(QUIETPROOF_BUILD_EXAMPLES "Build the native Bitcoin Core RPC example" OFF)
+option(QUIETPROOF_ENABLE_BITCOIN_REGTEST_TEST
+  "Run isolated proof-heavy workflows against explicitly supplied Core 28 and 30" OFF)
+if(QUIETPROOF_BUILD_EXAMPLES OR QUIETPROOF_ENABLE_BITCOIN_REGTEST_TEST)
+  if(NOT QUIETPROOF_BUILD_RPC)
+    message(FATAL_ERROR "Examples and live regtest require QUIETPROOF_BUILD_RPC")
+  endif()
+  add_executable(bitcoin-rpc-example examples/bitcoin_rpc.cc)
+  target_link_libraries(bitcoin-rpc-example PRIVATE LongfellowZKQuietProof::rpc)
+endif()
+install(FILES examples/bitcoin_rpc.cc
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/LongfellowZKQuietProof/examples)
+
 add_executable(quietproof-cli src/quietproof_main.cc)
 set_target_properties(quietproof-cli PROPERTIES OUTPUT_NAME quietproof)
 target_link_libraries(quietproof-cli PRIVATE LongfellowZKQuietProof::quietproof)
+if(QUIETPROOF_BUILD_RPC)
+  target_link_libraries(quietproof-cli PRIVATE LongfellowZKQuietProof::rpc)
+  target_compile_definitions(quietproof-cli PRIVATE QUIETPROOF_HAS_RPC=1)
+endif()
 
-install(TARGETS quietproof quietproof-cli EXPORT LongfellowZKQuietProofTargets
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS quietproof EXPORT LongfellowZKQuietProofTargets)
+install(TARGETS quietproof-cli RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/longfellow-zk-quietproof)
 install(EXPORT LongfellowZKQuietProofTargets
   FILE LongfellowZKQuietProofTargets.cmake NAMESPACE LongfellowZKQuietProof::
@@ -48,6 +81,14 @@ install(DIRECTORY spec/
 
 if(BUILD_TESTING)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  add_test(NAME quietproof-package-test
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/cmake/package_test.py
+      --source ${CMAKE_CURRENT_SOURCE_DIR}
+      --work ${CMAKE_CURRENT_BINARY_DIR}/package-test
+      --prefix-path "${CMAKE_PREFIX_PATH}"
+      --rpc-enabled "${QUIETPROOF_BUILD_RPC}"
+      --generator "${CMAKE_GENERATOR}")
   option(QUIETPROOF_ENABLE_POKC_SAGE_TEST
     "Run the Sage 10.6 reference model (requires Sage or Docker)" OFF)
 
@@ -56,6 +97,41 @@ if(BUILD_TESTING)
     target_link_libraries(${target} PRIVATE LongfellowZKQuietProof::quietproof)
     add_test(NAME ${target} COMMAND ${target} ${ARGN})
   endfunction()
+  if(QUIETPROOF_BUILD_RPC)
+    add_executable(quietproof-rpc-test tests/quietproof/bitcoin_rpc_test.cc)
+    target_include_directories(quietproof-rpc-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(quietproof-rpc-test PRIVATE LongfellowZKQuietProof::rpc)
+    add_test(NAME quietproof-rpc-test COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/rpc_http_fixture.py
+      $<TARGET_FILE:quietproof-rpc-test>)
+    set_tests_properties(quietproof-rpc-test PROPERTIES TIMEOUT 60)
+  endif()
+  if(QUIETPROOF_ENABLE_BITCOIN_REGTEST_TEST)
+    set(QUIETPROOF_CORE28_DIR "" CACHE PATH "Directory containing Core 28 bitcoind and bitcoin-cli")
+    set(QUIETPROOF_CORE30_DIR "" CACHE PATH "Directory containing Core 30 bitcoind and bitcoin-cli")
+    foreach(version IN ITEMS 28 30)
+      foreach(program IN ITEMS bitcoind bitcoin-cli)
+        if(NOT EXISTS "${QUIETPROOF_CORE${version}_DIR}/${program}")
+          message(FATAL_ERROR "Regtest requires QUIETPROOF_CORE${version}_DIR containing ${program}")
+        endif()
+      endforeach()
+    endforeach()
+    add_executable(quietproof-regtest-driver tests/quietproof/regtest_rpc_test.cc)
+    target_link_libraries(quietproof-regtest-driver PRIVATE LongfellowZKQuietProof::rpc)
+    add_test(NAME quietproof-regtest-rpc-test COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/regtest_rpc_test.py
+      --core28 "${QUIETPROOF_CORE28_DIR}" --core30 "${QUIETPROOF_CORE30_DIR}"
+      --cli $<TARGET_FILE:quietproof-cli>
+      --example $<TARGET_FILE:bitcoin-rpc-example>
+      --driver $<TARGET_FILE:quietproof-regtest-driver>)
+    set_tests_properties(quietproof-regtest-rpc-test PROPERTIES
+      LABELS "bitcoin-regtest;proof-heavy" RUN_SERIAL TRUE TIMEOUT 14400)
+  else()
+    add_test(NAME quietproof-regtest-rpc-test COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/regtest_rpc_test.py --not-enabled)
+    set_tests_properties(quietproof-regtest-rpc-test PROPERTIES
+      LABELS "bitcoin-regtest;proof-heavy" SKIP_RETURN_CODE 77)
+  endif()
   add_pokc_test(pokc-test tests/quietproof/pokc_test.cc)
   file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/test/results")
   set_tests_properties(pokc-test PROPERTIES
@@ -64,10 +140,20 @@ if(BUILD_TESTING)
   add_pokc_test(key-ownership-test tests/quietproof/key_ownership_test.cc)
   add_pokc_test(ripemd160-test tests/quietproof/ripemd160_test.cc)
   add_pokc_test(quietproof-protocol-test tests/quietproof/protocol_test.cc)
+  add_pokc_test(quietproof-challenge-test tests/quietproof/challenge_test.cc)
   add_pokc_test(quietproof-integration-test tests/quietproof/integration_test.cc)
   add_pokc_test(pokc-sage-test tests/quietproof/pokc_sage_vector_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/testdata/pokc_sage_vectors.json)
   add_test(NAME quietproof-cli-test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/cli_test.sh $<TARGET_FILE:quietproof-cli>)
+  if(QUIETPROOF_BUILD_RPC)
+    set(_quietproof_cli_rpc_mode --cli)
+  else()
+    set(_quietproof_cli_rpc_mode --cli-off)
+  endif()
+  add_test(NAME quietproof-cli-rpc-test COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/rpc_http_fixture.py
+    $<TARGET_FILE:quietproof-cli> ${_quietproof_cli_rpc_mode})
+  set_tests_properties(quietproof-cli-rpc-test PROPERTIES TIMEOUT 60)
   add_test(NAME pokc-vector-generation-test
     COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/pokc_vector_generation_test.py)
