@@ -21,6 +21,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <set>
 #include <string_view>
 
 #include <arpa/inet.h>
@@ -302,11 +303,25 @@ std::size_t HttpHeaderCallback(char* data, std::size_t size, std::size_t count,
 }
 
 bool PostRpcHttp(const BitcoinCoreRpcConfig& config, const std::string& request,
-                 bool scan, HttpResponse* output, BitcoinRpcError* error) {
+                 bool scan, HttpResponse* output, BitcoinRpcError* error,
+                 const std::optional<std::string>& wallet) {
   if (!output || request.size() > kMaxBodyBytes)
     return Fail(error, BitcoinRpcErrorCode::kConfiguration, "Invalid HTTP request buffer");
   ResolvedRpcConfig resolved;
   if (!ResolveRpcConfig(config, &resolved, error)) return false;
+  if (wallet) {
+    if (wallet->empty() || wallet->size() > 1024 || !QuietProofUtf8(*wallet))
+      return Fail(error, BitcoinRpcErrorCode::kConfiguration, "Wallet name is invalid");
+    // Encode every byte, including dots, slashes and percent signs. The name
+    // stays one opaque segment; it cannot alter the validated origin or path.
+    static constexpr char hex[] = "0123456789ABCDEF";
+    resolved.url += "wallet/";
+    for (unsigned char byte : *wallet) {
+      resolved.url += '%';
+      resolved.url += hex[byte >> 4];
+      resolved.url += hex[byte & 15];
+    }
+  }
   Cookie cookie;
   if (!ReadCookie(resolved.cookie_path, &cookie, error)) return false;
   Headers headers;
@@ -334,6 +349,7 @@ bool PostRpcHttp(const BitcoinCoreRpcConfig& config, const std::string& request,
       !protocols ||
       !option(CURLOPT_PROXY, "") || !option(CURLOPT_NOPROXY, "*") ||
       !option(CURLOPT_FOLLOWLOCATION, 0L) || !option(CURLOPT_MAXREDIRS, 0L) ||
+      !option(CURLOPT_PATH_AS_IS, 1L) ||
       !option(CURLOPT_NETRC, static_cast<long>(CURL_NETRC_IGNORED)) ||
       !option(CURLOPT_VERBOSE, 0L) || !option(CURLOPT_NOSIGNAL, 1L) ||
       !option(CURLOPT_HTTPAUTH, static_cast<long>(CURLAUTH_BASIC)) ||
@@ -457,6 +473,179 @@ QuietProofChainEvidence LookupCurrentTip(RpcClient& client,
   evidence.status = QuietProofChainStatus::kUnspent;
   return evidence;
 }
+
+namespace {
+bool ValidAddressText(const std::string& address) {
+  if (address.empty() || address.size() > 90) return false;
+  for (unsigned char c : address)
+    if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+          (c >= '0' && c <= '9'))) return false;
+  return true;
+}
+bool HashBytes(const nlohmann::json& value, std::array<uint8_t, 32>* output) {
+  if (!value.is_string()) return false;
+  const auto text = value.get<std::string>();
+  std::vector<uint8_t> bytes;
+  if (!quietproof_internal::IsLowerHex(text, 64) ||
+      !quietproof_internal::DecodeHex(text, &bytes) ||
+      std::all_of(bytes.begin(), bytes.end(), [](uint8_t b) { return b == 0; }))
+    return false;
+  std::copy(bytes.begin(), bytes.end(), output->begin());
+  return true;
+}
+bool P2wpkhScript(const nlohmann::json& value, std::vector<uint8_t>* script) {
+  return value.is_string() &&
+      quietproof_internal::DecodeHex(value.get<std::string>(), script) &&
+      script->size() == 22 && (*script)[0] == 0 && (*script)[1] == 20;
+}
+}  // namespace
+
+bool DiscoverAddress(RpcClient& client, const BitcoinUtxoQuery& query,
+                     BitcoinUtxoDiscovery* output, BitcoinRpcError* error) {
+  using namespace quietproof_internal;
+  if (!output || query.min_confirmations == 0 ||
+      (query.wallet && (query.wallet->empty() || query.wallet->size() > 1024 ||
+                        !QuietProofUtf8(*query.wallet) || query.min_confirmations > 9999999)))
+    return Fail(error, BitcoinRpcErrorCode::kConfiguration,
+                "Discovery requires positive confirmations and a valid explicit wallet when selected");
+  if (!ValidAddressText(query.address))
+    return Fail(error, BitcoinRpcErrorCode::kInvalidAddress, "Address text is invalid");
+  RpcDecodedResponse response;
+  if (!client.Call("getblockchaininfo", nlohmann::json::array(), false, &response, error))
+    return false;
+  Tip tip;
+  if (!ParseTipFields(response.result, &tip))
+    return Fail(error, BitcoinRpcErrorCode::kMalformed, "Node tip is malformed");
+  if (tip.chain != QuietProofBitcoinCoreChainName(client.config().network))
+    return Fail(error, BitcoinRpcErrorCode::kWrongNetwork, "Bitcoin Core network does not match discovery");
+  if (!client.Call("validateaddress", nlohmann::json::array({query.address}), false,
+                   &response, error)) return false;
+  const auto& address = response.result;
+  if (!address.is_object() || !address.contains("isvalid") || !address["isvalid"].is_boolean())
+    return Fail(error, BitcoinRpcErrorCode::kMalformed, "Address validation is malformed");
+  if (!address["isvalid"].get<bool>())
+    return Fail(error, BitcoinRpcErrorCode::kInvalidAddress, "Address is invalid for the selected node");
+  std::vector<uint8_t> script;
+  if (!address.contains("scriptPubKey") || !P2wpkhScript(address["scriptPubKey"], &script))
+    return Fail(error, BitcoinRpcErrorCode::kUnsupportedScript, "Address must use native P2WPKH");
+  if (!address.contains("address") || !address["address"].is_string() ||
+      !ValidAddressText(address["address"].get<std::string>()))
+    return Fail(error, BitcoinRpcErrorCode::kMalformed, "Canonical address is malformed");
+  const std::string canonical = address["address"].get<std::string>();
+  BitcoinUtxoDiscovery found;
+  found.network = client.config().network;
+  const nlohmann::json* candidates = nullptr;
+  std::string money_prefix;
+  if (query.wallet) {
+    // No truncating query options, no spendable filter and no wallet management.
+    if (!client.Call("listunspent", nlohmann::json::array({query.min_confirmations,
+          9999999, nlohmann::json::array({canonical}), false}), false, &response, error,
+          query.wallet)) return false;
+    if (!response.result.is_array() || !HashBytes(tip.best_block_hash, &found.observed_block))
+      return Fail(error, BitcoinRpcErrorCode::kMalformed, "Wallet UTXO observation is malformed");
+    found.observed_height = tip.height;
+    candidates = &response.result;
+    money_prefix = "/result/";
+  } else {
+    BitcoinRpcError scan_error;
+    if (!client.Call("scantxoutset", nlohmann::json::array({"start",
+            nlohmann::json::array({"addr(" + canonical + ")"})}), true, &response, &scan_error)) {
+      if (scan_error.code == BitcoinRpcErrorCode::kRpc && scan_error.rpc_code == -8) {
+        scan_error.code = BitcoinRpcErrorCode::kScanBusy;
+        scan_error.message = "UTXO scan could not start; another scan may be active";
+      }
+      if (scan_error.code == BitcoinRpcErrorCode::kTimeout)
+        scan_error.message = "UTXO scan timed out; it may still be running on Core and was not retried";
+      if (error) *error = std::move(scan_error);
+      return false;
+    }
+    const auto& scan = response.result;
+    if (!scan.is_object() || !scan.contains("success") || !scan["success"].is_boolean())
+      return Fail(error, BitcoinRpcErrorCode::kMalformed, "UTXO scan result is malformed");
+    if (!scan["success"].get<bool>())
+      return Fail(error, BitcoinRpcErrorCode::kScanIncomplete, "UTXO scan did not complete");
+    if (!scan.contains("bestblock") || !HashBytes(scan["bestblock"], &found.observed_block) ||
+        !scan.contains("height") || !JsonUnsigned(scan["height"], &found.observed_height) ||
+        !scan.contains("unspents") || !scan["unspents"].is_array())
+      return Fail(error, BitcoinRpcErrorCode::kMalformed, "UTXO scan observation is malformed");
+    found.scan_block = found.observed_block;
+    found.scan_height = found.observed_height;
+    candidates = &scan["unspents"];
+    money_prefix = "/result/unspents/";
+  }
+  std::set<std::pair<std::array<uint8_t, 32>, uint32_t>> seen;
+  uint64_t total = 0;
+  bool valid_total = true;
+  for (size_t i = 0; i < candidates->size(); ++i) {
+    const auto& candidate = (*candidates)[i];
+    BitcoinUtxo coin;
+    uint64_t vout = 0, height = 0, reported = 0;
+    std::vector<uint8_t> candidate_script;
+    const auto money = response.money.find(money_prefix + std::to_string(i) + "/amount");
+    if (!candidate.is_object() || !candidate.contains("txid") ||
+        !HashBytes(candidate["txid"], &coin.claim.txid) ||
+        !candidate.contains("vout") || !JsonUnsigned(candidate["vout"], &vout) ||
+        vout > std::numeric_limits<uint32_t>::max() ||
+        !candidate.contains("scriptPubKey") ||
+        !P2wpkhScript(candidate["scriptPubKey"], &candidate_script) || candidate_script != script ||
+        money == response.money.end() || money->second.sats == 0)
+      return Fail(error, BitcoinRpcErrorCode::kMalformed, "UTXO candidate is malformed");
+    coin.claim.vout = static_cast<uint32_t>(vout);
+    coin.claim.amount_sats = money->second.sats;
+    std::copy(script.begin() + 2, script.end(), coin.claim.program.begin());
+    if (query.wallet) {
+      if (!candidate.contains("confirmations") || !JsonUnsigned(candidate["confirmations"], &coin.confirmations) ||
+          (candidate.contains("address") &&
+           (!candidate["address"].is_string() || candidate["address"].get<std::string>() != canonical)))
+        return Fail(error, BitcoinRpcErrorCode::kMalformed, "Wallet candidate confirmations or address is malformed");
+    } else {
+      if (!candidate.contains("height") || !JsonUnsigned(candidate["height"], &height) ||
+          height == 0 || height > found.observed_height)
+        return Fail(error, BitcoinRpcErrorCode::kMalformed, "UTXO scan candidate height is malformed");
+      coin.confirmations = found.observed_height - height + 1; // height >= 1 prevents overflow.
+    }
+    if ((candidate.contains("confirmations") &&
+         (!JsonUnsigned(candidate["confirmations"], &reported) || reported != coin.confirmations)) ||
+        !seen.emplace(coin.claim.txid, coin.claim.vout).second)
+      return Fail(error, BitcoinRpcErrorCode::kMalformed, "UTXO duplicate or confirmations mismatch");
+    if (coin.confirmations < query.min_confirmations) {
+      ++found.excluded_below_min_confirmations;
+      continue;
+    }
+    if (coin.claim.amount_sats > kQuietProofMaxMoneySats - total) valid_total = false;
+    else total += coin.claim.amount_sats;
+    found.outputs.push_back(coin);
+  }
+  std::sort(found.outputs.begin(), found.outputs.end(), [](const auto& a, const auto& b) {
+    return a.claim < b.claim;
+  });
+  if (found.outputs.empty()) found.incompatibility = "No eligible outputs";
+  else if (found.outputs.size() > kQuietProofMaxClaims) found.incompatibility = "Too many outputs for a challenge";
+  else if (!valid_total) found.incompatibility = "Aggregate amount exceeds MAX_MONEY";
+  else found.challenge_compatible = true;
+  if (found.challenge_compatible) {
+    bool first = true;
+    for (auto& coin : found.outputs) {
+      QuietProofChainRequest request{found.network};
+      request.txid = coin.claim.txid;
+      request.vout = coin.claim.vout;
+      const auto evidence = LookupCurrentTip(client, request);
+      if (QuietProofMatchClaim(coin.claim, found.network, evidence) != QuietProofChainStatus::kUnspent ||
+          evidence.confirmations < query.min_confirmations ||
+          std::all_of(evidence.block.begin(), evidence.block.end(), [](uint8_t b) { return b == 0; }) ||
+          (!first && (evidence.block != found.observed_block || evidence.height != found.observed_height)))
+        return Fail(error, BitcoinRpcErrorCode::kInconclusive, "UTXO current recheck failed or chain tip changed");
+      found.observed_block = evidence.block;
+      found.observed_height = evidence.height;
+      coin.confirmations = evidence.confirmations;
+      first = false;
+    }
+    found.current_rechecked = true;
+  }
+  *output = std::move(found);
+  ClearError(error);
+  return true;
+}
 }  // namespace proofs::bitcoin_rpc_internal
 
 namespace proofs {
@@ -469,13 +658,14 @@ BitcoinCoreRpc::BitcoinCoreRpc(BitcoinCoreRpcConfig config)
     : impl_(std::make_unique<Impl>(std::move(config))) {}
 BitcoinCoreRpc::~BitcoinCoreRpc() = default;
 
-bool BitcoinCoreRpc::Discover(const BitcoinUtxoQuery&, BitcoinUtxoDiscovery*,
+bool BitcoinCoreRpc::Discover(const BitcoinUtxoQuery& query, BitcoinUtxoDiscovery* output,
                               BitcoinRpcError* error) {
-  if (error) {
-    *error = {BitcoinRpcErrorCode::kInconclusive, 0, std::nullopt,
-              "Native address discovery is not available in this build stage"};
+  try {
+    return bitcoin_rpc_internal::DiscoverAddress(impl_->client_, query, output, error);
+  } catch (const nlohmann::json::exception&) {
+    return bitcoin_rpc_internal::Fail(error, BitcoinRpcErrorCode::kMalformed,
+                                     "Discovery response fields are malformed");
   }
-  return false;
 }
 QuietProofProviderKind BitcoinCoreRpc::kind() const {
   return QuietProofProviderKind::kCurrentTip;

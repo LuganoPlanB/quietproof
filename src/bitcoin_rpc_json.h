@@ -26,7 +26,8 @@ struct RpcDecodedResponse {
 bool DecodeRpcResponse(const HttpResponse&, const std::string& expected_id,
                        RpcDecodedResponse*, BitcoinRpcError*);
 using HttpTransport = bool (*)(const BitcoinCoreRpcConfig&, const std::string&,
-                               bool, HttpResponse*, BitcoinRpcError*);
+                               bool, HttpResponse*, BitcoinRpcError*,
+                               const std::optional<std::string>&);
 // Implementation-only sequential client. No arbitrary RPC API is installed.
 class RpcClient {
  public:
@@ -34,7 +35,8 @@ class RpcClient {
   RpcClient(const RpcClient&) = delete;
   RpcClient& operator=(const RpcClient&) = delete;
   bool Call(const std::string& method, const nlohmann::json& params, bool scan,
-            RpcDecodedResponse*, BitcoinRpcError*);
+            RpcDecodedResponse*, BitcoinRpcError*,
+            const std::optional<std::string>& wallet = std::nullopt);
   const BitcoinCoreRpcConfig& config() const { return config_; }
  private:
   BitcoinCoreRpcConfig config_;
@@ -44,5 +46,7 @@ class RpcClient {
 };
 // Shared private operation used by the provider and deterministic transport tests.
 QuietProofChainEvidence LookupCurrentTip(RpcClient&, const QuietProofChainRequest&);
+bool DiscoverAddress(RpcClient&, const BitcoinUtxoQuery&, BitcoinUtxoDiscovery*,
+                     BitcoinRpcError*);
 }  // namespace proofs::bitcoin_rpc_internal
 #endif

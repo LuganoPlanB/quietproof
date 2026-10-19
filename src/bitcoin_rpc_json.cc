@@ -192,7 +192,8 @@ bool DecodeRpcResponse(const HttpResponse& response, const std::string& expected
 RpcClient::RpcClient(BitcoinCoreRpcConfig config, HttpTransport transport)
     : config_(std::move(config)), transport_(transport) {}
 bool RpcClient::Call(const std::string& method, const Json& params, bool scan,
-                     RpcDecodedResponse* output, BitcoinRpcError* error) {
+                     RpcDecodedResponse* output, BitcoinRpcError* error,
+                     const std::optional<std::string>& wallet) {
   if (!output || !transport_ || exhausted_ || method.empty() || method.size() > 64 || !params.is_array())
     return Failure(error, BitcoinRpcErrorCode::kConfiguration, "Invalid RPC request arguments", 0);
   const std::string id = std::to_string(next_id_);
@@ -203,7 +204,7 @@ bool RpcClient::Call(const std::string& method, const Json& params, bool scan,
     const std::string body = request.dump();  // Only REQUESTS are serialized.
     HttpResponse response;
     BitcoinRpcError transport_error;
-    const bool received = transport_(config_, body, scan, &response, &transport_error);
+    const bool received = transport_(config_, body, scan, &response, &transport_error, wallet);
     if (!received && (transport_error.code != BitcoinRpcErrorCode::kHttp || response.status == 0)) {
       if (error) *error = std::move(transport_error);
       return false;

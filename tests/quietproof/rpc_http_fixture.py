@@ -29,6 +29,13 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass
 
+    def handle(self):
+        # Adversarial truncation/timeouts deliberately make curl close sockets.
+        try:
+            super().handle()
+        except ConnectionResetError:
+            pass
+
     def do_POST(self):
         mode = self.server.scenario
         body = self.rfile.read(int(self.headers.get('Content-Length', '0')))
@@ -36,6 +43,59 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if mode in ('timeout', 'scan-timeout', 'scan-deadline'):
                 time.sleep(0.35)
+            if mode.startswith(('discovery-', 'wallet-')):
+                request = json.loads(body)
+                block = '0123456789abcdef' * 4
+                method = request['method']
+                if method == 'getblockchaininfo':
+                    result = json.dumps({'chain': 'regtest', 'blocks': 101,
+                                         'bestblockhash': block}).encode()
+                elif method == 'validateaddress':
+                    result = json.dumps({'isvalid': mode != 'discovery-invalid',
+                                         'address': 'bcrt1qfixture',
+                                         'scriptPubKey': ('5120' + 'a' * 64 if mode == 'discovery-unsupported'
+                                                          else '0014' + 'a' * 40)}).encode()
+                elif method == 'listunspent':
+                    if mode == 'wallet-redirect':
+                        self.send_response(302)
+                        self.send_header('Location', self.server.sink_url)
+                        self.send_header('Content-Length', '0')
+                        self.end_headers()
+                        return
+                    if mode == 'wallet-auth':
+                        self.send_response(401)
+                        self.send_header('Content-Length', '0')
+                        self.end_headers()
+                        return
+                    result = (b'[{"txid":"' + b'11' * 32 + b'","vout":0,'
+                              b'"confirmations":2,"spendable":false,"safe":false,'
+                              b'"scriptPubKey":"0014' + b'a' * 40 + b'","amount":0.00000001}]')
+                elif method == 'scantxoutset':
+                    if mode == 'discovery-timeout':
+                        time.sleep(0.35)
+                    coins = [] if mode == 'discovery-empty' else [{
+                        'txid': '11' * 32, 'vout': 0, 'height': 99,
+                        'scriptPubKey': '0014' + 'a' * 40, 'amount': 'MONEY_TOKEN'}]
+                    result = json.dumps({'success': mode != 'discovery-incomplete',
+                                         'bestblock': block, 'height': 100,
+                                         'unspents': coins}).encode().replace(b'"MONEY_TOKEN"', b'0.00000001')
+                else:
+                    assert method == 'gettxout'
+                    result = (b'{"bestblock":"' + block.encode() +
+                              b'","confirmations":3,"value":0.00000001,'
+                              b'"scriptPubKey":{"hex":"0014' + b'a' * 40 + b'"}}')
+                payload = (b'{"jsonrpc":"2.0","id":' + json.dumps(request['id']).encode() +
+                           (b',"error":{"code":-8,"message":"server-secret"}}'
+                            if (mode == 'discovery-busy' and method == 'scantxoutset') or
+                               (mode == 'wallet-missing' and method == 'listunspent')
+                            else b',"result":' + result + b'}'))
+                if mode == 'wallet-missing' and method == 'listunspent':
+                    payload = payload.replace(b'"code":-8', b'"code":-18')
+                self.send_response(500 if mode == 'wallet-missing' and method == 'listunspent' else 200)
+                self.send_header('Content-Length', str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
             if mode.startswith('provider-'):
                 request = json.loads(body)
                 block = '0123456789abcdef' * 4
@@ -227,6 +287,49 @@ def main():
                     assert json.loads(payload) == {'jsonrpc': '2.0', 'id': str(index),
                                                    'method': method, 'params': params}
                     assert path == '/' and headers.get('Authorization') == expected_auth
+            for mode in ('discovery-ok', 'discovery-empty', 'discovery-invalid',
+                         'discovery-unsupported', 'discovery-busy', 'discovery-incomplete',
+                         'discovery-timeout'):
+                origin.scenario = mode
+                count = len(origin.records)
+                run(['--discover', url, str(cookie), mode], env)
+                methods = ['getblockchaininfo', 'validateaddress']
+                if mode not in ('discovery-invalid', 'discovery-unsupported'):
+                    methods += ['scantxoutset']
+                if mode == 'discovery-ok':
+                    methods += ['getblockchaininfo', 'gettxout', 'getblockchaininfo']
+                records = origin.records[count:]
+                assert len(records) == len(methods), 'discovery retried or omitted request'
+                for index, ((path, headers, payload), method) in enumerate(zip(records, methods), 1):
+                    request = json.loads(payload)
+                    assert request['method'] == method and request['id'] == str(index)
+                    params = (['bcrt1qfixture'] if method == 'validateaddress' else
+                              ['start', ['addr(bcrt1qfixture)']] if method == 'scantxoutset' else
+                              ['11' * 32, 0, True] if method == 'gettxout' else [])
+                    assert request['params'] == params
+                    assert path == '/' and headers.get('Authorization') == expected_auth
+            wallet_names = {'wallet-dot': '.', 'wallet-dotdot': '..', 'wallet-unicode': 'é/財布'}
+            for mode in ('wallet-ok', 'wallet-dot', 'wallet-dotdot', 'wallet-unicode',
+                         'wallet-missing', 'wallet-redirect', 'wallet-auth'):
+                origin.scenario = mode
+                count = len(origin.records)
+                run(['--wallet', url, str(cookie), mode], env)
+                methods = ['getblockchaininfo', 'validateaddress', 'listunspent']
+                if mode not in ('wallet-missing', 'wallet-redirect', 'wallet-auth'):
+                    methods += ['getblockchaininfo', 'gettxout', 'getblockchaininfo']
+                records = origin.records[count:]
+                assert len(records) == len(methods), 'wallet fallback, retry or omitted request'
+                name = wallet_names.get(mode, 'watch /../?x#%@:123')
+                wallet_path = '/wallet/' + ''.join(f'%{byte:02X}' for byte in name.encode())
+                for index, ((path, headers, payload), method) in enumerate(zip(records, methods), 1):
+                    request = json.loads(payload)
+                    assert request['method'] == method and request['id'] == str(index)
+                    params = (['bcrt1qfixture'] if method == 'validateaddress' else
+                              [1, 9999999, ['bcrt1qfixture'], False] if method == 'listunspent' else
+                              ['11' * 32, 0, True] if method == 'gettxout' else [])
+                    assert request['params'] == params, 'wallet unsafe/filter/truncation arguments'
+                    assert path == (wallet_path if method == 'listunspent' else '/')
+                    assert headers.get('Authorization') == expected_auth
             origin.scenario = 'ok'
             run(['--rotate' , url, str(cookie)], env)
             old_auth = origin.records[-2][1].get('Authorization')

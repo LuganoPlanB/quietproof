@@ -5,6 +5,7 @@
 #include "quietproof/detail/bitcoin_core_parse.h"
 #include "quietproof/bitcoin_core.h"
 #include "quietproof/verifier.h"
+#include "quietproof/challenge.h"
 
 #include <array>
 #include <algorithm>
@@ -323,7 +324,8 @@ struct MockState {
   bool scan = false;
 } mock;
 bool MockHttp(const BitcoinCoreRpcConfig&, const std::string& request, bool scan,
-              HttpResponse* response, BitcoinRpcError* error) {
+              HttpResponse* response, BitcoinRpcError* error, const std::optional<std::string>& wallet) {
+  Require(!wallet, "ordinary request used wallet route");
   const auto parsed = nlohmann::json::parse(request);
   mock.requests.push_back(parsed);
   mock.scan = scan;
@@ -405,7 +407,8 @@ std::string LookupTxOut(const std::string& amount = "0.00000001",
       ",\"value\":" + amount + ",\"scriptPubKey\":{\"hex\":\"" + script + "\"}}";
 }
 bool LookupHttp(const BitcoinCoreRpcConfig&, const std::string& text, bool scan,
-                HttpResponse* response, BitcoinRpcError* error) {
+                HttpResponse* response, BitcoinRpcError* error, const std::optional<std::string>& wallet) {
+  Require(!wallet, "lookup used wallet route");
   Require(!scan, "lookup used scan deadline");
   auto request = nlohmann::json::parse(text);
   const size_t index = lookup_fixture.requests.size();
@@ -425,6 +428,330 @@ bool LookupHttp(const BitcoinCoreRpcConfig&, const std::string& text, bool scan,
   }
   return true;
 }
+const std::string kDiscoveryAddress = "bcrt1qfixture";
+const std::string kDiscoveryScript = "0014" + std::string(40, 'a');
+struct DiscoveryFixture {
+  std::string validation = nlohmann::json{{"isvalid", true}, {"address", kDiscoveryAddress},
+                                        {"scriptPubKey", kDiscoveryScript}}.dump();
+  std::string scan;
+  std::string chain = "regtest";
+  std::string recheck_block = kLookupBlock;
+  std::string txout = LookupTxOut();
+  std::vector<nlohmann::json> requests;
+  bool busy = false;
+  bool timeout = false;
+  bool split_tip = false;
+  size_t rechecks = 0;
+} discovery_fixture;
+std::string ScanCoin(unsigned index, const std::string& amount = "0.00000001",
+                     uint64_t height = 99) {
+  return "{\"txid\":\"" + std::string(62, '1') + "0123456789abcdef"[index / 16] +
+      "0123456789abcdef"[index % 16] + "\",\"vout\":0,\"height\":" + std::to_string(height) +
+      ",\"scriptPubKey\":\"" + kDiscoveryScript + "\",\"amount\":" + amount + "}";
+}
+std::string ScanResult(const std::vector<std::string>& coins) {
+  std::string result = "{\"success\":true,\"height\":100,\"bestblock\":\"" + kLookupBlock +
+      "\",\"unspents\":[";
+  for (size_t i = 0; i < coins.size(); ++i) result += (i ? "," : "") + coins[i];
+  return result + "]}";
+}
+bool DiscoveryHttp(const BitcoinCoreRpcConfig&, const std::string& text, bool scan,
+                   HttpResponse* response, BitcoinRpcError* error, const std::optional<std::string>& wallet) {
+  Require(!wallet, "scan used wallet route");
+  auto request = nlohmann::json::parse(text);
+  discovery_fixture.requests.push_back(request);
+  const auto method = request["method"].get<std::string>();
+  Require(scan == (method == "scantxoutset"), "discovery wrong deadline");
+  std::string result;
+  if (method == "getblockchaininfo") {
+    const bool initial = discovery_fixture.requests.size() == 1;
+    auto block = initial ? kLookupBlock : discovery_fixture.recheck_block;
+    if (!initial && discovery_fixture.split_tip && discovery_fixture.rechecks >= 2)
+      block = std::string(64, 'f');
+    result = LookupTip(discovery_fixture.chain, block, initial ? 100 : 101);
+  } else if (method == "validateaddress") {
+    Require(request["params"] == nlohmann::json::array({kDiscoveryAddress}), "validate address params");
+    result = discovery_fixture.validation;
+  } else if (method == "scantxoutset") {
+    Require(request["params"] == nlohmann::json::array({"start", nlohmann::json::array({"addr(" + kDiscoveryAddress + ")"})}),
+            "single internal addr descriptor");
+    if (discovery_fixture.timeout) {
+      if (error) *error = {BitcoinRpcErrorCode::kTimeout, 0, std::nullopt, "fixture"};
+      return false;
+    }
+    result = discovery_fixture.scan;
+  } else {
+    Require(method == "gettxout" && request["params"][2] == true, "discovery recheck method");
+    ++discovery_fixture.rechecks;
+    result = discovery_fixture.txout;
+  }
+  response->status = 200;
+  response->body = "{\"jsonrpc\":\"2.0\",\"id\":" + request["id"].dump() +
+      (method == "scantxoutset" && discovery_fixture.busy ?
+       ",\"error\":{\"code\":-8,\"message\":\"server-secret\"}}" : ",\"result\":" + result + "}");
+  return true;
+}
+void TestDiscovery() {
+  size_t cases = 0;
+  BitcoinUtxoQuery query{kDiscoveryAddress};
+  auto reset = [&] {
+    discovery_fixture = {};
+    discovery_fixture.scan = ScanResult({ScanCoin(1)});
+    query = BitcoinUtxoQuery{kDiscoveryAddress};
+  };
+  auto run = [&](BitcoinRpcErrorCode expected, size_t calls) {
+    RpcClient client(Config(), DiscoveryHttp);
+    BitcoinUtxoDiscovery output;
+    output.incompatibility = "sentinel";
+    BitcoinRpcError error;
+    const bool ok = DiscoverAddress(client, query, &output, &error);
+    Require(ok == (expected == BitcoinRpcErrorCode::kNone), "discovery result category");
+    Require(error.code == expected && discovery_fixture.requests.size() == calls, "discovery error/call count");
+    if (!ok) Require(output.incompatibility == "sentinel", "discovery failure changed output");
+    Require(error.message.find("server-secret") == std::string::npos, "discovery leaked server message");
+    ++cases;
+    return output;
+  };
+  for (const auto& invalid : {"", "a b", "addr(x)", "a,b", "a#b", "a[b]", "a{b}"}) {
+    reset(); query.address = invalid; run(BitcoinRpcErrorCode::kInvalidAddress, 0);
+  }
+  reset(); query.address = std::string(91, 'a'); run(BitcoinRpcErrorCode::kInvalidAddress, 0);
+  reset(); query.min_confirmations = 0; run(BitcoinRpcErrorCode::kConfiguration, 0);
+  reset(); discovery_fixture.chain = "main"; run(BitcoinRpcErrorCode::kWrongNetwork, 1);
+  reset(); discovery_fixture.validation = R"({"isvalid":false})"; run(BitcoinRpcErrorCode::kInvalidAddress, 2);
+  reset(); discovery_fixture.validation = R"({"isvalid":1})"; run(BitcoinRpcErrorCode::kMalformed, 2);
+  for (auto script : {"a914" + std::string(40, 'a') + "87", "0020" + std::string(64, 'a'),
+                      "5120" + std::string(64, 'a'), kDiscoveryScript + "00", "0014" + std::string(40, 'A')}) {
+    reset(); discovery_fixture.validation = nlohmann::json{{"isvalid", true}, {"address", kDiscoveryAddress}, {"scriptPubKey", script}}.dump();
+    run(BitcoinRpcErrorCode::kUnsupportedScript, 2);
+  }
+  reset(); discovery_fixture.scan = ScanResult({});
+  auto found = run(BitcoinRpcErrorCode::kNone, 3);
+  Require(found.outputs.empty() && !found.challenge_compatible && !found.current_rechecked, "empty discovery flags");
+  reset(); discovery_fixture.busy = true; run(BitcoinRpcErrorCode::kScanBusy, 3);
+  reset(); discovery_fixture.timeout = true; run(BitcoinRpcErrorCode::kTimeout, 3);
+  reset(); discovery_fixture.scan = R"({"success":false})"; run(BitcoinRpcErrorCode::kScanIncomplete, 3);
+  reset(); discovery_fixture.scan = R"({"success":true})"; run(BitcoinRpcErrorCode::kMalformed, 3);
+  for (const auto& patch : {nlohmann::json{{"height", -1}}, nlohmann::json{{"height", "100"}},
+                           nlohmann::json{{"bestblock", std::string(64, '0')}},
+                           nlohmann::json{{"unspents", nullptr}}, nlohmann::json{{"success", 1}}}) {
+    reset(); auto scan = nlohmann::json::parse(ScanResult({})); scan.update(patch);
+    discovery_fixture.scan = scan.dump(); run(BitcoinRpcErrorCode::kMalformed, 3);
+  }
+  for (auto amount : {"0", "-1", "1e-8", "0.000000001", "21000000.00000001", "18446744073709551616", "\"0.1\""}) {
+    reset(); discovery_fixture.scan = ScanResult({ScanCoin(1, amount)}); run(BitcoinRpcErrorCode::kMalformed, 3);
+  }
+  for (uint64_t height : {uint64_t{0}, uint64_t{101}, std::numeric_limits<uint64_t>::max()}) {
+    reset(); discovery_fixture.scan = ScanResult({ScanCoin(1, "1", height)}); run(BitcoinRpcErrorCode::kMalformed, 3);
+  }
+  for (const auto& field : {"txid", "vout", "height", "scriptPubKey"}) {
+    reset(); auto coin = nlohmann::json::parse(ScanCoin(1, "1")); coin.erase(field);
+    discovery_fixture.scan = ScanResult({coin.dump()}); run(BitcoinRpcErrorCode::kMalformed, 3);
+  }
+  for (const auto& patch : {nlohmann::json{{"vout", 4294967296ULL}}, nlohmann::json{{"vout", -1}},
+                           nlohmann::json{{"txid", std::string(64, '0')}}, nlohmann::json{{"confirmations", 3}},
+                           nlohmann::json{{"scriptPubKey", "0014" + std::string(40, 'b')}}}) {
+    reset(); auto coin = nlohmann::json::parse(ScanCoin(1, "1")); coin.update(patch);
+    discovery_fixture.scan = ScanResult({coin.dump()}); run(BitcoinRpcErrorCode::kMalformed, 3);
+  }
+  reset(); discovery_fixture.scan = ScanResult({ScanCoin(1), ScanCoin(1)}); run(BitcoinRpcErrorCode::kMalformed, 3);
+  reset(); query.min_confirmations = 3;
+  discovery_fixture.scan = ScanResult({ScanCoin(1), ScanCoin(1, "1", 100)}); // Duplicates rejected even below policy.
+  run(BitcoinRpcErrorCode::kMalformed, 3);
+  reset(); query.min_confirmations = 3;
+  found = run(BitcoinRpcErrorCode::kNone, 3);
+  Require(found.excluded_below_min_confirmations == 1 && found.outputs.empty(), "confirmation exclusion count");
+  reset(); discovery_fixture.scan = ScanResult({ScanCoin(2), ScanCoin(1)});
+  found = run(BitcoinRpcErrorCode::kNone, 9);
+  Require(found.outputs.size() == 2 && found.outputs[0].claim < found.outputs[1].claim &&
+          found.current_rechecked && found.challenge_compatible && found.observed_height == 101 &&
+          found.scan_height == 100, "sorted/current discovery observation");
+  std::vector<QuietProofClaimV1> claims;
+  for (const auto& coin : found.outputs) claims.push_back(coin.claim);
+  QuietProofStatementV1 statement;
+  QuietProofChallengeOptions options{QuietProofNetwork::kRegtest, "verifier", "proof-of-funds", "message"};
+  Require(CreateQuietProofChallenge(claims, options, &statement) && !statement.has_snapshot,
+          "discovery cannot feed challenge builder");
+  reset(); discovery_fixture.txout = LookupTxOut("0.00000001", "2", "0014" + std::string(40, 'b'));
+  run(BitcoinRpcErrorCode::kInconclusive, 6);
+  reset(); discovery_fixture.txout = "null"; run(BitcoinRpcErrorCode::kInconclusive, 5);
+  reset(); discovery_fixture.txout = LookupTxOut("0.1"); run(BitcoinRpcErrorCode::kInconclusive, 6);
+  reset(); query.min_confirmations = 3; discovery_fixture.scan = ScanResult({ScanCoin(1, "0.00000001", 98)});
+  run(BitcoinRpcErrorCode::kInconclusive, 6);
+  reset(); discovery_fixture.scan = ScanResult({ScanCoin(1), ScanCoin(2)}); discovery_fixture.split_tip = true;
+  run(BitcoinRpcErrorCode::kInconclusive, 9);
+  reset(); discovery_fixture.recheck_block = std::string(64, 'f');
+  discovery_fixture.txout = LookupTxOut("0.00000001", "2", kDiscoveryScript, discovery_fixture.recheck_block);
+  found = run(BitcoinRpcErrorCode::kNone, 6);
+  Require(found.observed_block != *found.scan_block, "tip advance discarded scan observation");
+  for (unsigned count : {16, 17}) {
+    reset(); std::vector<std::string> coins;
+    for (unsigned i = count; i > 0; --i) coins.push_back(ScanCoin(i));
+    discovery_fixture.scan = ScanResult(coins);
+    found = run(BitcoinRpcErrorCode::kNone, count == 16 ? 51 : 3);
+    Require(found.outputs.size() == count && found.challenge_compatible == (count == 16) &&
+            found.current_rechecked == (count == 16), "output count silently truncated");
+    claims.clear(); for (const auto& coin : found.outputs) claims.push_back(coin.claim);
+    Require(CreateQuietProofChallenge(claims, options, &statement) == (count == 16), "builder excessive set contract");
+  }
+  reset(); auto boundary = nlohmann::json::parse(ScanCoin(1, "1")); boundary["vout"] = 4294967295ULL;
+  discovery_fixture.scan = ScanResult({boundary.dump()}); discovery_fixture.txout = LookupTxOut("1");
+  found = run(BitcoinRpcErrorCode::kNone, 6);
+  Require(found.outputs[0].claim.vout == 4294967295ULL, "u32 vout boundary rejected");
+  for (auto amount : {"0.1", "20999999.99999999", "21000000"}) {
+    reset(); discovery_fixture.scan = ScanResult({ScanCoin(1, amount)});
+    discovery_fixture.txout = LookupTxOut(amount);
+    found = run(BitcoinRpcErrorCode::kNone, 6);
+    uint64_t sats = 0;
+    Require(quietproof_internal::BitcoinAmountToSats(amount, &sats) && found.outputs[0].claim.amount_sats == sats,
+            "scan original decimal amount changed");
+  }
+  reset(); query.min_confirmations = 2;
+  discovery_fixture.scan = ScanResult({ScanCoin(1), ScanCoin(2, "0.00000001", 100)});
+  found = run(BitcoinRpcErrorCode::kNone, 6);
+  Require(found.outputs.size() == 1 && found.excluded_below_min_confirmations == 1, "mixed confirmation filtering");
+  reset(); discovery_fixture.scan = ScanResult({ScanCoin(1, "21000000"), ScanCoin(2, "0.00000001")});
+  found = run(BitcoinRpcErrorCode::kNone, 3);
+  Require(!found.challenge_compatible && !found.current_rechecked && found.outputs.size() == 2, "sum bound compatibility");
+  claims.clear(); for (const auto& coin : found.outputs) claims.push_back(coin.claim);
+  Require(!CreateQuietProofChallenge(claims, options, &statement), "aggregate-overflow set built challenge");
+  std::cout << "Scan discovery cases passed: " << cases << '\n';
+}
+
+struct WalletFixture {
+  std::string result;
+  std::string name = "watch";
+  uint64_t minimum = 1;
+  bool missing = false;
+} wallet_fixture;
+std::string WalletCoin(unsigned index, const std::string& amount = "0.00000001",
+                       uint64_t confirmations = 2) {
+  auto coin = ScanCoin(index, amount);
+  coin.pop_back();
+  return coin + ",\"confirmations\":" + std::to_string(confirmations) +
+      ",\"address\":\"" + kDiscoveryAddress + "\",\"spendable\":false,\"safe\":true}";
+}
+std::string WalletResult(const std::vector<std::string>& coins) {
+  std::string result = "[";
+  for (size_t i = 0; i < coins.size(); ++i) result += (i ? "," : "") + coins[i];
+  return result + "]";
+}
+bool WalletHttp(const BitcoinCoreRpcConfig& config, const std::string& text, bool scan,
+                HttpResponse* response, BitcoinRpcError* error, const std::optional<std::string>& wallet) {
+  const auto request = nlohmann::json::parse(text);
+  if (request["method"] != "listunspent") {
+    Require(!wallet, "wallet discovery routed node calls through wallet");
+    return DiscoveryHttp(config, text, scan, response, error, std::nullopt);
+  }
+  Require(!scan && wallet == wallet_fixture.name, "wallet route or deadline lost");
+  Require(request["params"] == nlohmann::json::array({wallet_fixture.minimum, 9999999,
+      nlohmann::json::array({kDiscoveryAddress}), false}), "listunspent exact bounded filter/unsafe arguments");
+  discovery_fixture.requests.push_back(request);
+  response->status = 200;
+  response->body = "{\"jsonrpc\":\"2.0\",\"id\":" + request["id"].dump() +
+      (wallet_fixture.missing ? ",\"error\":{\"code\":-18,\"message\":\"server-secret\"}}" :
+       ",\"result\":" + wallet_fixture.result + "}");
+  return true;
+}
+void TestWalletDiscovery() {
+  size_t cases = 0;
+  BitcoinUtxoQuery query{kDiscoveryAddress};
+  auto reset = [&] {
+    discovery_fixture = {};
+    wallet_fixture = {};
+    wallet_fixture.result = WalletResult({WalletCoin(1)});
+    query = BitcoinUtxoQuery{kDiscoveryAddress}; query.wallet = wallet_fixture.name;
+  };
+  auto run = [&](BitcoinRpcErrorCode expected, size_t calls) {
+    RpcClient client(Config(), WalletHttp);
+    BitcoinUtxoDiscovery found; found.incompatibility = "sentinel";
+    BitcoinRpcError error;
+    const bool ok = DiscoverAddress(client, query, &found, &error);
+    Require(ok == (expected == BitcoinRpcErrorCode::kNone) && error.code == expected, "wallet discovery result");
+    Require(discovery_fixture.requests.size() == calls, "wallet unexpected call count or fallback");
+    if (!ok) Require(found.incompatibility == "sentinel", "wallet failure changed output");
+    if (wallet_fixture.missing) Require(error.rpc_code == -18, "missing wallet RPC code lost");
+    Require(error.message.find("server-secret") == std::string::npos, "wallet leaked server message");
+    ++cases;
+    return found;
+  };
+  for (auto name : {std::string(), std::string(1025, 'a'), std::string("a\nb"),
+                    std::string("a\0b", 3), std::string(1, static_cast<char>(0xff))}) {
+    reset(); query.wallet = name; run(BitcoinRpcErrorCode::kConfiguration, 0);
+  }
+  reset(); query.min_confirmations = 10000000; run(BitcoinRpcErrorCode::kConfiguration, 0);
+  reset(); wallet_fixture.missing = true; run(BitcoinRpcErrorCode::kRpc, 3);
+  reset(); wallet_fixture.result = "null"; run(BitcoinRpcErrorCode::kMalformed, 3);
+  reset(); wallet_fixture.result = "[]";
+  auto found = run(BitcoinRpcErrorCode::kNone, 3);
+  Require(found.outputs.empty() && !found.challenge_compatible && !found.scan_block && !found.scan_height,
+          "empty wallet result flags");
+  for (const auto& name : {".", "..", "a/b?c#d%@host:123", "watch wallet", "é/財布"}) {
+    reset(); query.wallet = wallet_fixture.name = name; found = run(BitcoinRpcErrorCode::kNone, 6);
+    Require(found.current_rechecked && found.challenge_compatible && found.outputs.size() == 1 &&
+            !found.scan_block && !found.scan_height && found.observed_height == 101,
+            "watch-only wallet result/observation");
+  }
+  for (const auto& field : {"txid", "vout", "scriptPubKey", "confirmations"}) {
+    reset(); auto coin = nlohmann::json::parse(WalletCoin(1, "1")); coin.erase(field);
+    wallet_fixture.result = WalletResult({coin.dump()}); run(BitcoinRpcErrorCode::kMalformed, 3);
+  }
+  for (auto patch : {nlohmann::json{{"confirmations", -1}}, nlohmann::json{{"confirmations", "2"}},
+                     nlohmann::json{{"address", "another-address"}}, nlohmann::json{{"address", 1}},
+                     nlohmann::json{{"vout", 4294967296ULL}},
+                     nlohmann::json{{"scriptPubKey", "0014" + std::string(40, 'b')}}}) {
+    reset(); auto coin = nlohmann::json::parse(WalletCoin(1, "1")); coin.update(patch);
+    wallet_fixture.result = WalletResult({coin.dump()}); run(BitcoinRpcErrorCode::kMalformed, 3);
+  }
+  for (auto amount : {"0", "-1", "1e-8", "0.000000001", "21000000.00000001", "\"0.1\""}) {
+    reset(); wallet_fixture.result = WalletResult({WalletCoin(1, amount)}); run(BitcoinRpcErrorCode::kMalformed, 3);
+  }
+  reset(); wallet_fixture.result = WalletResult({WalletCoin(1), WalletCoin(1)}); run(BitcoinRpcErrorCode::kMalformed, 3);
+  reset(); query.min_confirmations = wallet_fixture.minimum = 3;
+  wallet_fixture.result = WalletResult({WalletCoin(1), WalletCoin(2, "0.00000001", 0)});
+  found = run(BitcoinRpcErrorCode::kNone, 3);
+  Require(found.excluded_below_min_confirmations == 2 && found.outputs.empty(), "wallet minconf policy");
+  reset(); discovery_fixture.txout = "null"; run(BitcoinRpcErrorCode::kInconclusive, 5);
+  reset(); discovery_fixture.txout = LookupTxOut("0.1"); run(BitcoinRpcErrorCode::kInconclusive, 6);
+  reset(); wallet_fixture.result = WalletResult({WalletCoin(2), WalletCoin(1)}); discovery_fixture.split_tip = true;
+  run(BitcoinRpcErrorCode::kInconclusive, 9);
+  reset(); auto unsafe = WalletCoin(1); unsafe.replace(unsafe.find("\"safe\":true"), 11, "\"safe\":false");
+  wallet_fixture.result = WalletResult({unsafe}); discovery_fixture.txout = "null";
+  run(BitcoinRpcErrorCode::kInconclusive, 5); // Neither safe nor spendable substitutes for chain evidence.
+  reset(); wallet_fixture.result = WalletResult({WalletCoin(2), WalletCoin(1)});
+  const auto wallet_outputs = run(BitcoinRpcErrorCode::kNone, 9).outputs;
+  discovery_fixture = {}; discovery_fixture.scan = ScanResult({ScanCoin(1), ScanCoin(2)});
+  RpcClient scan_client(Config(), DiscoveryHttp);
+  BitcoinUtxoDiscovery scanned;
+  Require(DiscoverAddress(scan_client, BitcoinUtxoQuery{kDiscoveryAddress}, &scanned, nullptr), "scan/wallet parity scan");
+  for (size_t i = 0; i < wallet_outputs.size(); ++i)
+    Require(wallet_outputs[i].claim.txid == scanned.outputs[i].claim.txid &&
+            wallet_outputs[i].claim.vout == scanned.outputs[i].claim.vout &&
+            wallet_outputs[i].claim.amount_sats == scanned.outputs[i].claim.amount_sats &&
+            wallet_outputs[i].claim.program == scanned.outputs[i].claim.program &&
+            wallet_outputs[i].confirmations == scanned.outputs[i].confirmations, "scan/wallet claim parity");
+  for (unsigned count : {16, 17}) {
+    reset(); std::vector<std::string> coins;
+    for (unsigned i = count; i > 0; --i) coins.push_back(WalletCoin(i));
+    wallet_fixture.result = WalletResult(coins);
+    found = run(BitcoinRpcErrorCode::kNone, count == 16 ? 51 : 3);
+    Require(found.outputs.size() == count && found.challenge_compatible == (count == 16) &&
+            found.current_rechecked == (count == 16), "wallet outputs silently truncated");
+  }
+  for (auto amount : {"0.1", "20999999.99999999", "21000000"}) {
+    reset(); wallet_fixture.result = WalletResult({WalletCoin(1, amount)});
+    discovery_fixture.txout = LookupTxOut(amount);
+    found = run(BitcoinRpcErrorCode::kNone, 6);
+    uint64_t sats = 0;
+    Require(quietproof_internal::BitcoinAmountToSats(amount, &sats) && found.outputs[0].claim.amount_sats == sats,
+            "wallet original decimal changed");
+  }
+  reset(); wallet_fixture.result = WalletResult({WalletCoin(1, "21000000"), WalletCoin(2)});
+  found = run(BitcoinRpcErrorCode::kNone, 3);
+  Require(!found.challenge_compatible && found.outputs.size() == 2 && !found.current_rechecked, "wallet sum bound");
+  std::cout << "Wallet discovery cases passed: " << cases << '\n';
+}
+
 void TestLookup() {
   using Status = QuietProofChainStatus;
   QuietProofChainRequest request{QuietProofNetwork::kRegtest};
@@ -925,6 +1252,55 @@ void TestClientHttp(const std::string& url, const std::string& cookie, const std
     Require(error.message.find("server-secret") == std::string::npos, "real RPC error leaked");
   }
 }
+void TestPublicDiscoveryHttp(const std::string& url, const std::string& cookie,
+                             const std::string& scenario) {
+  auto config = Config();
+  config.rpc_url = url;
+  config.rpc_cookie = cookie;
+  config.scan_timeout = std::chrono::milliseconds(100);
+  BitcoinCoreRpc client(config);
+  BitcoinUtxoDiscovery found;
+  found.incompatibility = "sentinel";
+  BitcoinRpcError error;
+  const bool ok = client.Discover(BitcoinUtxoQuery{kDiscoveryAddress}, &found, &error);
+  if (scenario == "discovery-ok" || scenario == "discovery-empty") {
+    Require(ok && error.code == BitcoinRpcErrorCode::kNone, "public discovery failed");
+    Require(found.outputs.size() == (scenario == "discovery-ok" ? 1 : 0), "public discovery outputs");
+    Require(found.scan_height == 100 && found.current_rechecked == (scenario == "discovery-ok"),
+            "public discovery observation");
+    if (scenario == "discovery-ok")
+      Require(found.outputs[0].claim.amount_sats == 1 && found.observed_height == 101 &&
+              found.outputs[0].confirmations == 3, "public exact money/tip advance");
+  } else {
+    const auto expected = scenario == "discovery-invalid" ? BitcoinRpcErrorCode::kInvalidAddress :
+        scenario == "discovery-unsupported" ? BitcoinRpcErrorCode::kUnsupportedScript :
+        scenario == "discovery-busy" ? BitcoinRpcErrorCode::kScanBusy :
+        scenario == "discovery-timeout" ? BitcoinRpcErrorCode::kTimeout : BitcoinRpcErrorCode::kScanIncomplete;
+    Require(!ok && error.code == expected && found.incompatibility == "sentinel", "public discovery error");
+  }
+}
+void TestPublicWalletHttp(const std::string& url, const std::string& cookie,
+                          const std::string& scenario) {
+  auto config = Config(); config.rpc_url = url; config.rpc_cookie = cookie;
+  BitcoinCoreRpc client(config);
+  BitcoinUtxoQuery query{kDiscoveryAddress};
+  query.wallet = scenario == "wallet-dot" ? "." : scenario == "wallet-dotdot" ? ".." :
+      scenario == "wallet-unicode" ? "é/財布" : "watch /../?x#%@:123";
+  BitcoinUtxoDiscovery found; found.incompatibility = "sentinel";
+  BitcoinRpcError error;
+  const bool ok = client.Discover(query, &found, &error);
+  if (scenario == "wallet-missing" || scenario == "wallet-redirect" || scenario == "wallet-auth") {
+    const auto expected = scenario == "wallet-missing" ? BitcoinRpcErrorCode::kRpc :
+        scenario == "wallet-auth" ? BitcoinRpcErrorCode::kAuthentication : BitcoinRpcErrorCode::kHttp;
+    Require(!ok && error.code == expected && found.incompatibility == "sentinel", "public wallet failure");
+    if (scenario == "wallet-missing") Require(error.rpc_code == -18 && error.http_status == 500, "missing wallet diagnostics");
+  } else {
+    Require(ok && error.code == BitcoinRpcErrorCode::kNone && found.outputs.size() == 1 &&
+            found.outputs[0].claim.amount_sats == 1 && found.current_rechecked && found.challenge_compatible &&
+            !found.scan_block && !found.scan_height && found.observed_height == 101,
+            "public wallet route/recheck result");
+  }
+}
 void TestRotation(const std::string& url, const std::string& cookie) {
   TestHttp(url, cookie, "ok");
   WriteCookie(cookie, "__cookie__:rotated-secret");
@@ -933,11 +1309,13 @@ void TestRotation(const std::string& url, const std::string& cookie) {
 }  // namespace
 int main(int argc, char** argv) {
   try {
-    if (argc == 5 && std::string(argv[1]) == "--provider") TestPublicProviderHttp(argv[2], argv[3], argv[4]);
+    if (argc == 5 && std::string(argv[1]) == "--wallet") TestPublicWalletHttp(argv[2], argv[3], argv[4]);
+    else if (argc == 5 && std::string(argv[1]) == "--discover") TestPublicDiscoveryHttp(argv[2], argv[3], argv[4]);
+    else if (argc == 5 && std::string(argv[1]) == "--provider") TestPublicProviderHttp(argv[2], argv[3], argv[4]);
     else if (argc == 5 && std::string(argv[1]) == "--http") TestHttp(argv[2], argv[3], argv[4]);
     else if (argc == 5 && std::string(argv[1]) == "--rpc") TestClientHttp(argv[2], argv[3], argv[4]);
     else if (argc == 4 && std::string(argv[1]) == "--rotate") TestRotation(argv[2], argv[3]);
-    else if (argc == 1) { TestConfig(); TestCallbacks(); TestCookies(); TestEnvelopes(); TestExactMoney(); TestRequests(); TestLookup(); TestProviderParity(); TestVerifierParity(); }
+    else if (argc == 1) { TestConfig(); TestCallbacks(); TestCookies(); TestEnvelopes(); TestExactMoney(); TestRequests(); TestLookup(); TestProviderParity(); TestVerifierParity(); TestDiscovery(); TestWalletDiscovery(); }
     else throw std::runtime_error("invalid test arguments");
     std::cout << "RPC adapter checks passed\n";
     return 0;

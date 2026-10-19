@@ -27,7 +27,8 @@ bool ResolveRpcConfig(const BitcoinCoreRpcConfig&, ResolvedRpcConfig*,
 // kHttp failures retain the bounded response here for private RPC diagnostics.
 // All other failures leave output unchanged. Public results remain unchanged.
 bool PostRpcHttp(const BitcoinCoreRpcConfig&, const std::string& request,
-                 bool scan, HttpResponse*, BitcoinRpcError*);
+                 bool scan, HttpResponse*, BitcoinRpcError*,
+                 const std::optional<std::string>& wallet = std::nullopt);
 bool SecureCookieMetadata(mode_t mode, uid_t owner, uid_t effective_user);
 
 struct HttpBuffers {

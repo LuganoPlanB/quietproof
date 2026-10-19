@@ -53,6 +53,9 @@ struct BitcoinCoreRpcConfig {
 struct BitcoinUtxoQuery {
   std::string address;
   uint64_t min_confirmations = 1;
+  // Explicit loaded wallet name (1..1024 UTF-8 bytes, no controls). Wallet mode
+  // reflects tracked outputs and Core's locked/immature-coin exclusions; it is
+  // not exhaustive address discovery. Watch-only outputs remain eligible.
   std::optional<std::string> wallet;
 };
 struct BitcoinUtxo {
@@ -62,12 +65,16 @@ struct BitcoinUtxo {
 struct BitcoinUtxoDiscovery {
   QuietProofNetwork network = static_cast<QuietProofNetwork>(0xff);
   std::vector<BitcoinUtxo> outputs;
+  // Current recheck observation when current_rechecked; otherwise scan snapshot
+  // or the tip observed before querying the wallet (wallet results are not atomic).
   std::array<uint8_t, 32> observed_block{};
   uint64_t observed_height = 0;
   std::optional<std::array<uint8_t, 32>> scan_block;
   std::optional<uint64_t> scan_height;
   std::size_t excluded_below_min_confirmations = 0;
   bool current_rechecked = false;
+  // Empty, excessive, or aggregate-overflow sets are returned without selection
+  // and without current rechecks; callers must honor these flags.
   bool challenge_compatible = false;
   std::string incompatibility;
 };
