@@ -19,3 +19,10 @@ add_library(rpc-consumer-library SHARED consumer.cc)
 target_link_libraries(rpc-consumer-library PRIVATE LongfellowZKQuietProof::rpc)
 add_executable(rpc-consumer main.cc)
 target_link_libraries(rpc-consumer PRIVATE rpc-consumer-library)
+
+# Compile the exact shipped source against the installation, never source headers.
+if(NOT EXISTS "${INSTALLED_RPC_EXAMPLE}")
+  message(FATAL_ERROR "INSTALLED_RPC_EXAMPLE must name the installed example source")
+endif()
+add_executable(bitcoin-rpc-example "${INSTALLED_RPC_EXAMPLE}")
+target_link_libraries(bitcoin-rpc-example PRIVATE LongfellowZKQuietProof::rpc)

@@ -26,6 +26,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <sys/stat.h>
@@ -35,6 +36,9 @@
 #include <vector>
 
 #include "quietproof/bitcoin_core.h"
+#ifdef QUIETPROOF_HAS_RPC
+#include "quietproof/bitcoin_rpc.h"
+#endif
 #include "quietproof/challenge.h"
 #include "quietproof/envelope.h"
 #include "quietproof/nonce_store.h"
@@ -62,14 +66,21 @@ void PrintUsage(std::ostream& output) {
   output
       << "usage:\n"
       << "  quietproof challenge create --network NETWORK --verifier ID "
-         "--purpose PURPOSE --message TEXT --claim "
-         "TXID:VOUT:SATOSHIS:PROGRAM [--claim ...] --output REQUEST\n"
+         "--purpose PURPOSE --message TEXT (--address ADDRESS | --claim "
+         "TXID:VOUT:SATOSHIS:PROGRAM [--claim ...]) --output REQUEST\n"
+      << "  quietproof utxos --network NETWORK --address ADDRESS [RPC OPTIONS]\n"
       << "  quietproof prove --request REQUEST --output PROOF\n"
-      << "  quietproof verify PROOF --bitcoin-cli /ABSOLUTE/PATH --verifier ID "
+      << "  quietproof verify PROOF --verifier ID "
          "--purpose PURPOSE --nonce-store FILE [--min-confirmations N] "
-         "[--minimum-total-sats N] [--max-lifetime SECONDS]\n"
+         "[--minimum-total-sats N] [--max-lifetime SECONDS] [--network NETWORK]\n"
+      << "    Native RPC is default; --bitcoin-cli /ABSOLUTE/PATH explicitly "
+         "selects the deprecated legacy verifier.\n"
       << "  quietproof inspect FILE\n"
-      << "networks: mainnet, testnet3 (alias testnet), testnet4, signet, regtest\n";
+      << "networks: mainnet, testnet3 (alias testnet), testnet4, signet, regtest\n"
+      << "RPC OPTIONS: --rpc-url URL --rpc-cookie FILE --rpc-datadir DIR "
+         "--rpc-timeout SECONDS --rpc-scan-timeout SECONDS --rpc-wallet NAME\n"
+      << "Discovery: --min-confirmations N (default 1); scan timeout defaults "
+         "to 600 seconds. Wallet discovery requires an already loaded wallet.\n";
 }
 
 int Usage() {
@@ -291,10 +302,156 @@ int PrintResult(const proofs::QuietProofVerification& verification) {
   return proofs::QuietProofVerifyExitCode(verification.result);
 }
 
+const std::set<std::string> kRpcOptions = {
+    "--rpc-url", "--rpc-cookie", "--rpc-datadir", "--rpc-timeout"};
+const std::set<std::string> kDiscoveryOptions = {
+    "--address", "--min-confirmations", "--rpc-scan-timeout", "--rpc-wallet"};
+
+bool HasDiscoveryOptions(const Options& options) {
+  for (const auto& name : kRpcOptions)
+    if (options.count(name)) return true;
+  for (const auto& name : kDiscoveryOptions)
+    if (options.count(name)) return true;
+  return false;
+}
+
+#ifdef QUIETPROOF_HAS_RPC
+// Parse seconds without overflowing the signed milliseconds representation.
+bool ParseTimeout(const std::string& text, std::chrono::milliseconds* value) {
+  uint64_t seconds = 0;
+  if (!ParseU64(text, &seconds) || seconds == 0 ||
+      seconds > static_cast<uint64_t>(
+                    std::numeric_limits<std::chrono::milliseconds::rep>::max()) /
+                    1000) return false;
+  *value = std::chrono::milliseconds(seconds * 1000);
+  return true;
+}
+
+bool ParseRpcOptions(const Options& options, proofs::BitcoinCoreRpcConfig* config) {
+  if (!One(options, "--rpc-url", &config->rpc_url, false) ||
+      !One(options, "--rpc-cookie", &config->rpc_cookie, false) ||
+      !One(options, "--rpc-datadir", &config->rpc_datadir, false)) return false;
+  for (const auto& name : kRpcOptions) {
+    if (options.count(name) && options.at(name).front().empty()) return false;
+  }
+  std::string timeout;
+  return One(options, "--rpc-timeout", &timeout, false) &&
+         (!options.count("--rpc-timeout") || ParseTimeout(timeout, &config->rpc_timeout));
+}
+
+const char* RpcErrorName(proofs::BitcoinRpcErrorCode code) {
+  using E = proofs::BitcoinRpcErrorCode;
+  switch (code) {
+    case E::kNone: return "none";
+    case E::kConfiguration: return "configuration";
+    case E::kCookie: return "cookie";
+    case E::kAuthentication: return "authentication";
+    case E::kConnection: return "connection";
+    case E::kTimeout: return "timeout";
+    case E::kResponseTooLarge: return "response_too_large";
+    case E::kHttp: return "http";
+    case E::kRpc: return "rpc";
+    case E::kMalformed: return "malformed";
+    case E::kWrongNetwork: return "wrong_network";
+    case E::kInvalidAddress: return "invalid_address";
+    case E::kUnsupportedScript: return "unsupported_script";
+    case E::kScanBusy: return "scan_busy";
+    case E::kScanIncomplete: return "scan_incomplete";
+    case E::kInconclusive: return "inconclusive";
+  }
+  return "unknown";
+}
+
+int Discover(const Options& options, proofs::QuietProofNetwork network,
+             proofs::BitcoinUtxoDiscovery* found) {
+  proofs::BitcoinCoreRpcConfig config(network);
+  proofs::BitcoinUtxoQuery query;
+  std::string confirmations, scan_timeout, wallet;
+  if (!ParseRpcOptions(options, &config) ||
+      !One(options, "--address", &query.address) || query.address.empty() ||
+      !One(options, "--min-confirmations", &confirmations, false) ||
+      !One(options, "--rpc-scan-timeout", &scan_timeout, false) ||
+      !One(options, "--rpc-wallet", &wallet, false) ||
+      (options.count("--min-confirmations") &&
+       (!ParseU64(confirmations, &query.min_confirmations) || query.min_confirmations == 0)) ||
+      (options.count("--rpc-scan-timeout") && !ParseTimeout(scan_timeout, &config.scan_timeout)))
+    return Usage();
+  if (options.count("--rpc-wallet")) {
+    if (wallet.empty()) return Usage();
+    query.wallet = wallet;
+  } else {
+    std::cerr << "Scanning Core's whole UTXO set; this may take minutes and "
+                 "uses the node-global scan. A timeout may leave it running; "
+                 "QuietProof does not retry or abort scans.\n";
+  }
+  proofs::BitcoinCoreRpc bitcoin(std::move(config));
+  proofs::BitcoinRpcError error;
+  if (bitcoin.Discover(query, found, &error)) return 0;
+  std::cerr << nlohmann::json({{"error", RpcErrorName(error.code)},
+                              {"message", error.message}}).dump() << '\n';
+  using E = proofs::BitcoinRpcErrorCode;
+  if (error.code == E::kConfiguration) return kUsage;
+  if (error.code == E::kInvalidAddress || error.code == E::kUnsupportedScript ||
+      error.code == E::kMalformed || error.code == E::kWrongNetwork) return kData;
+  return kIoError;
+}
+#endif
+
+#ifndef QUIETPROOF_HAS_RPC
+int NativeUnavailable() {
+  std::cerr << "{\"error\":\"native_unavailable\",\"message\":\"Native Bitcoin Core RPC "
+               "support is unavailable in this build\"}\n";
+  return kUsage;
+}
+#endif
+
+int Utxos(int argc, char** argv) {
+  auto allowed = kRpcOptions;
+  allowed.insert(kDiscoveryOptions.begin(), kDiscoveryOptions.end());
+  allowed.insert("--network");
+  Options options;
+  std::string network_name;
+  proofs::QuietProofNetwork network;
+  if (!ParseOptions(argc, argv, 2, allowed, &options) ||
+      !One(options, "--network", &network_name) ||
+      !proofs::QuietProofParseNetwork(network_name, &network)) return Usage();
+#ifdef QUIETPROOF_HAS_RPC
+  proofs::BitcoinUtxoDiscovery found;
+  const int status = Discover(options, network, &found);
+  if (status != 0) return status;
+  nlohmann::json outputs = nlohmann::json::array();
+  for (const auto& output : found.outputs) {
+    outputs.push_back({{"txid", ArrayHex(output.claim.txid)},
+                       {"vout", output.claim.vout},
+                       {"amount_sats", output.claim.amount_sats},
+                       {"program", ArrayHex(output.claim.program)},
+                       {"confirmations", output.confirmations}});
+  }
+  nlohmann::json result = {
+      {"network", proofs::QuietProofNetworkName(found.network)},
+      {"source", options.count("--rpc-wallet") ? "wallet" : "scan"},
+      {"outputs", outputs}, {"count", found.outputs.size()},
+      {"excluded_below_min_confirmations", found.excluded_below_min_confirmations},
+      {"observed_block", ArrayHex(found.observed_block)},
+      {"observed_height", found.observed_height},
+      {"scan_block", found.scan_block ? nlohmann::json(ArrayHex(*found.scan_block)) : nlohmann::json(nullptr)},
+      {"scan_height", found.scan_height ? nlohmann::json(*found.scan_height) : nlohmann::json(nullptr)},
+      {"current_rechecked", found.current_rechecked},
+      {"challenge_compatible", found.challenge_compatible},
+      {"incompatibility", found.incompatibility}};
+  std::cout << result.dump() << '\n';
+  return 0;
+#else
+  return NativeUnavailable();
+#endif
+}
+
 int ChallengeCreate(int argc, char** argv) {
-  const std::set<std::string> allowed = {
+  std::set<std::string> allowed = {
       "--network", "--verifier", "--purpose", "--message", "--claim",
       "--output", "--expires-in"};
+  allowed.insert(kRpcOptions.begin(), kRpcOptions.end());
+  allowed.insert(kDiscoveryOptions.begin(), kDiscoveryOptions.end());
   Options options;
   if (!ParseOptions(argc, argv, 3, allowed, &options)) return Usage();
   std::string network_name, verifier, purpose, message, output_path,
@@ -309,8 +466,10 @@ int ChallengeCreate(int argc, char** argv) {
   if (!lifetime_text.empty() && !ParseU64(lifetime_text, &lifetime)) return Usage();
   if (lifetime == 0 || lifetime > kMaximumLifetimeSeconds) return Usage();
   const auto claims = options.find("--claim");
-  if (claims == options.end() || claims->second.empty() ||
-      claims->second.size() > proofs::kQuietProofMaxClaims) return Usage();
+  const bool address_mode = options.count("--address") != 0;
+  if (address_mode == (claims != options.end())) return Usage();
+  if (!address_mode && (HasDiscoveryOptions(options) || claims->second.empty() ||
+      claims->second.size() > proofs::kQuietProofMaxClaims)) return Usage();
 
   proofs::QuietProofChallengeOptions challenge_options;
   if (!proofs::QuietProofParseNetwork(network_name, &challenge_options.network))
@@ -320,10 +479,28 @@ int ChallengeCreate(int argc, char** argv) {
   challenge_options.message = message;
   challenge_options.lifetime_seconds = lifetime;
   std::vector<proofs::QuietProofClaimV1> parsed_claims;
-  for (const auto& encoded_claim : claims->second) {
-    proofs::QuietProofClaimV1 claim;
-    if (!ParseClaim(encoded_claim, &claim)) return Usage();
-    parsed_claims.push_back(claim);
+  if (address_mode) {
+#ifdef QUIETPROOF_HAS_RPC
+    proofs::BitcoinUtxoDiscovery found;
+    const int status = Discover(options, challenge_options.network, &found);
+    if (status != 0) return status;
+    if (!found.challenge_compatible || !found.current_rechecked) {
+      const char* category = found.outputs.empty() ? "no_eligible_outputs"
+                                                   : "incompatible_discovery";
+      std::cerr << nlohmann::json({{"error", category},
+                                  {"message", found.incompatibility}}).dump() << '\n';
+      return kData;
+    }
+    for (const auto& output : found.outputs) parsed_claims.push_back(output.claim);
+#else
+    return NativeUnavailable();
+#endif
+  } else {
+    for (const auto& encoded_claim : claims->second) {
+      proofs::QuietProofClaimV1 claim;
+      if (!ParseClaim(encoded_claim, &claim)) return Usage();
+      parsed_claims.push_back(claim);
+    }
   }
   proofs::QuietProofStatementV1 statement;
   proofs::QuietProofChallengeError error;
@@ -409,22 +586,36 @@ int Verify(int argc, char** argv) {
   if (argc < 3) return Usage();
   const std::string proof_path = argv[2];
   Options options;
-  if (!ParseOptions(argc, argv, 3,
-                    {"--bitcoin-cli", "--verifier", "--purpose",
-                     "--nonce-store", "--min-confirmations",
-                     "--minimum-total-sats", "--max-lifetime"},
-                    &options)) return Usage();
+  auto allowed = kRpcOptions;
+  allowed.insert({"--bitcoin-cli", "--verifier", "--purpose", "--nonce-store",
+                  "--min-confirmations", "--minimum-total-sats",
+                  "--max-lifetime", "--network"});
+  if (!ParseOptions(argc, argv, 3, allowed, &options)) return Usage();
   std::string executable, verifier, purpose, nonce_store, confirmations_text,
-      minimum_text, lifetime_text;
-  if (!One(options, "--bitcoin-cli", &executable) ||
+      minimum_text, lifetime_text, network_name;
+  if (!One(options, "--bitcoin-cli", &executable, false) ||
       !One(options, "--verifier", &verifier) ||
       !One(options, "--purpose", &purpose) ||
       !One(options, "--nonce-store", &nonce_store) ||
       !One(options, "--min-confirmations", &confirmations_text, false) ||
       !One(options, "--minimum-total-sats", &minimum_text, false) ||
-      !One(options, "--max-lifetime", &lifetime_text, false)) return Usage();
-  if (executable.empty() || executable[0] != '/' ||
-      access(executable.c_str(), X_OK) != 0) return Usage();
+      !One(options, "--max-lifetime", &lifetime_text, false) ||
+      !One(options, "--network", &network_name, false)) return Usage();
+  const bool legacy = options.count("--bitcoin-cli") != 0;
+  if (legacy) {
+    if (executable.empty() || executable[0] != '/' ||
+        access(executable.c_str(), X_OK) != 0) return Usage();
+    for (const auto& name : kRpcOptions)
+      if (options.count(name)) return Usage();
+    std::cerr << "--bitcoin-cli selects the deprecated legacy backend; "
+                 "use native Bitcoin Core RPC for new integrations.\n";
+  }
+  proofs::QuietProofNetwork asserted_network;
+  if (options.count("--network") &&
+      !proofs::QuietProofParseNetwork(network_name, &asserted_network)) return Usage();
+#ifndef QUIETPROOF_HAS_RPC
+  if (!legacy) return NativeUnavailable();
+#endif
   uint64_t min_confirmations = 1, minimum_total = 0,
            max_lifetime = kMaximumLifetimeSeconds;
   if ((!confirmations_text.empty() &&
@@ -444,10 +635,26 @@ int Verify(int argc, char** argv) {
                             ? proofs::QuietProofVerifyResult::kUnsupported
                             : proofs::QuietProofVerifyResult::kMalformedStatement,
                         {}});
-  proofs::BitcoinCoreCurrentTipProvider provider(executable,
-                                                  envelope.statement.network);
+  if (options.count("--network") && asserted_network != envelope.statement.network) {
+    std::cerr << "{\"error\":\"wrong_network\",\"message\":\"Proof network does not "
+                 "match the local network policy\"}\n";
+    return PrintResult({proofs::QuietProofVerifyResult::kInvalidProof, {}});
+  }
+  std::unique_ptr<proofs::QuietProofChainProvider> provider;
+  if (legacy) {
+    provider = std::make_unique<proofs::BitcoinCoreCurrentTipProvider>(
+        executable, envelope.statement.network);
+  } else {
+#ifdef QUIETPROOF_HAS_RPC
+    proofs::BitcoinCoreRpcConfig rpc_config(envelope.statement.network);
+    if (!ParseRpcOptions(options, &rpc_config)) return Usage();
+    provider = std::make_unique<proofs::BitcoinCoreRpc>(std::move(rpc_config));
+#endif
+  }
+  std::cerr << "Bitcoin Core verification network: "
+            << proofs::QuietProofNetworkName(envelope.statement.network) << '\n';
   proofs::QuietProofVerifierConfig config;
-  config.provider = &provider;
+  config.provider = provider.get();
   config.supports = [](const proofs::QuietProofEnvelopeV1& candidate) {
     return proofs::PoKCProofSupported(candidate);
   };
@@ -469,7 +676,11 @@ int Verify(int argc, char** argv) {
   };
   config.min_confirmations = min_confirmations;
   config.minimum_total_sats = minimum_total;
-  return PrintResult(proofs::VerifyQuietProof(wire, config));
+  const auto verification = proofs::VerifyQuietProof(wire, config);
+  if (!legacy && verification.result == proofs::QuietProofVerifyResult::kStateInconclusive)
+    std::cerr << "{\"error\":\"chain_state_inconclusive\",\"message\":\"Native Bitcoin "
+                 "Core RPC could not establish the required chain evidence\"}\n";
+  return PrintResult(verification);
 }
 
 int Inspect(const std::string& path) {
@@ -511,6 +722,7 @@ int QuietProofMain(int argc, char** argv) {
   }
   if (argc >= 3 && std::string(argv[1]) == "challenge" &&
       std::string(argv[2]) == "create") return ChallengeCreate(argc, argv);
+  if (argc >= 2 && std::string(argv[1]) == "utxos") return Utxos(argc, argv);
   if (argc >= 2 && std::string(argv[1]) == "prove") return Prove(argc, argv);
   if (argc >= 3 && std::string(argv[1]) == "verify") return Verify(argc, argv);
   if (argc == 3 && std::string(argv[1]) == "inspect") return Inspect(argv[2]);

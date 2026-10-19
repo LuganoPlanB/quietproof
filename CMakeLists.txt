@@ -37,9 +37,24 @@ if(QUIETPROOF_BUILD_RPC)
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LongfellowZKQuietProof)
 endif()
 
+option(QUIETPROOF_BUILD_EXAMPLES "Build the native Bitcoin Core RPC example" OFF)
+if(QUIETPROOF_BUILD_EXAMPLES)
+  if(NOT QUIETPROOF_BUILD_RPC)
+    message(FATAL_ERROR "QUIETPROOF_BUILD_EXAMPLES requires QUIETPROOF_BUILD_RPC")
+  endif()
+  add_executable(bitcoin-rpc-example examples/bitcoin_rpc.cc)
+  target_link_libraries(bitcoin-rpc-example PRIVATE LongfellowZKQuietProof::rpc)
+endif()
+install(FILES examples/bitcoin_rpc.cc
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/LongfellowZKQuietProof/examples)
+
 add_executable(quietproof-cli src/quietproof_main.cc)
 set_target_properties(quietproof-cli PROPERTIES OUTPUT_NAME quietproof)
 target_link_libraries(quietproof-cli PRIVATE LongfellowZKQuietProof::quietproof)
+if(QUIETPROOF_BUILD_RPC)
+  target_link_libraries(quietproof-cli PRIVATE LongfellowZKQuietProof::rpc)
+  target_compile_definitions(quietproof-cli PRIVATE QUIETPROOF_HAS_RPC=1)
+endif()
 
 install(TARGETS quietproof EXPORT LongfellowZKQuietProofTargets)
 install(TARGETS quietproof-cli RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -102,6 +117,15 @@ if(BUILD_TESTING)
   add_pokc_test(pokc-sage-test tests/quietproof/pokc_sage_vector_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/testdata/pokc_sage_vectors.json)
   add_test(NAME quietproof-cli-test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/cli_test.sh $<TARGET_FILE:quietproof-cli>)
+  if(QUIETPROOF_BUILD_RPC)
+    set(_quietproof_cli_rpc_mode --cli)
+  else()
+    set(_quietproof_cli_rpc_mode --cli-off)
+  endif()
+  add_test(NAME quietproof-cli-rpc-test COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/rpc_http_fixture.py
+    $<TARGET_FILE:quietproof-cli> ${_quietproof_cli_rpc_mode})
+  set_tests_properties(quietproof-cli-rpc-test PROPERTIES TIMEOUT 60)
   add_test(NAME pokc-vector-generation-test
     COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/pokc_vector_generation_test.py)
