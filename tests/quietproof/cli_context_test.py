@@ -7,6 +7,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 BINARY = sys.argv.pop(1)
@@ -38,9 +39,18 @@ class ContextTest(unittest.TestCase):
         ], text=True, capture_output=True, timeout=10)
 
     def test_omitted_fields_and_empty_message(self):
+        before = int(time.time())
         result = self.create()
         self.assertEqual(result.returncode, 0, result.stderr)
         info = json.loads(result.stdout)
+        self.assertLessEqual(before, info['request_created_at'])
+        self.assertLessEqual(info['request_created_at'], int(time.time()))
+        inspected = subprocess.run([BINARY, 'inspect', str(self.request)],
+                                   text=True, capture_output=True, check=True, timeout=10)
+        timestamps = json.loads(inspected.stdout)
+        self.assertEqual(timestamps['request_created_at'], info['request_created_at'])
+        self.assertEqual(timestamps['not_before'], info['request_created_at'])
+        self.assertGreater(timestamps['expires_at'], info['request_created_at'])
         self.assertEqual((info['verifier'], info['purpose']), ('unscoped', 'proof-of-funds'))
         verifier, purpose, nonce, digest = context(self.request.read_bytes())
         self.assertEqual((verifier, purpose), ('unscoped', 'proof-of-funds'))

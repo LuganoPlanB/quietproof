@@ -551,6 +551,7 @@ int ChallengeCreate(int argc, char** argv) {
                            {"network", proofs::QuietProofNetworkName(statement.network)},
                            {"verifier", statement.verifier},
                            {"purpose", statement.purpose},
+                           {"request_created_at", statement.not_before},
                            {"expires_at", statement.expires_at},
                            {"claims", statement.claims.size()}};
   std::cout << result.dump() << '\n';
@@ -666,6 +667,8 @@ int Prove(int argc, char** argv) {
   }
   std::cout << nlohmann::json({{"result", "proof_created"},
                                {"proof", output_path},
+                               {"request_created_at", envelope.statement.not_before},
+                               {"proof_created_at", envelope.proof_created_at},
                                {"proof_bytes", envelope.proof.bytes.size()}}).dump()
             << '\n';
   return 0;
@@ -789,6 +792,7 @@ int Inspect(const std::string& path) {
                            {"verifier", statement.verifier},
                            {"purpose", statement.purpose},
                            {"not_before", statement.not_before},
+                           {"request_created_at", statement.not_before},
                            {"expires_at", statement.expires_at},
                            {"claims", statement.claims.size()},
                            {"has_snapshot", statement.has_snapshot}};

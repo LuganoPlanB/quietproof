@@ -129,6 +129,9 @@ if(BUILD_TESTING)
       LABELS "bitcoin-regtest;proof-heavy" SKIP_RETURN_CODE 77)
   endif()
   add_pokc_test(pokc-test tests/quietproof/pokc_test.cc)
+  add_test(NAME pokc-timestamp-test COMMAND pokc-test --timestamp-roundtrip)
+  set_tests_properties(pokc-timestamp-test PROPERTIES
+    LABELS "proof-heavy" RUN_SERIAL TRUE TIMEOUT 600)
   file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tests/results")
   set_tests_properties(pokc-test PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")

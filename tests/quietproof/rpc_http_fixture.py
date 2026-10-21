@@ -547,7 +547,7 @@ def api_driver_main(binary, full_proof=False):
                     '751e76e8199196d454941c45d1b3a323f1433bd6'))
                 run(['prove', str(matching), str(output)], key_input='0' * 63 + '1\n')
                 assert output.stat().st_mode & 0o777 == 0o600
-                assert output.read_bytes().startswith(b'QPE1\x01')
+                assert output.read_bytes().startswith(b'QPE1\x02')
                 assert len(origin.records) == before, 'offline proof used RPC'
                 result = run(['verify', 'regtest', str(output), str(nonce)] + endpoint, 5)
                 assert result.stdout.strip() == 'state_inconclusive'

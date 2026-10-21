@@ -37,6 +37,10 @@ Context flags are optional: verifier defaults to `unscoped`, purpose to `proof-o
 
 ## 2. The prover reviews and proves
 
+`inspect` shows `request_created_at` and expiry; new proofs also carry
+`proof_created_at` (prover start). Both are bound local-clock Unix timestamps,
+not independent evidence of creation time. Legacy proofs have no proof timestamp.
+
 The prover inspects the canonical request before using any key:
 
 ```sh

@@ -29,13 +29,26 @@ namespace proofs {
 constexpr size_t kQuietProofMaxProofBytes = size_t{128} * 1024 * 1024;
 constexpr size_t kQuietProofEnvelopeOverheadBytes = 5 + 4 + 32 + 4 + 4 + 4 + 4;
 constexpr size_t kQuietProofMaxEnvelopeBytes =
-    kQuietProofEnvelopeOverheadBytes + kQuietProofMaxStatementBytes +
+    kQuietProofEnvelopeOverheadBytes + 8 + kQuietProofMaxStatementBytes +
     kQuietProofMaxProofBytes;
-struct QuietProofEnvelopeV1 { QuietProofStatementV1 statement; PoKCProofV1 proof; };
+// The type retains its public API name; envelope_version selects the wire format.
+struct QuietProofEnvelopeV1 {
+  QuietProofStatementV1 statement;
+  PoKCProofV1 proof;
+  uint8_t envelope_version = 1;
+  uint64_t proof_created_at = 0;  // Unix seconds; absent in legacy envelopes.
+};
+
+inline bool QuietProofEnvelopeTimeValid(const QuietProofEnvelopeV1& envelope) {
+  if (envelope.envelope_version == 1) return envelope.proof_created_at == 0;
+  return envelope.envelope_version == 2 && envelope.proof_created_at != 0 &&
+         envelope.proof_created_at >= envelope.statement.not_before &&
+         envelope.proof_created_at < envelope.statement.expires_at;
+}
 
 inline bool EncodeQuietProofEnvelope(const QuietProofEnvelopeV1& envelope, std::vector<uint8_t>* out) {
-  std::vector<uint8_t> statement; if (!out || !EncodeQuietProofStatement(envelope.statement, &statement) || statement.size() > std::numeric_limits<uint32_t>::max() || envelope.proof.bytes.empty() || envelope.proof.bytes.size() > kQuietProofMaxProofBytes || QuietProofAllZero(envelope.proof.circuit_digest) || envelope.proof.circuit_version != PoKCParametersV1::kCircuitVersion || envelope.proof.rate != PoKCParametersV1::kRate || envelope.proof.queries != PoKCParametersV1::kQueries) return false;
-  out->clear(); out->insert(out->end(), {'Q','P','E','1',1}); QuietProofAppendU32(out, static_cast<uint32_t>(statement.size())); out->insert(out->end(), statement.begin(), statement.end()); out->insert(out->end(), envelope.proof.circuit_digest.begin(), envelope.proof.circuit_digest.end()); QuietProofAppendU32(out, envelope.proof.circuit_version); QuietProofAppendU32(out, static_cast<uint32_t>(envelope.proof.rate)); QuietProofAppendU32(out, static_cast<uint32_t>(envelope.proof.queries)); QuietProofAppendU32(out, static_cast<uint32_t>(envelope.proof.bytes.size())); out->insert(out->end(), envelope.proof.bytes.begin(), envelope.proof.bytes.end()); return true;
+  std::vector<uint8_t> statement; if (!out || !QuietProofEnvelopeTimeValid(envelope) || !EncodeQuietProofStatement(envelope.statement, &statement) || statement.size() > std::numeric_limits<uint32_t>::max() || envelope.proof.bytes.empty() || envelope.proof.bytes.size() > kQuietProofMaxProofBytes || QuietProofAllZero(envelope.proof.circuit_digest) || envelope.proof.circuit_version != PoKCParametersV1::kCircuitVersion || envelope.proof.rate != PoKCParametersV1::kRate || envelope.proof.queries != PoKCParametersV1::kQueries) return false;
+  out->clear(); out->insert(out->end(), {'Q','P','E','1',envelope.envelope_version}); QuietProofAppendU32(out, static_cast<uint32_t>(statement.size())); out->insert(out->end(), statement.begin(), statement.end()); if (envelope.envelope_version == 2) QuietProofAppendU64(out, envelope.proof_created_at); out->insert(out->end(), envelope.proof.circuit_digest.begin(), envelope.proof.circuit_digest.end()); QuietProofAppendU32(out, envelope.proof.circuit_version); QuietProofAppendU32(out, static_cast<uint32_t>(envelope.proof.rate)); QuietProofAppendU32(out, static_cast<uint32_t>(envelope.proof.queries)); QuietProofAppendU32(out, static_cast<uint32_t>(envelope.proof.bytes.size())); out->insert(out->end(), envelope.proof.bytes.begin(), envelope.proof.bytes.end()); return true;
 }
 inline bool DecodeQuietProofEnvelope(
     const std::vector<uint8_t>& bytes, QuietProofEnvelopeV1* envelope,
@@ -47,7 +60,7 @@ inline bool DecodeQuietProofEnvelope(
   uint8_t magic[4], version;
   uint32_t n;
   if (!r.bytes(magic, 4) || std::memcmp(magic, "QPE1", 4) != 0) return false;
-  if (!r.u8(&version) || version != 1) {
+  if (!r.u8(&version) || (version != 1 && version != 2)) {
     if (error != nullptr) *error = QuietProofDecodeError::kUnsupported;
     return false;
   }
@@ -61,6 +74,9 @@ inline bool DecodeQuietProofEnvelope(
     if (error != nullptr) *error = statement_error;
     return false;
   }
+  out.envelope_version = version;
+  if (version == 2 && !r.u64(&out.proof_created_at)) return false;
+  if (!QuietProofEnvelopeTimeValid(out)) return false;
   if (!r.bytes(out.proof.circuit_digest.data(), 32) ||
       !r.u32(&out.proof.circuit_version)) return false;
   if (QuietProofAllZero(out.proof.circuit_digest)) return false;
@@ -88,7 +104,11 @@ inline std::string QuietProofInspectJson(const QuietProofEnvelopeV1& envelope) {
   static const char hex[] = "0123456789abcdef";
   auto hexify = [&](const uint8_t* p, size_t n) { std::string out; out.reserve(n * 2); for (size_t i = 0; i < n; ++i) { out.push_back(hex[p[i] >> 4]); out.push_back(hex[p[i] & 15]); } return out; };
   auto json = [](const std::string& value) { std::string out; for (unsigned char c : value) { if (c == '"' || c == '\\') out.push_back('\\'); if (c >= 0x20) out.push_back(static_cast<char>(c)); } return out; };
-  std::ostringstream out; out << "{\"format\":\"quietproof-proof-v1\",\"network\":\"" << QuietProofNetworkName(envelope.statement.network) << "\""
+  std::ostringstream out; out << "{\"format\":\"quietproof-proof-v" << unsigned(envelope.envelope_version) << "\",\"network\":\"" << QuietProofNetworkName(envelope.statement.network) << "\""
+      << ",\"request_created_at\":" << envelope.statement.not_before
+      << ",\"not_before\":" << envelope.statement.not_before
+      << ",\"expires_at\":" << envelope.statement.expires_at
+      << ",\"proof_created_at\":" << (envelope.envelope_version == 2 ? std::to_string(envelope.proof_created_at) : "null")
       << ",\"verifier\":\"" << json(envelope.statement.verifier) << "\",\"purpose\":\"" << json(envelope.statement.purpose)
       << "\",\"statement_bytes\":" << statement.size() << ",\"circuit_digest\":\"" << hexify(envelope.proof.circuit_digest.data(), 32)
       << "\",\"proof_bytes\":" << envelope.proof.bytes.size() << ",\"claims\":" << envelope.statement.claims.size() << "}";
@@ -97,6 +117,16 @@ inline std::string QuietProofInspectJson(const QuietProofEnvelopeV1& envelope) {
 
 inline std::array<uint8_t, 32> PoKCTranscriptSeed(const QuietProofStatementV1& statement, const PoKCProofV1& proof) {
   std::array<uint8_t, 32> digest{}; if (!QuietProofStatementDigest(statement, &digest)) return {}; std::vector<uint8_t> binding(digest.begin(), digest.end()); binding.insert(binding.end(), proof.circuit_digest.begin(), proof.circuit_digest.end()); QuietProofAppendU32(&binding, proof.circuit_version); QuietProofAppendU32(&binding, static_cast<uint32_t>(proof.rate)); QuietProofAppendU32(&binding, static_cast<uint32_t>(proof.queries)); return QuietProofTaggedHash("PoKC/transcript/v1", binding.data(), binding.size());
+}
+
+// Keep the v1 transcript byte-for-byte stable for existing proofs.
+inline std::array<uint8_t, 32> PoKCTranscriptSeed(const QuietProofEnvelopeV1& envelope) {
+  if (!QuietProofEnvelopeTimeValid(envelope)) return {};
+  const auto legacy = PoKCTranscriptSeed(envelope.statement, envelope.proof);
+  if (envelope.envelope_version == 1) return legacy;
+  std::vector<uint8_t> binding(legacy.begin(), legacy.end());
+  QuietProofAppendU64(&binding, envelope.proof_created_at);
+  return QuietProofTaggedHash("PoKC/transcript/v2", binding.data(), binding.size());
 }
 
 enum class QuietProofAuthorization : uint8_t { kInvalid, kPendingReplayCheck, kReplayRejected, kPolicyRejected, kAuthorized };

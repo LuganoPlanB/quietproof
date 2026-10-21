@@ -132,7 +132,7 @@ void TestMultiKeyLayouts() {
 void TestMaximumMultiKeyProofRoundTrip() {
   std::array<uint8_t,32> one{}, n_minus_one = {0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xfe,0xba,0xae,0xdc,0xe6,0xaf,0x48,0xa0,0x3b,0xbf,0xd2,0x5e,0x8c,0xd0,0x36,0x41,0x40}; one[31]=1;
   PoKCWitnessV1<Field,EC> first, second; Require(first.compute(p256k1,one.data(),one.size()) && second.compute(p256k1,n_minus_one.data(),n_minus_one.size()),"multi witness compute");
-  QuietProofStatementV1 s; s.network=QuietProofNetwork::kRegtest; s.verifier="multi-test"; s.purpose="proof-of-funds"; s.expires_at=1; s.nonce[0]=1; s.bip322_message_hash[0]=1;
+  QuietProofStatementV1 s; s.network=QuietProofNetwork::kRegtest; s.verifier="multi-test"; s.purpose="proof-of-funds"; s.expires_at=static_cast<uint64_t>(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()))+3600; s.nonce[0]=1; s.bip322_message_hash[0]=1;
   QuietProofClaimV1 a,b; a.txid[0]=1; a.amount_sats=1; a.program=first.program(); b.txid[0]=2; b.amount_sats=2; b.program=second.program(); s.claims={a,b};
   QuietProofEnvelopeV1 envelope; Require(PoKCProveKeys<2>({one,n_minus_one},s,&envelope),"maximum multi-key prove"); std::vector<uint8_t> wire; Require(EncodeQuietProofEnvelope(envelope,&wire),"maximum multi-key encode"); QuietProofEnvelopeV1 parsed; Require(DecodeQuietProofEnvelope(wire,&parsed) && PoKCVerifyProof(parsed),"maximum multi-key verify");
   auto trailing_proof=parsed; trailing_proof.proof.bytes.push_back(0); Require(!PoKCVerifyProof(trailing_proof),"proof trailing byte accepted");
@@ -140,6 +140,45 @@ void TestMaximumMultiKeyProofRoundTrip() {
   auto mutated_claims=s; std::swap(mutated_claims.claims[0],mutated_claims.claims[1]); Require(!PoKCProveKeys<2>({one,n_minus_one},mutated_claims,&envelope),"reordered claims accepted"); mutated_claims=s; mutated_claims.claims[1]=mutated_claims.claims[0]; Require(!PoKCProveKeys<2>({one,n_minus_one},mutated_claims,&envelope),"duplicate claim accepted"); Require(!PoKCProveKeys<2>({one},s,&envelope),"omitted relation accepted"); Require(!PoKCProveKeys<2>({one,n_minus_one,one},s,&envelope),"extra relation accepted"); Require(!PoKCProveKeys<2>({one,one},s,&envelope),"mutated key accepted");
   auto too_many=s; QuietProofClaimV1 c=b; c.txid[0]=3; c.program[0]^=1; too_many.claims.push_back(c); std::vector<std::array<uint8_t,20>> too_many_programs; Require(!QuietProofDistinctPrograms(too_many,&too_many_programs),"three program grouping accepted");
   auto shared=s; shared.claims[1].program=shared.claims[0].program; std::vector<std::array<uint8_t,20>> grouped; Require(QuietProofDistinctPrograms(shared,&grouped) && grouped.size()==1,"shared-key mapping rejected");
+}
+
+void TestTimestampProofRoundTrip() {
+  std::array<uint8_t, 32> secret{};
+  secret[31] = 1;
+  PoKCWitnessV1<Field, EC> witness;
+  Require(witness.compute(p256k1, secret.data(), secret.size()), "timestamp witness");
+  QuietProofStatementV1 statement;
+  statement.network = QuietProofNetwork::kSignet;
+  statement.verifier = "timestamp-test";
+  statement.purpose = "proof-of-funds";
+  statement.not_before = static_cast<uint64_t>(std::chrono::system_clock::to_time_t(
+      std::chrono::system_clock::now()));
+  statement.expires_at = statement.not_before + 3600;
+  statement.nonce[0] = 1;
+  statement.bip322_message_hash[0] = 1;
+  QuietProofClaimV1 claim;
+  claim.txid[0] = 1;
+  claim.amount_sats = 7;
+  claim.program = witness.program();
+  statement.claims = {claim};
+  QuietProofEnvelopeV1 envelope;
+  Require(PoKCProve(secret.data(), secret.size(), statement, &envelope), "timestamp prove");
+  Require(envelope.envelope_version == 2 &&
+              envelope.proof_created_at >= statement.not_before, "prover omitted timestamp");
+  std::vector<uint8_t> wire;
+  Require(EncodeQuietProofEnvelope(envelope, &wire), "timestamp encode");
+  QuietProofEnvelopeV1 decoded;
+  Require(DecodeQuietProofEnvelope(wire, &decoded) && PoKCVerifyProof(decoded),
+          "timestamp proof round trip");
+  ++decoded.proof_created_at;
+  Require(!PoKCVerifyProof(decoded), "tampered proof timestamp accepted");
+  decoded = envelope;
+  decoded.envelope_version = 1;
+  decoded.proof_created_at = 0;
+  Require(!PoKCVerifyProof(decoded), "timestamp stripping accepted");
+  decoded = envelope;
+  --decoded.statement.not_before;
+  Require(!PoKCVerifyProof(decoded), "tampered request timestamp accepted");
 }
 
 void TestWitnessInputValidation() {
@@ -193,8 +232,13 @@ void TestProofRoundTrip(const std::array<uint8_t, 32>& secret) {
 }  // namespace
 }  // namespace proofs
 
-int main() {
+int main(int argc, char** argv) {
   try {
+    if (argc == 2 && std::string(argv[1]) == "--timestamp-roundtrip") {
+      proofs::TestTimestampProofRoundTrip();
+      std::cout << "Timestamp proof round trip and tamper checks passed\n";
+      return 0;
+    }
     proofs::TestStableLayoutAndDigest();
     proofs::TestMultiKeyLayouts();
     proofs::TestMaximumMultiKeyProofRoundTrip();
