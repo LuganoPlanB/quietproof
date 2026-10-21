@@ -21,7 +21,7 @@ Newcomers may understand Bitcoin addresses and balances without understanding pu
 
 Explain and document QuietProof: a challenge-bound, off-chain proof that a prover knows the spend key corresponding to one or two native P2WPKH witness programs without revealing private keys or compressed public keys.
 
-The public site should help a visitor quickly decide whether QuietProof fits a custody, proof-of-funds, collateral, private wallet-continuity, or protocol-admission workflow. It must then provide complete implementation, operations, security, performance, circuit, and normative protocol documentation.
+The site should explain custody, disclosed proof-of-funds, collateral, off-chain continuity, and protocol admission, with technical documentation. Describe key privacy accurately: proofs expose coins, amounts, and wallet links; recipients can trace them and associate known identities.
 
 QuietProof is a proof-of-key-control primitive, not a complete proof-of-reserves or solvency system. The site must make that boundary unmistakable.
 

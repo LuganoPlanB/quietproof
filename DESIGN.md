@@ -36,11 +36,11 @@ The first section after the hero gives dated, hardware-specific proof timing and
 
 ### Challenge flow
 
-A four-stage ordered sequence—challenge, private proof, verification, application decision—makes freshness and separation of responsibilities explicit. The sequence remains understandable without animation.
+A four-stage ordered sequence—challenge, proof, verification, application decision—makes freshness and separation of responsibilities explicit. The sequence remains understandable without animation.
 
 ### Use-case index
 
-Group applications by the job being done: custody and audit, qualification before a deal, private continuity, and collaborative protocols. Avoid a wall of identical cards; use strong section groupings and varied supporting examples.
+Group applications by the job being done: custody and audit, qualification before a deal, off-chain continuity, and collaborative protocols. Avoid a wall of identical cards; use strong section groupings and varied supporting examples.
 
 ### Technical depth marker
 

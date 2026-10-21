@@ -8,12 +8,11 @@ its candidate outputs and independently recheck them at verification. Proving
 runs offline with the request and protected key input. Native verification
 uses Core RPC directly, without installing or invoking `bitcoin-cli`.
 
-QuietProof uses **PoKC (Proof of Key Control)** to prove knowledge of keys for
-one or two native P2WPKH witness programs. It hides spend keys and compressed
-public keys; requests/proofs still expose outpoints, amounts and witness
-programs, and discovery sends the address to the selected node. This is a
-verification building block, not proof of exclusive ownership, legal title,
-solvency or locked collateral.
+QuietProof uses **PoKC (Proof of Key Control)** for one or two native P2WPKH
+programs. Proofs hide keys, but disclose outpoints, amounts and witness programs.
+Recipients can trace these coins and associate them with a known prover identity.
+Discovery sends the address to the selected node. This is not proof of exclusive
+ownership, legal title, solvency or locked collateral.
 
 ## Build
 
@@ -141,10 +140,10 @@ Native failures never fall back to the legacy backend.
 
 - **Custody attestation:** demonstrate current knowledge of keys controlling specified custody outputs without disclosing their public keys.
 - **Auditor challenges:** answer fresh, single-use key-control challenges without constructing a spend-like transaction.
-- **Private proof of funds:** pre-qualify parties for OTC trades, purchases, lending, or institutional onboarding.
+- **Disclosed proof of funds:** qualify parties for trades, purchases, lending, or onboarding.
 - **Collateral and escrow preflight:** demonstrate control before negotiating and creating the actual locking or settlement transaction.
-- **Wallet continuity:** privately prove common control of an old and a new P2WPKH wallet to a selected verifier.
-- **Pseudonymous reputation rollover:** support application-level transfer of reputation or credentials between privately linked wallets.
+- **Wallet continuity:** disclose common key knowledge across old and new P2WPKH outputs off-chain.
+- **Pseudonymous reputation rollover:** transfer reputation or credentials while revealing wallet links to the application.
 - **Collaborative protocols:** verify control of proposed inputs before admitting participants to CoinJoin or other coordinated transactions.
 - **Membership and operator bonds:** demonstrate control of a disclosed economic bond without immediately spending or depositing it.
 - **Liquidity qualification:** pre-qualify channel, liquidity, or federated-service participants before funding begins.

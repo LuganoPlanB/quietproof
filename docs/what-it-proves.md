@@ -30,7 +30,7 @@ P2WPKH witness program named in the request
 The verifier learns that the relationship is correct, but does not receive either key.
 
 ::: info What “zero knowledge” means here
-The verifier can check that the holder knows the right secret without learning the secret itself—or even the compressed public key derived from it.
+The proof hides keys, not coins or amounts. Recipients can trace disclosed outputs and associate them with a known prover identity.
 :::
 
 ## Why a fresh challenge matters
@@ -59,7 +59,7 @@ QuietProof v1 provides two exact circuit shapes:
 
 A statement may name up to 16 outputs, but those outputs must share no more than two distinct witness programs. Outputs sharing a program reuse the same key relation.
 
-The two-key form can privately demonstrate continuity between an old wallet and a new one. It proves common key knowledge to the selected verifier; it does not publish an on-chain link or create multisig spending rules.
+The two-key form reveals common key knowledge across old and new outputs to its recipients. They can share the proof; naming a verifier does not make it confidential. No on-chain link or multisig rules are created.
 
 ## What it does not prove
 

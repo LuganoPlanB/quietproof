@@ -9,7 +9,7 @@ QuietProof is most useful when one party needs credible evidence of Bitcoin key 
 
 ## Custody and audit
 
-### Privacy-preserving custody attestation
+### Custody attestation without key disclosure
 
 A custodian, exchange, fund, broker, or escrow operator can answer:
 
@@ -27,18 +27,18 @@ This workflow reduces the value of copied historical proofs and cleanly separate
 
 ## Qualification before a deal
 
-### Proof of funds for private transactions
+### Proof of disclosed funds
 
 An OTC desk, property seller, large merchant, escrow service, or institutional onboarding team can ask a counterparty to demonstrate control of disclosed funds before investing in a negotiation.
 
-The balance and output are visible to the verifier because the UTXO is disclosed. The public key need not be.
+The selected coins and values are disclosed and traceable. The proof does not reveal keys or the full wallet balance.
 
 ### Collateral preflight
 
 A prospective borrower can demonstrate control of proposed collateral before the parties negotiate a multisig migration, DLC, escrow, or other locking arrangement.
 
 ```text
-discovery → private proof of control → terms agreed → actual collateral transaction
+discovery → off-chain proof of control → terms agreed → actual collateral transaction
 ```
 
 QuietProof does not lock the collateral. It only makes the pre-contract capability check possible.
@@ -47,21 +47,21 @@ QuietProof does not lock the collateral. It only makes the pre-contract capabili
 
 A marketplace may ask a seller to prove control of a disclosed bond UTXO, or ask a buyer to demonstrate funding capability, before starting costly legal, KYC, escrow, or fulfillment work.
 
-## Private continuity and peer credit
+## Off-chain continuity and peer credit
 
-### Private wallet linking
+### Off-chain wallet linking
 
 The two-key proof can demonstrate to a chosen verifier:
 
 > The same prover knows the key for wallet A and wallet B.
 
-That relationship need not be published to the blockchain, and neither compressed public key is revealed by the proof.
+The verifier learns this link and can share it. The proof reveals neither key and creates no blockchain transaction.
 
 ### Reputation rollover
 
 A peer-credit network could associate repayment history with a Bitcoin-controlled pseudonym. When the participant rotates wallets, a two-key QuietProof can support an application-level transfer from the old pseudonym to the new one.
 
-This is private continuity, not global identity. The application still decides how much trust to assign to the history and whether the proof presenter is the same human or organization.
+The application learns the pseudonym link. It still decides whether to trust the history or identify the presenter as the same person or organization.
 
 ### Guarantor and lending-circle preflight
 
