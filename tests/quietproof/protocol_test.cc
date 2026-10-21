@@ -216,6 +216,44 @@ void TestEnvelopeAndTranscript() {
   std::vector<uint8_t> again;
   Require(EncodeQuietProofEnvelope(decoded, &again) && wire == again,
           "envelope is not canonical");
+  Require(decoded.envelope_version == 1 && decoded.proof_created_at == 0,
+          "legacy envelope acquired a fabricated timestamp");
+  Require(PoKCTranscriptSeed(decoded) == seed, "legacy transcript changed");
+  auto timestamped = envelope;
+  timestamped.envelope_version = 2;
+  timestamped.proof_created_at = 150;
+  const auto timestamp_seed = PoKCTranscriptSeed(timestamped);
+  Require(timestamp_seed != seed, "timestamp envelope lacks domain separation");
+  std::vector<uint8_t> timestamp_wire;
+  Require(EncodeQuietProofEnvelope(timestamped, &timestamp_wire) &&
+              DecodeQuietProofEnvelope(timestamp_wire, &decoded) &&
+              decoded.proof_created_at == 150 && decoded.envelope_version == 2 &&
+              decoded.statement.not_before == 100,
+          "timestamp envelope round trip failed");
+  Require(EncodeQuietProofEnvelope(decoded, &again) && again == timestamp_wire,
+          "timestamp envelope not canonical");
+  ++timestamped.proof_created_at;
+  Require(PoKCTranscriptSeed(timestamped) != timestamp_seed,
+          "proof timestamp not transcript-bound");
+  for (uint64_t invalid_time : {uint64_t{0}, uint64_t{99}, uint64_t{200}}) {
+    timestamped.proof_created_at = invalid_time;
+    Require(!EncodeQuietProofEnvelope(timestamped, &again), "invalid timestamp encoded");
+  }
+  for (size_t size = 0; size < timestamp_wire.size(); ++size) {
+    Require(!DecodeQuietProofEnvelope(std::vector<uint8_t>(timestamp_wire.begin(),
+                timestamp_wire.begin() + size), &decoded), "truncated v2 accepted");
+  }
+  std::vector<uint8_t> statement_wire;
+  Require(EncodeQuietProofStatement(envelope.statement, &statement_wire), "statement");
+  auto zero_time = timestamp_wire;
+  std::fill_n(zero_time.begin() + 9 + statement_wire.size(), 8, 0);
+  Require(!DecodeQuietProofEnvelope(zero_time, &decoded), "zero timestamp decoded");
+  Require(QuietProofInspectJson(envelope).find("\"proof_created_at\":null") != std::string::npos,
+          "legacy inspection hides missing time");
+  timestamped.proof_created_at = 150;
+  Require(QuietProofInspectJson(timestamped).find("\"proof_created_at\":150") != std::string::npos &&
+              QuietProofInspectJson(timestamped).find("\"request_created_at\":100") != std::string::npos,
+          "inspection omits creation times");
   auto invalid_envelope = envelope;
   invalid_envelope.proof.bytes.clear();
   Require(!EncodeQuietProofEnvelope(invalid_envelope, &again),
@@ -237,7 +275,7 @@ void TestEnvelopeAndTranscript() {
   }
 
   auto unsupported = wire;
-  unsupported[4] = 2;
+  unsupported[4] = 3;
   QuietProofDecodeError error = QuietProofDecodeError::kNone;
   Require(!DecodeQuietProofEnvelope(unsupported, &decoded, &error) &&
               error == QuietProofDecodeError::kUnsupported,

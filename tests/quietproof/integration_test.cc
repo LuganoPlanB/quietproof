@@ -203,6 +203,24 @@ std::string TxoutJson(const std::string& amount = "0.00000007",
          "\"00140400000000000000000000000000000000000000\"}}";
 }
 
+void TestProofTimestampPolicy() {
+  auto envelope = Envelope();
+  envelope.envelope_version = 2;
+  envelope.proof_created_at = 3;
+  FakeProvider provider;
+  SetMatchingEvidence(envelope, &provider);
+  auto config = Config(&provider);
+  bool consumed = false;
+  config.policy.consume_nonce = [&](const auto&) { consumed = true; return true; };
+  std::vector<uint8_t> wire;
+  Require(EncodeQuietProofEnvelope(envelope, &wire), "timestamp fixture");
+  Require(VerifyQuietProof(wire, config).result == QuietProofVerifyResult::kInvalidProof &&
+              provider.calls == 0 && !consumed, "future timestamp accepted");
+  config.policy.now = 3;
+  Require(VerifyQuietProof(wire, config).result == QuietProofVerifyResult::kValidCurrent && consumed,
+          "current timestamp rejected");
+}
+
 void TestBitcoinAmounts() {
   uint64_t sats = 0;
   Require(quietproof_internal::BitcoinAmountToSats("0.00000001", &sats) &&
@@ -460,6 +478,7 @@ void TestNonceStore() {
 int main() {
   try {
     proofs::TestVerifierStates();
+    proofs::TestProofTimestampPolicy();
     proofs::TestBitcoinAmounts();
     proofs::TestCoreSharedFields();
     proofs::TestCoreFieldFailures();

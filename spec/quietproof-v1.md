@@ -150,9 +150,10 @@ atomic lock/custody and one-time-mint policy callback.
 The proof envelope starts with ASCII `QPE1`, then:
 
 ```
-envelope_version:u8 = 01
+envelope_version:u8 = 01 (legacy) or 02 (timestamped)
 statement_size:u32
 statement_bytes
+proof_created_at:u64 (version 02 only)
 circuit_digest:32 bytes
 circuit_version:u32 = 1
 rate:u32 = 4
@@ -167,7 +168,7 @@ allocation. Unknown envelope/statement/network/circuit versions or proof
 parameters are `unsupported`; malformed lengths or fields are
 `malformed_statement`.
 
-The Fiat-Shamir seed is
+The version 01 Fiat-Shamir seed is
 
 ```
 TaggedHash(
@@ -176,8 +177,18 @@ TaggedHash(
   circuit_version:u32 || rate:u32 || queries:u32)
 ```
 
-The proof therefore binds every statement byte, the exact circuit, and proof
-parameters.
+Version 02 uses `TaggedHash("PoKC/transcript/v2", v1_seed || proof_created_at:u64)`.
+Both bind every statement byte, the exact circuit and proof parameters; version
+02 additionally binds the proof timestamp. New proofs MUST use version 02.
+
+Times are Unix seconds. Challenge creation sets `not_before` to its creation
+time, exposed by inspection as `request_created_at`; the proof preserves the
+entire request. `proof_created_at` records prover start, before circuit/proof
+computation, not completion. It MUST be nonzero and satisfy
+`not_before <= proof_created_at < expires_at`; verification also requires
+`proof_created_at <= now`. These local-clock claims are not trusted timestamps.
+Legacy proofs remain readable, with `proof_created_at: null` in inspection;
+older verifiers reject version 02 as unsupported.
 
 ## 7. Verification and result selection
 

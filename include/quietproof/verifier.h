@@ -33,6 +33,7 @@ inline QuietProofVerification VerifyQuietProof(const std::vector<uint8_t>& bytes
                 : QuietProofVerifyResult::kMalformedStatement,
             {}};
   }
+  if (envelope.proof_created_at > config.policy.now) return {QuietProofVerifyResult::kInvalidProof, {}};
   if (QuietProofCheckPolicy(envelope.statement, config.policy, true) != QuietProofAuthorization::kPendingReplayCheck) return {QuietProofVerifyResult::kInvalidProof, {}};
   if (config.supports && !config.supports(envelope)) return {QuietProofVerifyResult::kUnsupported, {}};
   if (!config.verify_proof || !config.verify_proof(envelope)) return {QuietProofVerifyResult::kInvalidProof, {}};
