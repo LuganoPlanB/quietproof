@@ -177,8 +177,9 @@ Keys stay hidden unless disclosed elsewhere. RPC changes no formats
 or circuits. Key knowledge proves neither exclusive ownership, legal title,
 solvency nor locked collateral.
 
-Supply verifier/purpose expectations locally on every verify operation. Keep
-lifetimes short (default challenge 300 seconds, maximum 86,400) and use fresh
+CLI context defaults: verifier `unscoped`, purpose `proof-of-funds`, message empty.
+Set matching verifier/purpose flags for scoped requests and verification. Keep
+lifetimes short (default 300 seconds, maximum 86,400) and use fresh
 requests/nonces. Request/proof outputs are owner-only and never overwrite an
 existing path. The nonce store is a **file** whose owner-only, regular-file,
 no-follow and locked atomic append/fsync checks must succeed. Persist it across

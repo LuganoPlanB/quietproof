@@ -33,7 +33,7 @@ The request names the verifier and purpose, selects the Bitcoin network, lists t
   --output request.qpr
 ```
 
-The purpose is not decorative. The verifier supplies its expected identity and purpose again during verification instead of trusting values carried by the proof.
+Context flags are optional: verifier defaults to `unscoped`, purpose to `proof-of-funds`, message to empty. Verification requires matching verifier/purpose values; specify both for scoped proofs.
 
 ## 2. The prover reviews and proves
 
