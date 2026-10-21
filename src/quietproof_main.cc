@@ -35,6 +35,7 @@
 #include <utility>
 #include <vector>
 
+#include "proof_progress.h"
 #include "quietproof/bitcoin_core.h"
 #ifdef QUIETPROOF_HAS_RPC
 #include "quietproof/bitcoin_rpc.h"
@@ -266,13 +267,16 @@ bool ReadSecrets(size_t count,
   secrets->reserve(count);
   const bool terminal = isatty(STDIN_FILENO);
   if (terminal)
-    std::cerr << "enter " << count << " hexadecimal secret key(s), one per line: ";
+    std::cerr << "Enter " << count << " private key(s), each as 64 hexadecimal characters.\n"
+              << "Input is hidden; paste a key and press Enter (not an address).\n";
   TerminalEchoGuard echo_guard;
   for (size_t index = 0; index < count; ++index) {
+    if (terminal) std::cerr << "Key " << index + 1 << '/' << count << ": ";
     std::string line;
-    if (!std::getline(std::cin, line)) return false;
+    const bool read = static_cast<bool>(std::getline(std::cin, line));
+    if (terminal) std::cerr << '\n';
     std::array<uint8_t, 32> secret{};
-    const bool valid = HexArray(line, &secret);
+    const bool valid = read && HexArray(line, &secret);
     if (!line.empty()) SecureErase(line.data(), line.size());
     if (!valid) {
       SecureErase(secret.data(), secret.size());
@@ -281,7 +285,6 @@ bool ReadSecrets(size_t count,
     secrets->push_back(secret);
     SecureErase(secret.data(), secret.size());
   }
-  if (terminal) std::cerr << '\n';
   return true;
 }
 
@@ -556,15 +559,40 @@ int Prove(int argc, char** argv) {
   std::vector<std::array<uint8_t, 32>> secrets;
   if (!ReadSecrets(programs.size(), &secrets)) {
     EraseSecrets(&secrets);
-    std::cerr << "expected one 32-byte hexadecimal secret per distinct program\n";
+    std::cerr << "Invalid key input: expected 64 hexadecimal characters per private key, not an address.\n";
     return kData;
   }
+  std::cerr << "Key input received. Checking keys against the request...\n";
+  std::vector<std::array<uint8_t, 20>> supplied_programs;
+  for (const auto& secret : secrets) {
+    proofs::PoKCWitnessV1<proofs::PoKCField, proofs::PoKCEC> witness;
+    const bool valid = witness.compute(proofs::p256k1, secret.data(), secret.size());
+    if (valid) supplied_programs.push_back(witness.program());
+    SecureErase(&witness, sizeof(witness));
+    if (!valid) {
+      EraseSecrets(&secrets);
+      std::cerr << "Invalid private key: scalar must be nonzero and below the secp256k1 order.\n";
+      return kData;
+    }
+  }
+  std::sort(supplied_programs.begin(), supplied_programs.end());
+  std::sort(programs.begin(), programs.end());
+  if (supplied_programs != programs) {
+    EraseSecrets(&secrets);
+    std::cerr << "Private keys do not match the request; provide one key per distinct address.\n";
+    return kData;
+  }
+  std::cerr << "Keys validated. Generating proof; this may take several minutes...\n";
   proofs::QuietProofEnvelopeV1 envelope;
   bool proved = false;
-  if (programs.size() == 1)
-    proved = proofs::PoKCProveKeys<1>(secrets, statement, &envelope);
-  else if (programs.size() == 2)
-    proved = proofs::PoKCProveKeys<2>(secrets, statement, &envelope);
+  {
+    quietproof_cli::ProofProgress progress(std::cerr);
+    const auto phase = [&progress](const char* name) { progress.SetPhase(name); };
+    if (programs.size() == 1)
+      proved = proofs::PoKCProveKeys<1>(secrets, statement, &envelope, phase);
+    else if (programs.size() == 2)
+      proved = proofs::PoKCProveKeys<2>(secrets, statement, &envelope, phase);
+  }
   EraseSecrets(&secrets);
   std::vector<uint8_t> wire;
   if (!proved || !proofs::EncodeQuietProofEnvelope(envelope, &wire)) {

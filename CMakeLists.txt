@@ -50,9 +50,10 @@ endif()
 install(FILES examples/bitcoin_rpc.cc
   DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/LongfellowZKQuietProof/examples)
 
+find_package(Threads REQUIRED)
 add_executable(quietproof-cli src/quietproof_main.cc)
 set_target_properties(quietproof-cli PROPERTIES OUTPUT_NAME quietproof)
-target_link_libraries(quietproof-cli PRIVATE LongfellowZKQuietProof::quietproof)
+target_link_libraries(quietproof-cli PRIVATE LongfellowZKQuietProof::quietproof Threads::Threads)
 if(QUIETPROOF_BUILD_RPC)
   target_link_libraries(quietproof-cli PRIVATE LongfellowZKQuietProof::rpc)
   target_compile_definitions(quietproof-cli PRIVATE QUIETPROOF_HAS_RPC=1)
@@ -154,6 +155,15 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/rpc_http_fixture.py
     $<TARGET_FILE:quietproof-cli> ${_quietproof_cli_rpc_mode})
   set_tests_properties(quietproof-cli-rpc-test PROPERTIES TIMEOUT 60)
+  add_test(NAME quietproof-prove-feedback-test
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/prove_feedback_test.py $<TARGET_FILE:quietproof-cli>)
+  add_executable(quietproof-progress-test tests/quietproof/proof_progress_test.cc)
+  target_compile_features(quietproof-progress-test PRIVATE cxx_std_20)
+  target_include_directories(quietproof-progress-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_link_libraries(quietproof-progress-test PRIVATE Threads::Threads)
+  add_test(NAME quietproof-progress-test COMMAND quietproof-progress-test)
+  set_tests_properties(quietproof-progress-test PROPERTIES TIMEOUT 10)
   add_test(NAME pokc-vector-generation-test
     COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/pokc_vector_generation_test.py)
