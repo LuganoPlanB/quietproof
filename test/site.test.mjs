@@ -84,7 +84,7 @@ test("use cases are grouped by human jobs and retain technical caveats", () => {
   for (const heading of [
     "Custody and audit",
     "Qualification before a deal",
-    "Private continuity and peer credit",
+    "Off-chain continuity and peer credit",
     "Collaborative Bitcoin protocols",
     "future directions",
   ]) {

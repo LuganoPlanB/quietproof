@@ -13,7 +13,7 @@ A specific amount of bitcoin created by a transaction and not yet spent. QuietPr
 
 ### Compressed public key
 
-A 33-byte representation of a secp256k1 public key. In a normal P2WPKH spend it is revealed in the witness. QuietProof proves the hidden relation without disclosing it.
+A 33-byte secp256k1 key revealed when spending P2WPKH outputs. QuietProof does not disclose it, but cannot hide disclosures elsewhere, including spends with the same key.
 
 ### Private key / spend key
 

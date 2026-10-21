@@ -50,7 +50,7 @@ Unsupported conclusions include:
 
 ## Retain the evidence
 
-Store the canonical request, proof envelope, result, consumed nonce evidence, node identity and tip, circuit digest, software version, verification policy, and any human approvals in an append-only audit record.
+Retain the request, proof, result, nonce evidence, node/tip, circuit/software versions, policy, and approvals in append-only records. Restrict access: these records link identified clients to disclosed coins.
 
 If the engagement requires a historical snapshot, the bundled CLI is not enough. Use a separately implemented authenticated historical provider through the library API and document its trust and finality model.
 

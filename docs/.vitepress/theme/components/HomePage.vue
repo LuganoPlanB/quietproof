@@ -4,11 +4,11 @@
       <div class="planb-hero__overlay" aria-hidden="true"></div>
       <div class="planb-container planb-hero__inner">
         <div class="quietproof-hero__copy">
-          <p class="planb-eyebrow">Private proof of key control</p>
+          <p class="planb-eyebrow">Off-chain proof of key control</p>
           <h1 id="quietproof-title">Prove you control bitcoin. Keep your keys quiet.</h1>
           <p class="planb-lede">
-            QuietProof lets someone demonstrate control of specified bitcoin without moving it,
-            revealing a public key, or creating a Bitcoin-valid signature.
+            Prove control of disclosed bitcoin without moving it or revealing keys.
+            Recipients can trace the coins and associate them with a known identity.
           </p>
           <div class="quietproof-actions">
             <a class="planb-button-link" :href="withBase('/what-it-proves')">See what it proves</a>
@@ -143,7 +143,7 @@
         <div class="quietproof-section-heading quietproof-section-heading--wide">
           <h2 id="jobs-title">Useful before anyone moves money</h2>
           <p>
-            The proof creates a private preflight step: establish key control first, then decide
+            The proof creates an off-chain preflight step: establish key control first, then decide
             whether a transaction, contract, audit, or protocol session should begin.
           </p>
         </div>
@@ -159,9 +159,9 @@
             <p>Check proposed funds or collateral before spending time on legal work, escrow, or settlement.</p>
           </article>
           <article>
-            <p class="quietproof-job-list__context">Private continuity</p>
-            <h3>Connect an old wallet to a new one privately</h3>
-            <p>Use the two-key proof to show common control without publishing an on-chain link between wallets.</p>
+            <p class="quietproof-job-list__context">Off-chain continuity</p>
+            <h3>Show common key knowledge across wallets</h3>
+            <p>The two-key proof reveals the link to recipients without publishing an on-chain transaction.</p>
           </article>
           <article>
             <p class="quietproof-job-list__context">Collaborative protocols</p>
@@ -203,18 +203,18 @@
 
       <section class="quietproof-two-key" aria-labelledby="two-key-title">
         <div>
-          <h2 id="two-key-title">One proof can privately connect two keys</h2>
+          <h2 id="two-key-title">One proof can connect two keys off-chain</h2>
           <p>
             QuietProof v1 has exact circuit shapes for one or two distinct P2WPKH programs. In the
             two-key case, a selected verifier can learn that the same prover knows both keys without
             learning either public key and without creating an on-chain connection.
           </p>
           <p>
-            That opens a path to private wallet migration, pseudonymous reputation rollover, and
-            carefully scoped continuity of financial identity.
+            This supports wallet continuity and reputation rollover. Recipients learn the link
+            and can share the proof.
           </p>
         </div>
-        <div class="quietproof-linkage" role="img" aria-label="An old wallet and a new wallet privately connected by one QuietProof">
+        <div class="quietproof-linkage" role="img" aria-label="Old and new wallet outputs linked for the verifier by QuietProof">
           <div><span>Old wallet</span><code>bc1q ··· a91x</code></div>
           <div class="quietproof-linkage__proof"><span>QuietProof</span><small>knows both keys</small></div>
           <div><span>New wallet</span><code>bc1q ··· m42c</code></div>

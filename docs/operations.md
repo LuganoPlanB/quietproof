@@ -170,11 +170,11 @@ inclusion proof. A null/unknown/spent current UTXO is `state_inconclusive`, neve
 Historical statements require a separate authenticated historical provider;
 the native client and CLI do not reconstruct historical spending.
 
-The address goes to the selected node. Requests/proofs expose outpoints,
-amounts and witness programs; the zero-knowledge relation hides spend keys and
-compressed public keys. RPC integration changes neither those privacy
-properties nor the v1 statement/proof formats, circuits, network IDs or bridge
-policy. Knowledge of keys proves neither exclusive ownership, legal title,
+The node receives the address. Requests/proofs disclose outpoints,
+amounts and witness programs, allowing tracing and association with known prover
+identities. Recipients can share proofs; verifier binding is not access control.
+Keys stay hidden unless disclosed elsewhere. RPC changes no formats
+or circuits. Key knowledge proves neither exclusive ownership, legal title,
 solvency nor locked collateral.
 
 Supply verifier/purpose expectations locally on every verify operation. Keep
