@@ -55,6 +55,8 @@ constexpr int kSoftware = 70;
 constexpr int kIoError = 74;
 constexpr uint64_t kDefaultLifetimeSeconds = 300;
 constexpr uint64_t kMaximumLifetimeSeconds = 86400;
+constexpr const char* kDefaultVerifier = "unscoped";
+constexpr const char* kDefaultPurpose = "proof-of-funds";
 
 using Options = std::map<std::string, std::vector<std::string>>;
 
@@ -66,17 +68,20 @@ void SecureErase(void* pointer, size_t size) {
 void PrintUsage(std::ostream& output) {
   output
       << "usage:\n"
-      << "  quietproof challenge create --network NETWORK --verifier ID "
-         "--purpose PURPOSE --message TEXT (--address ADDRESS | --claim "
+      << "  quietproof challenge create --network NETWORK [--verifier ID] "
+         "[--purpose PURPOSE] [--message TEXT] (--address ADDRESS | --claim "
          "TXID:VOUT:SATOSHIS:PROGRAM [--claim ...]) --output REQUEST\n"
       << "  quietproof utxos --network NETWORK --address ADDRESS [RPC OPTIONS]\n"
       << "  quietproof prove --request REQUEST --output PROOF [--network NETWORK] [RPC OPTIONS] [--rpc-wallet NAME] [--address ADDRESS]\n"
-      << "  quietproof verify PROOF --verifier ID "
-         "--purpose PURPOSE --nonce-store FILE [--min-confirmations N] "
+      << "  quietproof verify PROOF [--verifier ID] "
+         "[--purpose PURPOSE] --nonce-store FILE [--min-confirmations N] "
          "[--minimum-total-sats N] [--max-lifetime SECONDS] [--network NETWORK]\n"
       << "    Native RPC is default; --bitcoin-cli /ABSOLUTE/PATH explicitly "
          "selects the deprecated legacy verifier.\n"
       << "  quietproof inspect FILE\n"
+      << "Context defaults: verifier=unscoped (no intended recipient), "
+         "purpose=proof-of-funds, message=empty. Verification expects these "
+         "defaults unless overridden; it does not accept arbitrary context.\n"
       << "networks: mainnet, testnet3 (alias testnet), testnet4, signet, regtest\n"
       << "RPC OPTIONS: --rpc-url URL --rpc-cookie FILE --rpc-datadir DIR "
          "--rpc-timeout SECONDS --rpc-scan-timeout SECONDS --rpc-wallet NAME\n"
@@ -474,10 +479,12 @@ int ChallengeCreate(int argc, char** argv) {
   if (!ParseOptions(argc, argv, 3, allowed, &options)) return Usage();
   std::string network_name, verifier, purpose, message, output_path,
       lifetime_text;
+  verifier = kDefaultVerifier;
+  purpose = kDefaultPurpose;
   if (!One(options, "--network", &network_name) ||
-      !One(options, "--verifier", &verifier) ||
-      !One(options, "--purpose", &purpose) ||
-      !One(options, "--message", &message) ||
+      !One(options, "--verifier", &verifier, false) ||
+      !One(options, "--purpose", &purpose, false) ||
+      !One(options, "--message", &message, false) ||
       !One(options, "--output", &output_path) ||
       !One(options, "--expires-in", &lifetime_text, false)) return Usage();
   if (!CheckNewOutputPath(output_path)) return kIoError;
@@ -542,6 +549,8 @@ int ChallengeCreate(int argc, char** argv) {
   nlohmann::json result = {{"result", "challenge_created"},
                            {"request", output_path},
                            {"network", proofs::QuietProofNetworkName(statement.network)},
+                           {"verifier", statement.verifier},
+                           {"purpose", statement.purpose},
                            {"expires_at", statement.expires_at},
                            {"claims", statement.claims.size()}};
   std::cout << result.dump() << '\n';
@@ -673,9 +682,11 @@ int Verify(int argc, char** argv) {
   if (!ParseOptions(argc, argv, 3, allowed, &options)) return Usage();
   std::string executable, verifier, purpose, nonce_store, confirmations_text,
       minimum_text, lifetime_text, network_name;
+  verifier = kDefaultVerifier;
+  purpose = kDefaultPurpose;
   if (!One(options, "--bitcoin-cli", &executable, false) ||
-      !One(options, "--verifier", &verifier) ||
-      !One(options, "--purpose", &purpose) ||
+      !One(options, "--verifier", &verifier, false) ||
+      !One(options, "--purpose", &purpose, false) ||
       !One(options, "--nonce-store", &nonce_store) ||
       !One(options, "--min-confirmations", &confirmations_text, false) ||
       !One(options, "--minimum-total-sats", &minimum_text, false) ||

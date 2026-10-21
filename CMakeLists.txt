@@ -141,6 +141,9 @@ if(BUILD_TESTING)
   add_pokc_test(pokc-sage-test tests/quietproof/pokc_sage_vector_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/testdata/pokc_sage_vectors.json)
   add_test(NAME quietproof-cli-test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/cli_test.sh $<TARGET_FILE:quietproof-cli>)
+  add_test(NAME quietproof-cli-context-test COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/cli_context_test.py $<TARGET_FILE:quietproof-cli>)
+  set_tests_properties(quietproof-cli-context-test PROPERTIES TIMEOUT 180)
   if(QUIETPROOF_BUILD_RPC)
     set(_quietproof_cli_rpc_mode --cli)
   else()
