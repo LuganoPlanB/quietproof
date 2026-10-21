@@ -57,6 +57,11 @@ stdin, never argv, environment variables or shell history. Interactive input
 disables echo. Request/proof files are owner-only and never overwrite an
 existing destination. The guide demonstrates proving while Core is stopped.
 
+After validating the keys, `prove` reports phase changes and elapsed time every
+10 seconds on standard error. These updates indicate the current phase, not a
+completion percentage or a guarantee that computation is advancing. The final
+JSON result remains on standard output.
+
 Verification supplies local metadata/policy expectations, verifies the proof,
 looks up exact current UTXOs at a common stable tip and atomically consumes the
 nonce. Expect `valid_current`, exit 0. Reusing the same nonce store rejects a
