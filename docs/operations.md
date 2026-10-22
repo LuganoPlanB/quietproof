@@ -59,7 +59,7 @@ Pass the **base** datadir, not its `signet`/`regtest` subdirectory.
 | `--rpc-url URL` | Explicit numeric IPv4/IPv6 loopback HTTP root URL and port; no credentials, hostname, query or fragment. |
 | `--rpc-timeout SECONDS` | Ordinary RPC deadline, default 30 seconds. |
 | `--rpc-scan-timeout SECONDS` | Discovery only; scan deadline, default 600 seconds. |
-| `--rpc-wallet NAME` | Discovery only; a nonempty, already loaded named wallet instead of a full UTXO scan. |
+| `--rpc-wallet NAME` | Selects an already loaded wallet for discovery or proving. |
 | `--min-confirmations N` | Discovery defaults to 1 and requires at least 1; verification separately reapplies its local threshold (default 1). |
 | `--network NAME` | Required for discovery; optional local assertion on verify, checked before RPC. Otherwise verify uses the statement network and requires that exact Core chain. |
 
@@ -313,12 +313,13 @@ actual runtime/memory, pinned revisions/toolchains and residual assumptions.
 
 ### Explicit wallet-backed proving
 
-Use `prove --request request.qpr --output proof.qpf --rpc-wallet NAME
---address ADDRESS --rpc-datadir /path/to/bitcoin-data` with Bitcoin Roots
+Use `prove --request request.qpr --output proof.qpf
+--rpc-datadir /path/to/bitcoin-data` with Bitcoin Roots
 v31.1-roots.3 or newer. It uses `exportaddresskey`
 directly over the existing loopback, cookie-authenticated RPC connection. The
-request selects the network; an address outside the request is rejected before
-export. The wallet must already be loaded and unlocked. Only one distinct native
+request supplies the network and address. Optional `--network` and `--address`
+must match it. The sole loaded wallet is selected automatically; use
+`--rpc-wallet NAME` when multiple wallets are loaded. The wallet must already be loaded and unlocked. Only one distinct native
 P2WPKH address is supported in this mode; multi-key requests use protected stdin.
 Missing RPC support is reported explicitly and never triggers `listdescriptors`.
 Plain proving remains offline. Wallet export temporarily brings a spending key

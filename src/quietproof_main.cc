@@ -70,7 +70,7 @@ void PrintUsage(std::ostream& output) {
          "--purpose PURPOSE --message TEXT (--address ADDRESS | --claim "
          "TXID:VOUT:SATOSHIS:PROGRAM [--claim ...]) --output REQUEST\n"
       << "  quietproof utxos --network NETWORK --address ADDRESS [RPC OPTIONS]\n"
-      << "  quietproof prove --request REQUEST --output PROOF [--rpc-wallet NAME --address ADDRESS [RPC OPTIONS]]\n"
+      << "  quietproof prove --request REQUEST --output PROOF [--network NETWORK] [RPC OPTIONS] [--rpc-wallet NAME] [--address ADDRESS]\n"
       << "  quietproof verify PROOF --verifier ID "
          "--purpose PURPOSE --nonce-store FILE [--min-confirmations N] "
          "[--minimum-total-sats N] [--max-lifetime SECONDS] [--network NETWORK]\n"
@@ -535,7 +535,7 @@ int ChallengeCreate(int argc, char** argv) {
 int Prove(int argc, char** argv) {
   Options options;
   auto allowed = kRpcOptions;
-  allowed.insert({"--request", "--output", "--rpc-wallet", "--address"});
+  allowed.insert({"--request", "--output", "--rpc-wallet", "--address", "--network"});
   if (!ParseOptions(argc, argv, 2, allowed, &options))
     return Usage();
   std::string request_path, output_path;
@@ -559,14 +559,24 @@ int Prove(int argc, char** argv) {
   std::vector<std::array<uint8_t, 20>> programs;
   if (!proofs::QuietProofDistinctPrograms(statement, &programs)) return kData;
   std::vector<std::array<uint8_t, 32>> secrets;
-  const bool wallet_mode = options.count("--rpc-wallet");
-  if (!wallet_mode && HasDiscoveryOptions(options)) return Usage();
+  if (options.count("--network")) {
+    std::string network_name;
+    proofs::QuietProofNetwork network;
+    if (!One(options, "--network", &network_name) ||
+        !proofs::QuietProofParseNetwork(network_name, &network)) return Usage();
+    if (network != statement.network) {
+      std::cerr << "Network does not match the request\n";
+      return kData;
+    }
+  }
+  bool wallet_mode = options.count("--rpc-wallet") || options.count("--address");
+  for (const auto& option : kRpcOptions) wallet_mode |= options.count(option) != 0;
   if (wallet_mode) {
 #ifdef QUIETPROOF_HAS_RPC
     std::string wallet, address;
     proofs::BitcoinCoreRpcConfig config(statement.network);
-    if (!One(options, "--rpc-wallet", &wallet) || wallet.empty() ||
-        !One(options, "--address", &address) || !ParseRpcOptions(options, &config)) return Usage();
+    if (!One(options, "--rpc-wallet", &wallet, false) ||
+        !One(options, "--address", &address, false) || !ParseRpcOptions(options, &config)) return Usage();
     if (programs.size() != 1) {
       std::cerr << "Wallet export requires a request with one distinct P2WPKH address; use stdin for multiple keys.\n";
       return kData;
