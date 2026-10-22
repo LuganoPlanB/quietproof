@@ -54,15 +54,23 @@ The transcript binds the verifier, purpose, network, nonce, expiry, circuit iden
 - consume nonces atomically in durable storage; and
 - provide an equivalently atomic shared store in distributed deployments.
 
-## V1 has a narrow key boundary
+## Supported scripts and key boundary
 
-QuietProof v1 accepts up to 16 public output claims but only one or two distinct P2WPKH witness programs. It is not an efficient aggregate proof for an HD wallet in which each UTXO has a different key.
+QuietProof accepts up to 16 public output claims but only one or two distinct
+compressed-key hashes across native P2WPKH and P2PKH outputs. Uncompressed-key
+P2PKH, P2SH, P2WSH, P2TR and arbitrary scripts are unsupported. Discovery recognizes
+a P2PKH script but cannot determine its hidden key encoding; proving must match
+the compressed serialization. It is not an efficient aggregate proof for an HD wallet in which each UTXO has a different key.
 
 Current proofs are also large and computationally expensive. Operators must use memory and CPU quotas around parsing and verification. See [current performance measurements](/performance).
 
+The proof does not newly reveal public keys. Earlier spends or key reuse may
+already expose them; proving cannot undo that exposure. Outpoints, key hashes
+and amounts remain public and linkable. This is not anonymous proof of funds.
+
 ## Platform boundary
 
-The current release target is native 64-bit C++17 on Linux/x86-64 with the repository’s hardened flags. A 128 MiB envelope ceiling bounds allocation. A generic wasm target elsewhere in the dependency does not make wasm a supported QuietProof release target.
+The current release target is native 64-bit C++20 on Linux/x86-64 with the repository’s hardened flags. A 128 MiB envelope ceiling bounds allocation. A generic wasm target elsewhere in the dependency does not make wasm a supported QuietProof release target.
 
 ## Review boundary
 

@@ -6,7 +6,7 @@ description: Discover Bitcoin outputs, create a challenge, prove offline, and ve
 # Build and try QuietProof
 
 Discover Bitcoin outputs, create a challenge, prove key control, verify against
-Bitcoin Core. Supply a native P2WPKH address; Core supplies the public claims.
+Bitcoin Core. Supply a native P2WPKH or compressed-key P2PKH address; Core supplies the public claims.
 The prover needs the request and its keys. The verifier chooses the policy and
 trusted node, then independently checks the proof and current UTXOs.
 
@@ -90,7 +90,8 @@ core generatetoaddress 2 "$MINER" >/dev/null
 ```
 
 The fixture secret remains outside Core. Only its public descriptor is used to
-find the address; the funding wallet has its own unrelated keys. This creates
+find the address; replace `wpkh($PUBKEY)` with `pkh($PUBKEY)` in `DESC` to try
+a compressed-key P2PKH fixture instead. The funding wallet has its own unrelated keys. This creates
 one confirmed 1-BTC output on an isolated chain, with no external peers.
 
 ## Create, inspect and prove
@@ -109,12 +110,13 @@ stop_demo
 
 At the protected prompt, enter the published disposable scalar-1 encoding
 above. For other requests, enter one 32-byte hexadecimal secret per distinct
-program; input order does not matter. Terminal echo is disabled. For automation,
+key hash; input order does not matter. Terminal echo is disabled. For automation,
 use a protected pipe whose producer does not log its output. Never put real
 secrets in argv, environment variables or shell history.
 
 Core is stopped during proving: this stage reads no RPC cookie/configuration
-and accepts no RPC flags. It can run on another offline machine. Requests and
+when invoked without wallet/RPC options. It can run on another offline machine.
+Explicit Roots wallet-backed proving remains P2WPKH-only; P2PKH uses stdin. Requests and
 proofs are mode `0600`, and existing output paths are never overwritten.
 The default challenge lifetime is 300 seconds; it must still be valid at
 verification. If it expires, create a fresh request and proof.
@@ -178,7 +180,7 @@ trap - EXIT
 
 ## An already funded signet address
 
-For an existing P2WPKH address whose key the prover already holds, use a trusted,
+For an existing native P2WPKH or compressed-key P2PKH address whose key the prover already holds, use a trusted,
 fully validated local Core node with `server=1` and the default cookie layout:
 
 ```sh
@@ -196,8 +198,11 @@ test networks: select the network explicitly and require that chain from Core.
 For nondefault datadirs, ports or wallets, see
 [RPC configuration and recovery](../operations.md).
 
-The request/proof still discloses outpoints, amounts and public witness
-programs; the address is sent to the selected local node. The proof hides the
-spend keys and compressed public keys, not those public claims. It proves
+The request/proof still discloses outpoints, amounts and public key hashes;
+the address is sent to the selected local node. The proof hides the
+spend keys and does not newly disclose compressed public keys. Prior spends
+or key reuse may already expose a public key; proving cannot undo that exposure.
+This is not anonymous proof of funds. Uncompressed-key P2PKH is unsupported,
+and discovery cannot identify key encoding from a P2PKH script alone. It proves
 neither exclusive ownership, title, solvency nor a collateral lock. Historical
 snapshots require a separate authenticated historical provider through the API.

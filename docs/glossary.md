@@ -13,7 +13,7 @@ A specific amount of bitcoin created by a transaction and not yet spent. QuietPr
 
 ### Compressed public key
 
-A 33-byte secp256k1 key revealed when spending P2WPKH outputs. QuietProof does not disclose it, but cannot hide disclosures elsewhere, including spends with the same key.
+A 33-byte secp256k1 key used by supported P2WPKH and P2PKH relations. QuietProof does not newly disclose it, but cannot hide disclosures elsewhere, including earlier spends with the same key.
 
 ### Private key / spend key
 
@@ -27,6 +27,17 @@ The secret scalar that authorizes spending. QuietProof’s prover uses it locall
 
 For P2WPKH, the 20 bytes after `0014` in the output’s `scriptPubKey`. This public fingerprint is an input to the QuietProof relation.
 
+### P2PKH
+
+“Pay to Public Key Hash,” the exact script `76a914{20-byte hash}88ac`.
+QuietProof supports hashes of compressed public keys only. The script itself
+cannot establish whether the hidden key was compressed or uncompressed.
+
+### Key hash
+
+The public 20-byte HASH160 of the compressed public key. The API retains the
+member name `program` for compatibility; typed claims select P2WPKH or P2PKH.
+
 ## Proof terms
 
 ### Challenge
@@ -35,7 +46,7 @@ A short-lived request created by the verifier. It identifies the verifier, purpo
 
 ### Circuit
 
-The arithmetic rules checked by the zero-knowledge proof. QuietProof v1 has exact circuit shapes for one and two distinct witness programs.
+The arithmetic rules checked by the zero-knowledge proof. QuietProof has exact circuit shapes for one and two distinct compressed-key hashes, shared across supported script kinds.
 
 ### Nonce
 

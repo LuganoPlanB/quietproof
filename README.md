@@ -3,14 +3,18 @@
 > prove you control bitcoin without revealing your public key.
 
 Discover Bitcoin outputs, create a challenge, prove key control, verify against
-Bitcoin Core. Supply a native P2WPKH address; the CLI and C++ library discover
+Bitcoin Core. Supply a native P2WPKH or compressed-key P2PKH address; the CLI and C++ library discover
 its candidate outputs and independently recheck them at verification. Proving
 runs offline with the request and protected key input by default; explicit wallet
 mode can obtain one address key from Bitcoin Roots. Native verification
 uses Core RPC directly, without installing or invoking `bitcoin-cli`.
 
-QuietProof uses **PoKC (Proof of Key Control)** for one or two native P2WPKH
-programs. Proofs hide keys, but disclose outpoints, amounts and witness programs.
+QuietProof uses **PoKC (Proof of Key Control)** for one or two compressed-key
+hashes across P2WPKH, P2PKH, or mixed outputs. Uncompressed-key P2PKH is unsupported;
+discovery cannot determine key encoding from a P2PKH script alone.
+Proofs do not newly reveal public keys, but disclose outpoints, amounts and key hashes.
+Earlier spends or key reuse may already have revealed a public key; proving cannot
+undo that exposure. This is not anonymous proof of funds.
 Recipients can trace these coins and associate them with a known prover identity.
 Discovery sends the address to the selected node. This is not proof of exclusive
 ownership, legal title, solvency or locked collateral.
@@ -134,11 +138,17 @@ explicitly skip live Core integration. Enable it with
 [operations runbook](docs/operations.md#testing-and-release) gives exact commands,
 package ON/OFF, sanitizer/static-analysis gates and the optional Sage reference
 setup. Deterministic Sage vectors, protocol, naming and spec checks remain in
-the normal suite. The [normative v1 format](spec/quietproof-v1.md) is unchanged.
+the normal suite. The [normative protocol](spec/quietproof-v1.md) retains statement
+v1's P2WPKH semantics and adds typed statement v2 for P2PKH or mixed claims.
+New proofs use timestamped envelope v2 with the unchanged ownership circuits.
+Older verifiers that do not support statement v2 reject it as unsupported.
 
 Manual claims and `--bitcoin-cli /absolute/path` remain available in the
 [advanced compatibility appendix](docs/operations.md#advanced-manual-and-legacy-compatibility).
 Native failures never fall back to the legacy backend.
+Four-part `--claim TXID:VOUT:SATOSHIS:PROGRAM` stays P2WPKH. The typed form
+`--claim TXID:VOUT:SATOSHIS:p2pkh:KEY_HASH` (or `p2wpkh`) can be repeated for
+mixed outputs; duplicate outpoints cannot count twice.
 
 ## Use cases
 
@@ -146,7 +156,7 @@ Native failures never fall back to the legacy backend.
 - **Auditor challenges:** answer fresh, single-use key-control challenges without constructing a spend-like transaction.
 - **Disclosed proof of funds:** qualify parties for trades, purchases, lending, or onboarding.
 - **Collateral and escrow preflight:** demonstrate control before negotiating and creating the actual locking or settlement transaction.
-- **Wallet continuity:** disclose common key knowledge across old and new P2WPKH outputs off-chain.
+- **Wallet continuity:** disclose common key knowledge across old and new supported outputs off-chain.
 - **Pseudonymous reputation rollover:** transfer reputation or credentials while revealing wallet links to the application.
 - **Collaborative protocols:** verify control of proposed inputs before admitting participants to CoinJoin or other coordinated transactions.
 - **Membership and operator bonds:** demonstrate control of a disclosed economic bond without immediately spending or depositing it.
@@ -222,8 +232,8 @@ The address and network come from the request. Optional `--network` must match i
 With exactly one loaded wallet, it is selected automatically; otherwise specify
 `--rpc-wallet NAME`. Optional `--address ADDRESS` must match the request.
 The node's network and address script must match it before any key export. This mode supports a request with one distinct
-native P2WPKH address (possibly multiple outputs). P2PKH remains unsupported by
-QuietProof's proof format even though Roots can export its key. The returned
+native P2WPKH address (possibly multiple outputs). P2PKH requests use protected
+stdin; this explicit wallet mode remains P2WPKH-only. The returned
 compressed key is checked against the request before proof generation.
 
 Supplying any RPC option (or `--address`) selects wallet mode. Plain `prove`

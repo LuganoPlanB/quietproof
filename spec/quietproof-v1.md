@@ -39,7 +39,7 @@ n = FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 
 The private scalar is an integer `x` with `1 <= x < n`. Let `P = xG`, normalized
 to a finite affine point `(Px, Py)`. `Px_be` is exactly 32 big-endian bytes.
-`SEC = (0x02 + (Py mod 2)) || Px_be`. The public witness program is
+`SEC = (0x02 + (Py mod 2)) || Px_be`. The public key hash (the API member `program`) is
 
 ```
 program = RIPEMD160(SHA256(SEC))
@@ -203,8 +203,13 @@ entire request. `proof_created_at` records prover start, before circuit/proof
 computation, not completion. It MUST be nonzero and satisfy
 `not_before <= proof_created_at < expires_at`; verification also requires
 `proof_created_at <= now`. These local-clock claims are not trusted timestamps.
-Legacy proofs remain readable, with `proof_created_at: null` in inspection;
-older verifiers reject version 02 as unsupported.
+Legacy envelope-v1/statement-v1 proofs remain readable, with
+`proof_created_at: null` in inspection. Verifiers predating timestamped envelopes
+reject envelope v2 as unsupported; verifiers supporting envelope v2 but only
+statement v1 reject typed statement v2 as unsupported. Neither version may be
+silently downgraded. The proof does not newly disclose the public key, but public
+outpoints, amounts and key hashes remain linkable. Prior spends or key reuse may
+already reveal the key; this protocol cannot undo that exposure or provide anonymity.
 
 ## 7. Verification and result selection
 
@@ -219,7 +224,7 @@ The verifier returns one of `invalid_proof`, `malformed_statement`,
 4. Reject an unsupported circuit identity, then verify the proof and transcript
    binding before querying chain state.
 5. For every outpoint, verify the selected Bitcoin network, exact amount,
-   exact `00 14 || program` script, and unspent state using one stable chain
+   exact kind-selected script from section 1, and unspent state using one stable chain
    tip shared by every claim or an authenticated historical snapshot.
 6. Apply confirmation/finality policy and sum amounts with checked arithmetic.
 7. Apply bridge authorization when present.

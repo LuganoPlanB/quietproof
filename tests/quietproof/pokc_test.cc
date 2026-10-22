@@ -134,9 +134,14 @@ void TestMaximumMultiKeyProofRoundTrip() {
   PoKCWitnessV1<Field,EC> first, second; Require(first.compute(p256k1,one.data(),one.size()) && second.compute(p256k1,n_minus_one.data(),n_minus_one.size()),"multi witness compute");
   QuietProofStatementV1 s; s.network=QuietProofNetwork::kRegtest; s.verifier="multi-test"; s.purpose="proof-of-funds"; s.expires_at=static_cast<uint64_t>(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()))+3600; s.nonce[0]=1; s.bip322_message_hash[0]=1;
   QuietProofClaimV1 a,b; a.txid[0]=1; a.amount_sats=1; a.program=first.program(); b.txid[0]=2; b.amount_sats=2; b.program=second.program(); s.claims={a,b};
+  s.statement_version = 2;
+  s.claims[0].script_kind = QuietProofScriptKind::kP2pkh;
   QuietProofEnvelopeV1 envelope; Require(PoKCProveKeys<2>({one,n_minus_one},s,&envelope),"maximum multi-key prove"); std::vector<uint8_t> wire; Require(EncodeQuietProofEnvelope(envelope,&wire),"maximum multi-key encode"); QuietProofEnvelopeV1 parsed; Require(DecodeQuietProofEnvelope(wire,&parsed) && PoKCVerifyProof(parsed),"maximum multi-key verify");
   auto trailing_proof=parsed; trailing_proof.proof.bytes.push_back(0); Require(!PoKCVerifyProof(trailing_proof),"proof trailing byte accepted");
   auto mutated_program=parsed; mutated_program.statement.claims[0].program[0]^=1; Require(!PoKCVerifyProof(mutated_program),"mutated program accepted");
+  auto mutated_kind = parsed;
+  mutated_kind.statement.claims[0].script_kind = QuietProofScriptKind::kP2wpkh;
+  Require(!PoKCVerifyProof(mutated_kind), "two-key mixed script substitution accepted");
   auto mutated_claims=s; std::swap(mutated_claims.claims[0],mutated_claims.claims[1]); Require(!PoKCProveKeys<2>({one,n_minus_one},mutated_claims,&envelope),"reordered claims accepted"); mutated_claims=s; mutated_claims.claims[1]=mutated_claims.claims[0]; Require(!PoKCProveKeys<2>({one,n_minus_one},mutated_claims,&envelope),"duplicate claim accepted"); Require(!PoKCProveKeys<2>({one},s,&envelope),"omitted relation accepted"); Require(!PoKCProveKeys<2>({one,n_minus_one,one},s,&envelope),"extra relation accepted"); Require(!PoKCProveKeys<2>({one,one},s,&envelope),"mutated key accepted");
   auto too_many=s; QuietProofClaimV1 c=b; c.txid[0]=3; c.program[0]^=1; too_many.claims.push_back(c); std::vector<std::array<uint8_t,20>> too_many_programs; Require(!QuietProofDistinctPrograms(too_many,&too_many_programs),"three program grouping accepted");
   auto shared=s; shared.claims[1].program=shared.claims[0].program; std::vector<std::array<uint8_t,20>> grouped; Require(QuietProofDistinctPrograms(shared,&grouped) && grouped.size()==1,"shared-key mapping rejected");
