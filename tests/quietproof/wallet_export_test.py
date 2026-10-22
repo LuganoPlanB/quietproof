@@ -36,6 +36,9 @@ class Handler(BaseHTTPRequestHandler):
             if mode == 'p2pkh':
                 script = '76a914' + PROGRAM + '88ac'
             value = {'isvalid': True, 'scriptPubKey': script, 'address': ADDRESS}
+        elif method == 'listwallets':
+            value = {'no-wallet': [], 'many-wallets': ['one', 'two'],
+                     'bad-wallets': {}, 'bad-name': [7]}.get(mode, ['wallet / one'])
         elif method == 'exportaddresskey':
             value = {'private_key_hex': KEY, 'compressed': True}
             if mode == 'wrong-key': value['private_key_hex'] = '0' * 63 + '2'
@@ -105,8 +108,8 @@ class WalletExportTest(unittest.TestCase):
                     self.assertEqual(methods, ['getblockchaininfo', 'validateaddress', 'exportaddresskey'])
                 if mode == 'missing': self.assertIn('protected stdin', result.stderr)
 
-    def test_matching_key_reaches_prover_without_stdin(self):
-        process = subprocess.Popen(self.command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+    def assert_reaches_prover(self, command, call_count):
+        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
         observed = bytearray()
         try:
@@ -119,7 +122,7 @@ class WalletExportTest(unittest.TestCase):
             self.assertNotIn(KEY.encode(), observed)
             method, params, path = self.server.calls[-1]
             self.assertEqual((method, params, unquote(path)), ('exportaddresskey', [ADDRESS], '/wallet/wallet / one'))
-            self.assertEqual(len(self.server.calls), 3)
+            self.assertEqual(len(self.server.calls), call_count)
         finally:
             process.terminate()
             process.communicate(timeout=10)
@@ -138,14 +141,39 @@ class WalletExportTest(unittest.TestCase):
         self.assertIn('one distinct', result.stderr)
         self.assertEqual(self.server.calls, [])
 
-    def test_rpc_options_require_explicit_wallet_and_address(self):
+    def automatic_command(self):
+        command = self.command.copy()
         for option in ('--rpc-wallet', '--address'):
-            command = self.command.copy()
             i = command.index(option)
             del command[i:i+2]
-            result = subprocess.run(command, input='', text=True, capture_output=True, timeout=10)
-            self.assertEqual(result.returncode, 64)
-            self.assertEqual(self.server.calls, [])
+        return command + ['--network', 'signet']
+
+    def test_explicit_key_reaches_prover(self):
+        self.assert_reaches_prover(self.command, 3)
+
+    def test_automatic_wallet_and_address(self):
+        self.assert_reaches_prover(self.automatic_command(), 4)
+        self.assertEqual([c[0] for c in self.server.calls],
+                         ['getblockchaininfo', 'validateaddress', 'listwallets', 'exportaddresskey'])
+
+    def test_wallet_selection_failures(self):
+        for mode in ('no-wallet', 'many-wallets', 'bad-wallets', 'bad-name'):
+            with self.subTest(mode=mode):
+                self.server.mode = mode
+                self.server.calls.clear()
+                result = subprocess.run(self.automatic_command(), input='', text=True,
+                                        capture_output=True, timeout=10)
+                self.assertEqual(result.returncode, 65, result.stderr)
+                self.assertNotIn('exportaddresskey', [c[0] for c in self.server.calls])
+                self.assertFalse((self.root / 'proof').exists())
+
+    def test_network_option_mismatch_before_rpc(self):
+        command = self.automatic_command()
+        command[-1] = 'mainnet'
+        result = subprocess.run(command, input='', text=True, capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 65)
+        self.assertIn('Network does not match', result.stderr)
+        self.assertEqual(self.server.calls, [])
 
 
 if __name__ == '__main__':

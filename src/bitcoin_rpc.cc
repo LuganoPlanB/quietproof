@@ -670,8 +670,48 @@ bool BitcoinCoreRpc::Discover(const BitcoinUtxoQuery& query, BitcoinUtxoDiscover
                                      "Discovery response fields are malformed");
   }
 }
+namespace {
+// BIP173 witness-v0 encoding: a 20-byte program has exactly 32 base32 digits.
+std::string ProgramAddress(QuietProofNetwork network,
+                           const std::array<uint8_t, 20>& program) {
+  const std::string hrp = network == QuietProofNetwork::kMainnet ? "bc" :
+      network == QuietProofNetwork::kRegtest ? "bcrt" : "tb";
+  constexpr char alphabet[] = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+  constexpr uint32_t generators[] = {
+      0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3};
+  uint32_t checksum = 1;
+  auto feed = [&](uint8_t value) {
+    const uint32_t top = checksum >> 25;
+    checksum = ((checksum & 0x1ffffff) << 5) ^ value;
+    for (int i = 0; i < 5; ++i)
+      if ((top >> i) & 1) checksum ^= generators[i];
+  };
+  for (unsigned char c : hrp) feed(c >> 5);
+  feed(0);
+  for (unsigned char c : hrp) feed(c & 31);
+  std::string address = hrp + "1q";
+  feed(0);  // Witness version zero uses Bech32, not Bech32m.
+  uint32_t accumulator = 0;
+  int bits = 0;
+  for (uint8_t byte : program) {
+    accumulator = (accumulator << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      bits -= 5;
+      const uint8_t digit = (accumulator >> bits) & 31;
+      feed(digit);
+      address += alphabet[digit];
+    }
+  }
+  for (int i = 0; i < 6; ++i) feed(0);
+  checksum ^= 1;
+  for (int i = 5; i >= 0; --i) address += alphabet[(checksum >> (5*i)) & 31];
+  return address;
+}
+}  // namespace
+
 bool BitcoinCoreRpc::ExportAddressKey(
-    const std::string& wallet, const std::string& address,
+    const std::string& requested_wallet, const std::string& requested_address,
     const std::array<uint8_t, 20>& expected_program,
     std::array<uint8_t, 32>* secret, BitcoinRpcError* error) {
   using namespace bitcoin_rpc_internal;
@@ -679,9 +719,12 @@ bool BitcoinCoreRpc::ExportAddressKey(
   auto fail = [&](BitcoinRpcErrorCode code, const char* message) {
     return Fail(error, code, message);
   };
-  if (!secret || wallet.empty() || wallet.size() > 1024 ||
+  std::string wallet = requested_wallet;
+  const std::string address = requested_address.empty()
+      ? ProgramAddress(impl_->client_.config().network, expected_program) : requested_address;
+  if (!secret || wallet.size() > 1024 ||
       !QuietProofUtf8(wallet) || !ValidAddressText(address))
-    return fail(BitcoinRpcErrorCode::kConfiguration, "Explicit wallet and address are required");
+    return fail(BitcoinRpcErrorCode::kConfiguration, "Invalid wallet or address");
   RpcDecodedResponse response;
   // Erase the returned hex string even when validation fails. JSON/transport
   // libraries may retain copies; this is not a guarantee of complete erasure.
@@ -713,6 +756,19 @@ bool BitcoinCoreRpc::ExportAddressKey(
       return fail(BitcoinRpcErrorCode::kUnsupportedScript, "Address must use native P2WPKH on the request network");
     if (!std::equal(expected_program.begin(), expected_program.end(), script.begin() + 2))
       return fail(BitcoinRpcErrorCode::kInvalidAddress, "Address does not match the request; no key exported");
+    if (wallet.empty()) {
+      if (!client.Call("listwallets", nlohmann::json::array(), false, &response, error)) return false;
+      if (!response.result.is_array())
+        return fail(BitcoinRpcErrorCode::kMalformed, "Malformed loaded wallet list");
+      if (response.result.size() != 1)
+        return fail(BitcoinRpcErrorCode::kConfiguration,
+                    "Expected one loaded wallet; load a wallet or select one with --rpc-wallet");
+      if (!response.result[0].is_string())
+        return fail(BitcoinRpcErrorCode::kMalformed, "Malformed loaded wallet name");
+      wallet = response.result[0].get<std::string>();
+      if (wallet.size() > 1024 || !QuietProofUtf8(wallet))
+        return fail(BitcoinRpcErrorCode::kMalformed, "Invalid loaded wallet name");
+    }
     if (!client.Call("exportaddresskey", nlohmann::json::array({address}), false,
                      &response, error, wallet)) {
       if (error && error->rpc_code == -32601)

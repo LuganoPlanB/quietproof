@@ -211,17 +211,20 @@ from an already loaded, unlocked descriptor wallet:
 
 ```sh
 build/quietproof prove --request request.qpr --output proof.qpf \
-  --rpc-wallet signet-wallet --address tb1qYOUR_ADDRESS \
-  --rpc-datadir /path/to/bitcoin-data
+  --network signet --rpc-url http://127.0.0.1:38332/ \
+  --rpc-cookie "$HOME/.config/quietproof/signet.cookie"
 ```
 
-The network comes from the request. The node's network and address script must
-match it before any key export. This mode supports a request with one distinct
+The address and network come from the request. Optional `--network` must match it.
+With exactly one loaded wallet, it is selected automatically; otherwise specify
+`--rpc-wallet NAME`. Optional `--address ADDRESS` must match the request.
+The node's network and address script must match it before any key export. This mode supports a request with one distinct
 native P2WPKH address (possibly multiple outputs). P2PKH remains unsupported by
 QuietProof's proof format even though Roots can export its key. The returned
 compressed key is checked against the request before proof generation.
 
-Wallet mode is opt-in: plain `prove` still reads protected stdin without RPC.
+Supplying any RPC option (or `--address`) selects wallet mode. Plain `prove`
+still reads protected stdin without RPC; `--network` alone stays offline.
 If the node lacks `exportaddresskey`, use stdin mode instead. Authentication,
 locked-wallet, missing-key and malformed-response errors stop the operation;
 there is no private-descriptor export or automatic wallet unlocking fallback.

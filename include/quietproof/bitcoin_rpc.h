@@ -88,7 +88,8 @@ class BitcoinCoreRpc final : public QuietProofChainProvider {
   BitcoinCoreRpc& operator=(const BitcoinCoreRpc&) = delete;
   bool Discover(const BitcoinUtxoQuery&, BitcoinUtxoDiscovery*,
                 BitcoinRpcError* = nullptr);
-  // Explicit wallet export for native P2WPKH only. Checks node network and
+  // Native P2WPKH export. Empty address derives it from the request program;
+  // empty wallet selects the sole loaded wallet. Checks node network and
   // address program before requesting a secret. Leaves output unchanged on
   // failure. Caller must validate the scalar/key against the request and erase it.
   bool ExportAddressKey(const std::string& wallet, const std::string& address,
