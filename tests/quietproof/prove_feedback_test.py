@@ -36,6 +36,35 @@ class ProveFeedbackTest(unittest.TestCase):
         self.assertNotIn('Generating proof', result.stderr)
         self.assertEqual(result.stdout, '')
 
+    def test_existing_output_rejected_before_key_input(self):
+        output = Path(self.command[-1])
+        for kind in ('file', 'directory', 'dangling-symlink'):
+            with self.subTest(kind=kind):
+                if kind == 'file':
+                    output.write_bytes(b'preserve me')
+                elif kind == 'directory':
+                    output.mkdir()
+                else:
+                    output.symlink_to(output.parent / 'missing')
+                process = subprocess.Popen(self.command, stdin=subprocess.PIPE,
+                                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                try:
+                    # Keep stdin open: the command must fail without asking for a key.
+                    self.assertEqual(process.wait(timeout=5), 74)
+                    stdout, stderr = process.communicate()
+                    self.assertIn(b'Output destination already exists', stderr)
+                    self.assertNotIn(b'Generating proof', stderr)
+                    if kind == 'file':
+                        self.assertEqual(output.read_bytes(), b'preserve me')
+                finally:
+                    if process.poll() is None:
+                        process.kill()
+                    process.communicate()
+                    if kind == 'directory':
+                        output.rmdir()
+                    else:
+                        output.unlink()
+
     def test_malformed_and_eof(self):
         for value in ['tb1qnotaprivatekey\n', '', '\n']:
             with self.subTest(value=value):
