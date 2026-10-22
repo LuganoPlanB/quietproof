@@ -338,8 +338,10 @@ v31.1-roots.3 or newer. It uses `exportaddresskey`
 directly over the existing loopback, cookie-authenticated RPC connection. The
 request supplies the network and address. Optional `--network` and `--address`
 must match it. The sole loaded wallet is selected automatically; use
-`--rpc-wallet NAME` when multiple wallets are loaded. The wallet must already be loaded and unlocked. Only one distinct native
-P2WPKH address is supported in this mode; multi-key requests use protected stdin.
+`--rpc-wallet NAME` when multiple wallets are loaded. The wallet must already be loaded and unlocked. This mode supports one distinct
+compressed-key hash across P2WPKH/P2PKH outputs; multi-key requests use protected stdin.
+Automatic address selection prefers P2PKH when present, otherwise P2WPKH.
+For same-key mixed requests, `--address` can select either claimed kind.
 Missing RPC support is reported explicitly and never triggers `listdescriptors`.
 Plain proving remains offline. Wallet export temporarily brings a spending key
 into the QuietProof process; buffer clearing cannot erase every library/OS copy.

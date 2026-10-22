@@ -16,6 +16,7 @@
 #include "quietproof/bitcoin_rpc.h"
 
 #include <utility>
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <cstdlib>
@@ -681,6 +682,39 @@ bool BitcoinCoreRpc::Discover(const BitcoinUtxoQuery& query, BitcoinUtxoDiscover
   }
 }
 namespace {
+// Base58Check encoding of the network byte and public key hash. Decoding and
+// validation still belong to Core; this only constructs the export address.
+std::string P2pkhAddress(QuietProofNetwork network,
+                         const std::array<uint8_t, 20>& program) {
+  std::array<uint8_t, 25> payload{};
+  payload[0] = network == QuietProofNetwork::kMainnet ? 0 : 111;
+  std::copy(program.begin(), program.end(), payload.begin() + 1);
+  std::array<uint8_t, 32> digest{};
+  SHA256 first;
+  first.Update(payload.data(), 21);
+  first.DigestData(digest.data());
+  SHA256 second;
+  second.Update(digest.data(), digest.size());
+  second.DigestData(digest.data());
+  std::copy_n(digest.begin(), 4, payload.begin() + 21);
+  constexpr char alphabet[] = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  std::string encoded;
+  size_t zeros = 0;
+  while (zeros < payload.size() && payload[zeros] == 0) ++zeros;
+  for (size_t start = zeros; start < payload.size();) {
+    unsigned remainder = 0;
+    for (size_t i = start; i < payload.size(); ++i) {
+      unsigned value = remainder * 256 + payload[i];
+      payload[i] = value / 58;
+      remainder = value % 58;
+    }
+    encoded.push_back(alphabet[remainder]);
+    while (start < payload.size() && payload[start] == 0) ++start;
+  }
+  encoded.append(zeros, '1');
+  std::reverse(encoded.begin(), encoded.end());
+  return encoded;
+}
 // BIP173 witness-v0 encoding: a 20-byte program has exactly 32 base32 digits.
 std::string ProgramAddress(QuietProofNetwork network,
                            const std::array<uint8_t, 20>& program) {
@@ -724,14 +758,30 @@ bool BitcoinCoreRpc::ExportAddressKey(
     const std::string& requested_wallet, const std::string& requested_address,
     const std::array<uint8_t, 20>& expected_program,
     std::array<uint8_t, 32>* secret, BitcoinRpcError* error) {
+  return ExportAddressKey(requested_wallet, requested_address, expected_program,
+                          {QuietProofScriptKind::kP2wpkh}, secret, error);
+}
+bool BitcoinCoreRpc::ExportAddressKey(
+    const std::string& requested_wallet, const std::string& requested_address,
+    const std::array<uint8_t, 20>& expected_program,
+    const std::vector<QuietProofScriptKind>& script_kinds,
+    std::array<uint8_t, 32>* secret, BitcoinRpcError* error) {
   using namespace bitcoin_rpc_internal;
   using namespace quietproof_internal;
   auto fail = [&](BitcoinRpcErrorCode code, const char* message) {
     return Fail(error, code, message);
   };
+  if (script_kinds.empty() || std::any_of(script_kinds.begin(), script_kinds.end(),
+      [](QuietProofScriptKind kind) {
+        return kind != QuietProofScriptKind::kP2wpkh && kind != QuietProofScriptKind::kP2pkh;
+      })) return fail(BitcoinRpcErrorCode::kConfiguration, "Invalid request script kinds");
+  const bool p2pkh = std::find(script_kinds.begin(), script_kinds.end(),
+                             QuietProofScriptKind::kP2pkh) != script_kinds.end();
   std::string wallet = requested_wallet;
   const std::string address = requested_address.empty()
-      ? ProgramAddress(impl_->client_.config().network, expected_program) : requested_address;
+      ? (p2pkh ? P2pkhAddress(impl_->client_.config().network, expected_program)
+               : ProgramAddress(impl_->client_.config().network, expected_program))
+      : requested_address;
   if (!secret || wallet.size() > 1024 ||
       !QuietProofUtf8(wallet) || !ValidAddressText(address))
     return fail(BitcoinRpcErrorCode::kConfiguration, "Invalid wallet or address");
@@ -760,11 +810,16 @@ bool BitcoinCoreRpc::ExportAddressKey(
     if (!client.Call("validateaddress", nlohmann::json::array({address}), false, &response, error)) return false;
     const auto& validated = response.result;
     std::vector<uint8_t> script;
+    QuietProofScriptKind kind;
+    std::array<uint8_t, 20> key_hash{};
     if (!validated.is_object() || !validated.contains("isvalid") ||
         !validated["isvalid"].is_boolean() || !validated["isvalid"].get<bool>() ||
-        !validated.contains("scriptPubKey") || !P2wpkhScript(validated["scriptPubKey"], &script))
-      return fail(BitcoinRpcErrorCode::kUnsupportedScript, "Address must use native P2WPKH on the request network");
-    if (!std::equal(expected_program.begin(), expected_program.end(), script.begin() + 2))
+        !validated.contains("scriptPubKey") || !validated["scriptPubKey"].is_string() ||
+        !DecodeHex(validated["scriptPubKey"].get<std::string>(), &script) ||
+        !QuietProofClassifyScript(script, &kind, &key_hash) ||
+        std::find(script_kinds.begin(), script_kinds.end(), kind) == script_kinds.end())
+      return fail(BitcoinRpcErrorCode::kUnsupportedScript, "Address script kind does not match the request; no key exported");
+    if (key_hash != expected_program)
       return fail(BitcoinRpcErrorCode::kInvalidAddress, "Address does not match the request; no key exported");
     if (wallet.empty()) {
       if (!client.Call("listwallets", nlohmann::json::array(), false, &response, error)) return false;
