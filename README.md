@@ -120,8 +120,9 @@ Core-only consumers keep the original no-component package and
 ## Testing
 
 The `Tests` GitHub Actions workflow runs on every pull request and pushes to
-`main`: native CTest suites with RPC enabled and disabled (including real proof
-tests), plus documentation tests and a site build. Live Bitcoin-node integration
+`main`: the full native CTest suite with RPC enabled (including real proof
+tests), package/CLI compatibility tests with RPC disabled, plus documentation
+tests and a site build. Live Bitcoin-node integration
 and the optional Sage reference runtime remain opt-in; deterministic Sage vectors
 run in CI.
 
