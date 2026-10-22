@@ -119,6 +119,12 @@ Core-only consumers keep the original no-component package and
 
 ## Testing
 
+The `Tests` GitHub Actions workflow runs on every pull request and pushes to
+`main`: native CTest suites with RPC enabled and disabled (including real proof
+tests), plus documentation tests and a site build. Live Bitcoin-node integration
+and the optional Sage reference runtime remain opt-in; deterministic Sage vectors
+run in CI.
+
 ```sh
 ctest --test-dir build --output-on-failure -E '^pokc-test$'
 ctest --test-dir build --output-on-failure -R '^pokc-test$'
