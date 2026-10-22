@@ -37,10 +37,47 @@ struct QuietProofChainRequest {
 };
 struct QuietProofChainEvidence { QuietProofChainStatus status = QuietProofChainStatus::kUnavailable; QuietProofNetwork network = QuietProofNetwork::kMainnet; std::array<uint8_t,32> block{}; uint64_t height = 0; uint64_t confirmations = 0; uint64_t amount_sats = 0; std::vector<uint8_t> script_pub_key; std::string detail; };
 class QuietProofChainProvider { public: virtual ~QuietProofChainProvider() = default; virtual QuietProofProviderKind kind() const = 0; virtual QuietProofChainEvidence Lookup(const QuietProofChainRequest&) = 0; };
-inline bool QuietProofIsP2wpkh(const QuietProofClaimV1& claim, const std::vector<uint8_t>& script) { return script.size() == 22 && script[0] == 0 && script[1] == 20 && std::equal(claim.program.begin(), claim.program.end(), script.begin() + 2); }
+// Recognize only canonical, bounded templates. Outputs remain unchanged on failure.
+// P2PKH reveals a key hash, not whether the hidden public key was compressed.
+inline bool QuietProofClassifyScript(
+    const std::vector<uint8_t>& script, QuietProofScriptKind* kind,
+    std::array<uint8_t, 20>* key_hash) {
+  if (kind == nullptr || key_hash == nullptr) return false;
+  QuietProofScriptKind matched_kind;
+  size_t offset = 0;
+  if (script.size() == 22 && script[0] == 0x00 && script[1] == 0x14) {
+    matched_kind = QuietProofScriptKind::kP2wpkh;
+    offset = 2;
+  } else if (script.size() == 25 && script[0] == 0x76 &&
+             script[1] == 0xa9 && script[2] == 0x14 &&
+             script[23] == 0x88 && script[24] == 0xac) {
+    matched_kind = QuietProofScriptKind::kP2pkh;
+    offset = 3;
+  } else {
+    return false;
+  }
+  std::copy_n(script.begin() + offset, key_hash->size(), key_hash->begin());
+  *kind = matched_kind;
+  return true;
+}
+
+inline bool QuietProofMatchesScript(const QuietProofClaimV1& claim,
+                                    const std::vector<uint8_t>& script) {
+  QuietProofScriptKind kind;
+  std::array<uint8_t, 20> key_hash{};
+  return QuietProofClassifyScript(script, &kind, &key_hash) &&
+         kind == claim.script_kind && key_hash == claim.program;
+}
+
+// Retain the existing P2WPKH-specific API without broadening its semantics.
+inline bool QuietProofIsP2wpkh(const QuietProofClaimV1& claim,
+                              const std::vector<uint8_t>& script) {
+  return claim.script_kind == QuietProofScriptKind::kP2wpkh &&
+         QuietProofMatchesScript(claim, script);
+}
 inline QuietProofChainStatus QuietProofMatchClaim(const QuietProofClaimV1& claim, QuietProofNetwork network, const QuietProofChainEvidence& evidence) {
   if (evidence.status != QuietProofChainStatus::kUnspent) return evidence.status;
-  if (evidence.network != network || evidence.amount_sats != claim.amount_sats || !QuietProofIsP2wpkh(claim, evidence.script_pub_key)) return QuietProofChainStatus::kInconclusive;
+  if (evidence.network != network || evidence.amount_sats != claim.amount_sats || !QuietProofMatchesScript(claim, evidence.script_pub_key)) return QuietProofChainStatus::kInconclusive;
   return QuietProofChainStatus::kUnspent;
 }
 }  // namespace proofs

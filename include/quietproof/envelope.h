@@ -40,7 +40,8 @@ struct QuietProofEnvelopeV1 {
 };
 
 inline bool QuietProofEnvelopeTimeValid(const QuietProofEnvelopeV1& envelope) {
-  if (envelope.envelope_version == 1) return envelope.proof_created_at == 0;
+  if (envelope.envelope_version == 1)
+    return envelope.proof_created_at == 0 && envelope.statement.statement_version == 1;
   return envelope.envelope_version == 2 && envelope.proof_created_at != 0 &&
          envelope.proof_created_at >= envelope.statement.not_before &&
          envelope.proof_created_at < envelope.statement.expires_at;
@@ -105,13 +106,20 @@ inline std::string QuietProofInspectJson(const QuietProofEnvelopeV1& envelope) {
   auto hexify = [&](const uint8_t* p, size_t n) { std::string out; out.reserve(n * 2); for (size_t i = 0; i < n; ++i) { out.push_back(hex[p[i] >> 4]); out.push_back(hex[p[i] & 15]); } return out; };
   auto json = [](const std::string& value) { std::string out; for (unsigned char c : value) { if (c == '"' || c == '\\') out.push_back('\\'); if (c >= 0x20) out.push_back(static_cast<char>(c)); } return out; };
   std::ostringstream out; out << "{\"format\":\"quietproof-proof-v" << unsigned(envelope.envelope_version) << "\",\"network\":\"" << QuietProofNetworkName(envelope.statement.network) << "\""
+      << ",\"statement_version\":" << unsigned(envelope.statement.statement_version)
       << ",\"request_created_at\":" << envelope.statement.not_before
       << ",\"not_before\":" << envelope.statement.not_before
       << ",\"expires_at\":" << envelope.statement.expires_at
       << ",\"proof_created_at\":" << (envelope.envelope_version == 2 ? std::to_string(envelope.proof_created_at) : "null")
       << ",\"verifier\":\"" << json(envelope.statement.verifier) << "\",\"purpose\":\"" << json(envelope.statement.purpose)
       << "\",\"statement_bytes\":" << statement.size() << ",\"circuit_digest\":\"" << hexify(envelope.proof.circuit_digest.data(), 32)
-      << "\",\"proof_bytes\":" << envelope.proof.bytes.size() << ",\"claims\":" << envelope.statement.claims.size() << "}";
+      << "\",\"proof_bytes\":" << envelope.proof.bytes.size() << ",\"claims\":" << envelope.statement.claims.size()
+      << ",\"script_kinds\":[";
+  for (size_t i = 0; i < envelope.statement.claims.size(); ++i) {
+    if (i != 0) out << ',';
+    out << '\"' << QuietProofScriptKindName(envelope.statement.claims[i].script_kind) << '\"';
+  }
+  out << "]}";
   return out.str();
 }
 

@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "quietproof/envelope.h"
+#include "quietproof/chain_state.h"
 
 namespace proofs {
 namespace {
@@ -121,6 +122,193 @@ void TestStatementRoundTrip() {
               DecodeQuietProofStatement(encoded, &decoded) &&
               decoded.snapshot_height == 123,
           "snapshot hash/height round trip failed");
+}
+
+std::string Hex(const uint8_t* bytes, size_t size) {
+  static const char alphabet[] = "0123456789abcdef";
+  std::string result;
+  for (size_t i = 0; i < size; ++i) {
+    result += alphabet[bytes[i] >> 4];
+    result += alphabet[bytes[i] & 15];
+  }
+  return result;
+}
+
+void TestScriptClassification() {
+  auto claim = Statement().claims[0];
+  std::vector<uint8_t> p2wpkh{0x00, 0x14}, p2pkh{0x76, 0xa9, 0x14};
+  for (auto* script : {&p2wpkh, &p2pkh})
+    script->insert(script->end(), claim.program.begin(), claim.program.end());
+  p2pkh.insert(p2pkh.end(), {0x88, 0xac});
+  for (const auto& script : {p2wpkh, p2pkh}) {
+    const auto expected = script.size() == 22 ? QuietProofScriptKind::kP2wpkh :
+                                              QuietProofScriptKind::kP2pkh;
+    QuietProofScriptKind kind = static_cast<QuietProofScriptKind>(255);
+    std::array<uint8_t, 20> hash{};
+    Require(QuietProofClassifyScript(script, &kind, &hash) &&
+                kind == expected && hash == claim.program,
+            "canonical script classification failed");
+    claim.script_kind = expected;
+    Require(QuietProofMatchesScript(claim, script), "canonical script not matched");
+    auto reject = [&](const std::vector<uint8_t>& invalid) {
+      kind = static_cast<QuietProofScriptKind>(255);
+      hash.fill(0xaa);
+      const auto sentinel = hash;
+      Require(!QuietProofClassifyScript(invalid, &kind, &hash) &&
+                  kind == static_cast<QuietProofScriptKind>(255) && hash == sentinel &&
+                  !QuietProofMatchesScript(claim, invalid),
+              "noncanonical script classified, matched, or changed outputs");
+    };
+    for (size_t length = 0; length < script.size(); ++length)
+      reject(std::vector<uint8_t>(script.begin(), script.begin() + length));
+    auto invalid = script;
+    invalid.push_back(0);
+    reject(invalid);
+    for (size_t i = 0; i < script.size(); ++i) {
+      if (i >= (expected == QuietProofScriptKind::kP2wpkh ? 2 : 3) &&
+          i < (expected == QuietProofScriptKind::kP2wpkh ? 22 : 23)) continue;
+      invalid = script;
+      invalid[i] ^= 1;
+      reject(invalid);
+    }
+    // PUSHDATA1 cannot substitute for the direct 20-byte push.
+    invalid = script;
+    invalid.insert(invalid.begin() + (expected == QuietProofScriptKind::kP2wpkh ? 1 : 2), 0x4c);
+    reject(invalid);
+    Require(!QuietProofClassifyScript(script, nullptr, &hash) &&
+                !QuietProofClassifyScript(script, &kind, nullptr),
+            "null classifier output accepted");
+  }
+  std::vector<std::vector<uint8_t>> unsupported;
+  std::vector<uint8_t> p2sh{0xa9, 0x14};
+  p2sh.insert(p2sh.end(), claim.program.begin(), claim.program.end());
+  p2sh.push_back(0x87);
+  unsupported.push_back(p2sh);
+  for (uint8_t version : {uint8_t{0}, uint8_t{0x51}}) {
+    std::vector<uint8_t> script{version, 0x20};
+    script.resize(34, 1);  // P2WSH or P2TR.
+    unsupported.push_back(script);
+  }
+  for (const auto& script : unsupported) {
+    QuietProofScriptKind kind;
+    std::array<uint8_t, 20> hash{};
+    Require(!QuietProofClassifyScript(script, &kind, &hash), "unsupported script accepted");
+  }
+  claim.script_kind = static_cast<QuietProofScriptKind>(255);
+  Require(!QuietProofMatchesScript(claim, p2wpkh) &&
+              !QuietProofMatchesScript(claim, p2pkh), "unknown claim kind matched");
+  claim.script_kind = QuietProofScriptKind::kP2pkh;
+  Require(!QuietProofIsP2wpkh(claim, p2pkh) &&
+              !QuietProofIsP2wpkh(claim, p2wpkh), "P2WPKH helper broadened");
+}
+
+void TestTypedStatements() {
+  auto statement = Statement();
+  statement.statement_version = 2;
+  statement.claims[1].script_kind = QuietProofScriptKind::kP2pkh;
+  // Independent Python struct.pack big-endian encoding and hashlib tagged hash.
+  const std::string expected_wire =
+      "51505331020200106d65726368616e742e6578616d706c65000e70726f6f662d6f662d"
+      "66756e64730102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d"
+      "1e1f20201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a0908070605040302"
+      "01000000000000006400000000000000c80000000201000000000000000000000000"
+      "0000000000000000000000000000000000000000000002000000000000002a0009"
+      "000000000000000000000000000000000000000200000000000000000000000000"
+      "000000000000000000000000000000000000000000010000000000000063010008"
+      "000000000000000000000000000000000000";
+  std::vector<uint8_t> bytes, again;
+  std::array<uint8_t, 32> digest{};
+  Require(EncodeQuietProofStatement(statement, &bytes) &&
+              Hex(bytes.data(), bytes.size()) == expected_wire,
+          "typed independent wire vector changed");
+  Require(QuietProofStatementDigest(statement, &digest) &&
+              Hex(digest.data(), digest.size()) ==
+                  "f2f13dc932116f5559ddf4d8944ea9c6025bbbb884816fe952d6163adbd6af12",
+          "typed independent digest vector changed");
+  QuietProofStatementV1 decoded;
+  Require(DecodeQuietProofStatement(bytes, &decoded) &&
+              decoded.statement_version == 2 &&
+              decoded.claims[1].script_kind == QuietProofScriptKind::kP2pkh &&
+              EncodeQuietProofStatement(decoded, &again) && again == bytes,
+          "mixed typed round trip failed");
+  auto invalid = statement;
+  invalid.statement_version = 1;
+  Require(!EncodeQuietProofStatement(invalid, &again), "typed claim downgraded");
+  invalid = statement;
+  invalid.claims[1] = invalid.claims[0];
+  invalid.claims[1].script_kind = QuietProofScriptKind::kP2pkh;
+  Require(!EncodeQuietProofStatement(invalid, &again), "cross-kind duplicate accepted");
+  invalid = statement;
+  invalid.claims[0].script_kind = static_cast<QuietProofScriptKind>(2);
+  Require(!EncodeQuietProofStatement(invalid, &again), "unknown in-memory kind accepted");
+  auto malformed = bytes;
+  malformed[4] = 3;
+  QuietProofDecodeError error;
+  Require(!DecodeQuietProofStatement(malformed, &decoded, &error) &&
+              error == QuietProofDecodeError::kUnsupported, "unknown version category");
+  malformed = bytes;
+  // First kind follows the first 44-byte outpoint/amount tuple.
+  const size_t first_kind = bytes.size() - 2 * 65 + 44;
+  malformed[first_kind] = 2;
+  Require(!DecodeQuietProofStatement(malformed, &decoded, &error) &&
+              error == QuietProofDecodeError::kUnsupported, "unknown kind category");
+  for (size_t size = 0; size < bytes.size(); ++size) {
+    malformed.assign(bytes.begin(), bytes.begin() + size);
+    Require(!DecodeQuietProofStatement(malformed, &decoded, &error) &&
+                error == QuietProofDecodeError::kMalformed, "typed truncation category");
+  }
+  malformed = bytes;
+  malformed.push_back(0);
+  Require(!DecodeQuietProofStatement(malformed, &decoded, &error) &&
+              error == QuietProofDecodeError::kMalformed, "typed suffix category");
+  statement.claims[1].script_kind = QuietProofScriptKind::kP2wpkh;
+  Require(EncodeQuietProofStatement(statement, &bytes) &&
+              DecodeQuietProofStatement(bytes, &decoded) &&
+              decoded.statement_version == 2 &&
+              EncodeQuietProofStatement(decoded, &again) && again == bytes,
+          "explicit v2 P2WPKH normalized to v1");
+
+  auto bounded = statement;
+  bounded.claims.clear();
+  for (size_t i = 0; i < kQuietProofMaxClaims; ++i) {
+    auto claim = statement.claims[i % 2];
+    claim.txid[0] = static_cast<uint8_t>(i + 1);
+    claim.script_kind = i % 2 ? QuietProofScriptKind::kP2pkh :
+                               QuietProofScriptKind::kP2wpkh;
+    bounded.claims.push_back(claim);
+  }
+  Require(EncodeQuietProofStatement(bounded, &again), "16 typed claims rejected");
+  auto extra = bounded.claims.back();
+  ++extra.txid[0];
+  bounded.claims.push_back(extra);
+  Require(!EncodeQuietProofStatement(bounded, &again), "17 typed claims accepted");
+  bounded.claims.pop_back();
+  bounded.claims.back().program[0] = 42;
+  Require(!EncodeQuietProofStatement(bounded, &again), "third typed key accepted");
+
+  statement.claims[1].script_kind = QuietProofScriptKind::kP2pkh;
+  QuietProofEnvelopeV1 envelope;
+  envelope.statement = statement;
+  envelope.proof.bytes = {1};
+  envelope.proof.circuit_digest[0] = 1;
+  Require(!EncodeQuietProofEnvelope(envelope, &again), "typed legacy envelope accepted");
+  envelope.envelope_version = 2;
+  envelope.proof_created_at = 150;
+  Require(EncodeQuietProofEnvelope(envelope, &bytes), "typed timestamp envelope rejected");
+  QuietProofEnvelopeV1 decoded_envelope;
+  Require(DecodeQuietProofEnvelope(bytes, &decoded_envelope) &&
+              decoded_envelope.statement.statement_version == 2,
+          "typed timestamp envelope round trip failed");
+  // Strip the timestamp to construct an otherwise well-formed legacy envelope.
+  bytes[4] = 1;
+  Require(EncodeQuietProofStatement(statement, &again), "typed statement encode");
+  bytes.erase(bytes.begin() + 9 + again.size(), bytes.begin() + 17 + again.size());
+  Require(!DecodeQuietProofEnvelope(bytes, &decoded_envelope, &error) &&
+              error == QuietProofDecodeError::kMalformed, "typed legacy wire accepted");
+  const auto json = QuietProofInspectJson(envelope);
+  Require(json.find("\"statement_version\":2") != std::string::npos &&
+              json.find("\"script_kinds\":[\"p2wpkh\",\"p2pkh\"]") != std::string::npos,
+          "inspection omits typed statement metadata");
 }
 
 void TestMalformedStatementCorpus() {
@@ -330,6 +518,8 @@ int main() {
   try {
     proofs::TestNetworks();
     proofs::TestStatementRoundTrip();
+    proofs::TestScriptClassification();
+    proofs::TestTypedStatements();
     proofs::TestMalformedStatementCorpus();
     proofs::TestEnvelopeAndTranscript();
     proofs::TestReplayPolicy();

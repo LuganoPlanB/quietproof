@@ -44,7 +44,8 @@ required_source = [
     "kSignet = 2",
     "kRegtest = 3",
     "kTestnet4 = 4",
-    'QuietProofTaggedHash("QuietProof/statement/v1"',
+    '"QuietProof/statement/v1"',
+    '"QuietProof/statement/v2"',
     "kQuietProofMaxStatementBytes = 4096",
 ]
 missing_source = [anchor for anchor in required_source if anchor not in statement_source]
