@@ -168,46 +168,6 @@ operators are responsible for imports/rescans. It excludes unsafe, locked and
 immature outputs. A watch wallet can track the address while the key stays
 with the prover; QuietProof does not filter on `spendable`.
 
-## Build and run the installed C++ example
-
-The core target remains header-only and network-free. The optional compiled
-`LongfellowZKQuietProof::rpc` target exposes the same discovery/provider used by
-the CLI, with no public curl/JSON types. Install the package and compile its
-shipped example against the installation:
-
-```sh
-cmake --install build --prefix "$DEMO/quietproof-install"
-mkdir "$DEMO/cpp"
-cat >"$DEMO/cpp/CMakeLists.txt" <<'CMAKE'
-cmake_minimum_required(VERSION 3.20)
-project(QuietProofExample LANGUAGES CXX)
-find_package(LongfellowZKQuietProof CONFIG REQUIRED COMPONENTS rpc)
-add_executable(bitcoin-rpc-example "${QUIETPROOF_EXAMPLE}")
-target_link_libraries(bitcoin-rpc-example PRIVATE LongfellowZKQuietProof::rpc)
-CMAKE
-cmake -S "$DEMO/cpp" -B "$DEMO/cpp-build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
-  "-DCMAKE_PREFIX_PATH=$DEMO/quietproof-install;/path/to/longfellow-prefix" \
-  "-DQUIETPROOF_EXAMPLE=$DEMO/quietproof-install/share/doc/LongfellowZKQuietProof/examples/bitcoin_rpc.cc"
-cmake --build "$DEMO/cpp-build" --parallel 2
-"$DEMO/cpp-build/bitcoin-rpc-example" challenge regtest "$ADDRESS" "$DEMO/cpp.qpr" \
-  "$DEMO/regtest/.cookie" "$RPC_URL"
-stop_demo
-"$DEMO/cpp-build/bitcoin-rpc-example" prove "$DEMO/cpp.qpr" "$DEMO/cpp.qpf"
-start_demo
-"$DEMO/cpp-build/bitcoin-rpc-example" verify regtest "$DEMO/cpp.qpf" "$DEMO/cpp-nonces" \
-  "$DEMO/regtest/.cookie" "$RPC_URL"
-```
-
-Enter the same disposable fixture key at the protected prompt. Expect
-`valid_current`. The example's verifier policy is local and fixed:
-`example.org`, `proof-of-funds`, maximum lifetime 300 seconds and at least one
-confirmation. Production applications must define their own verifier policy;
-the prover does not choose it. The example has separate `discover`, `challenge`,
-`prove` and `verify` commands and invokes no CLI/subprocess backend.
-For nonstandard SDK/curl installations, include their prefixes in
-`CMAKE_PREFIX_PATH`. An in-tree build is also available with
-`-DQUIETPROOF_BUILD_EXAMPLES=ON`.
-
 When finished, stop only the child created above and remove its temporary data:
 
 ```sh

@@ -20,9 +20,9 @@ target_link_libraries(rpc-consumer-library PRIVATE LongfellowZKQuietProof::rpc)
 add_executable(rpc-consumer main.cc)
 target_link_libraries(rpc-consumer PRIVATE rpc-consumer-library)
 
-# Compile the exact shipped source against the installation, never source headers.
-if(NOT EXISTS "${INSTALLED_RPC_EXAMPLE}")
-  message(FATAL_ERROR "INSTALLED_RPC_EXAMPLE must name the installed example source")
+# Compile the API test driver against the installed package, never source headers.
+if(NOT EXISTS "${RPC_API_DRIVER_SOURCE}")
+  message(FATAL_ERROR "RPC_API_DRIVER_SOURCE must name the API test driver source")
 endif()
-add_executable(bitcoin-rpc-example "${INSTALLED_RPC_EXAMPLE}")
-target_link_libraries(bitcoin-rpc-example PRIVATE LongfellowZKQuietProof::rpc)
+add_executable(quietproof-rpc-api-driver "${RPC_API_DRIVER_SOURCE}")
+target_link_libraries(quietproof-rpc-api-driver PRIVATE LongfellowZKQuietProof::rpc)

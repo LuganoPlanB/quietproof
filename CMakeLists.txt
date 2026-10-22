@@ -37,18 +37,11 @@ if(QUIETPROOF_BUILD_RPC)
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LongfellowZKQuietProof)
 endif()
 
-option(QUIETPROOF_BUILD_EXAMPLES "Build the native Bitcoin Core RPC example" OFF)
 option(QUIETPROOF_ENABLE_BITCOIN_REGTEST_TEST
   "Run isolated proof-heavy workflows against explicitly supplied Core 28 and 30" OFF)
-if(QUIETPROOF_BUILD_EXAMPLES OR QUIETPROOF_ENABLE_BITCOIN_REGTEST_TEST)
-  if(NOT QUIETPROOF_BUILD_RPC)
-    message(FATAL_ERROR "Examples and live regtest require QUIETPROOF_BUILD_RPC")
-  endif()
-  add_executable(bitcoin-rpc-example examples/bitcoin_rpc.cc)
-  target_link_libraries(bitcoin-rpc-example PRIVATE LongfellowZKQuietProof::rpc)
+if(QUIETPROOF_ENABLE_BITCOIN_REGTEST_TEST AND NOT QUIETPROOF_BUILD_RPC)
+  message(FATAL_ERROR "Live regtest requires QUIETPROOF_BUILD_RPC")
 endif()
-install(FILES examples/bitcoin_rpc.cc
-  DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/LongfellowZKQuietProof/examples)
 
 find_package(Threads REQUIRED)
 add_executable(quietproof-cli src/quietproof_main.cc)
@@ -117,13 +110,15 @@ if(BUILD_TESTING)
         endif()
       endforeach()
     endforeach()
+    add_executable(quietproof-rpc-api-driver tests/quietproof/rpc_api_driver.cc)
+    target_link_libraries(quietproof-rpc-api-driver PRIVATE LongfellowZKQuietProof::rpc)
     add_executable(quietproof-regtest-driver tests/quietproof/regtest_rpc_test.cc)
     target_link_libraries(quietproof-regtest-driver PRIVATE LongfellowZKQuietProof::rpc)
     add_test(NAME quietproof-regtest-rpc-test COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/regtest_rpc_test.py
       --core28 "${QUIETPROOF_CORE28_DIR}" --core30 "${QUIETPROOF_CORE30_DIR}"
       --cli $<TARGET_FILE:quietproof-cli>
-      --example $<TARGET_FILE:bitcoin-rpc-example>
+      --api-driver $<TARGET_FILE:quietproof-rpc-api-driver>
       --driver $<TARGET_FILE:quietproof-regtest-driver>)
     set_tests_properties(quietproof-regtest-rpc-test PROPERTIES
       LABELS "bitcoin-regtest;proof-heavy" RUN_SERIAL TRUE TIMEOUT 14400)
@@ -134,7 +129,7 @@ if(BUILD_TESTING)
       LABELS "bitcoin-regtest;proof-heavy" SKIP_RETURN_CODE 77)
   endif()
   add_pokc_test(pokc-test tests/quietproof/pokc_test.cc)
-  file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/test/results")
+  file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tests/results")
   set_tests_properties(pokc-test PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
   add_pokc_test(compressed-key-sha256-test tests/quietproof/compressed_key_sha256_test.cc)

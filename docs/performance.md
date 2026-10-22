@@ -14,7 +14,7 @@ block-encoding guard and are deliberately unsupported.
 ## Reproducing native metrics
 
 Run `make pokc-test` twice on an otherwise idle machine.  Each run writes
-`test/results/native_pokc_metrics.csv` with one row per real
+`tests/results/native_pokc_metrics.csv` with one row per real
 prove/verify round:
 
 ```

@@ -443,10 +443,10 @@ def cli_main(binary, enabled):
     print(f'CLI RPC {"ON" if enabled else "OFF"}: {checks} contract checks passed')
 
 
-def example_main(binary, full_proof=False):
-    """Exercise the installed public-API example without proof authorization shortcuts."""
+def api_driver_main(binary, full_proof=False):
+    """Exercise the public-API test driver against the installed package without proof authorization shortcuts."""
     checks = 0
-    with tempfile.TemporaryDirectory(prefix='quietproof-example-') as directory:
+    with tempfile.TemporaryDirectory(prefix='quietproof-api-driver-') as directory:
         root = Path(directory)
         cookie = root / '.cookie'
         cookie.write_text('__cookie__:cookie-secret\n')
@@ -458,7 +458,7 @@ def example_main(binary, full_proof=False):
             nonlocal checks
             result = subprocess.run([str(binary)] + args, input=key_input,
                                     capture_output=True, text=True, timeout=120 if full_proof else 30)
-            assert result.returncode == expected, f'example check {checks}: expected {expected}, got {result.returncode}'
+            assert result.returncode == expected, f'API driver check {checks}: expected {expected}, got {result.returncode}'
             assert 'cookie-secret' not in result.stdout + result.stderr
             assert 'server-secret' not in result.stdout + result.stderr
             if key_input.strip():
@@ -567,7 +567,7 @@ def example_main(binary, full_proof=False):
         finally:
             origin.shutdown()
             origin.server_close()
-    print(f'Installed C++ example: {checks} contract checks passed')
+    print(f'Installed-package API driver: {checks} contract checks passed')
 
 
 def main():
@@ -575,11 +575,11 @@ def main():
     parser.add_argument('binary', type=Path)
     parser.add_argument('--cli', action='store_true')
     parser.add_argument('--cli-off', action='store_true')
-    parser.add_argument('--example', action='store_true')
-    parser.add_argument('--example-proof', action='store_true')
+    parser.add_argument('--api-driver', action='store_true')
+    parser.add_argument('--api-driver-proof', action='store_true')
     args = parser.parse_args()
-    if args.example or args.example_proof:
-        return example_main(args.binary, args.example_proof)
+    if args.api_driver or args.api_driver_proof:
+        return api_driver_main(args.binary, args.api_driver_proof)
     if args.cli or args.cli_off:
         return cli_main(args.binary, not args.cli_off)
     checks = 0
