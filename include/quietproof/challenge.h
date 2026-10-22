@@ -77,6 +77,11 @@ inline bool CreateQuietProofChallengeWithSources(
   statement.not_before = now;
   statement.expires_at = now + options.lifetime_seconds;
   statement.claims = claims;
+  if (std::any_of(claims.begin(), claims.end(), [](const auto& claim) {
+        return claim.script_kind == QuietProofScriptKind::kP2pkh;
+      })) {
+    statement.statement_version = 2;
+  }
   std::sort(statement.claims.begin(), statement.claims.end());
   std::vector<uint8_t> request;
   if (!EncodeQuietProofStatement(statement, &request)) {
@@ -89,7 +94,7 @@ inline bool CreateQuietProofChallengeWithSources(
 
 }  // namespace quietproof_detail
 
-// Builds a current-tip request using the existing v1 statement contract.
+// Builds a current-tip request selecting typed v2 only when P2PKH is requested.
 // On failure output is unchanged; on success error is cleared.
 inline bool CreateQuietProofChallenge(
     const std::vector<QuietProofClaimV1>& claims,

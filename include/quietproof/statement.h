@@ -109,11 +109,28 @@ inline bool QuietProofAllZero(const std::array<uint8_t, N>& value) {
   return aggregate == 0;
 }
 
+// The public program member remains the compressed-public-key HASH160.
+enum class QuietProofScriptKind : uint8_t { kP2wpkh = 0, kP2pkh = 1 };
+
+inline bool QuietProofScriptKindValid(QuietProofScriptKind kind) {
+  return kind == QuietProofScriptKind::kP2wpkh ||
+         kind == QuietProofScriptKind::kP2pkh;
+}
+
+inline const char* QuietProofScriptKindName(QuietProofScriptKind kind) {
+  switch (kind) {
+    case QuietProofScriptKind::kP2wpkh: return "p2wpkh";
+    case QuietProofScriptKind::kP2pkh: return "p2pkh";
+  }
+  return "unsupported";
+}
+
 struct QuietProofClaimV1 {
   std::array<uint8_t, 32> txid{};  // Bitcoin RPC/display byte order.
   uint32_t vout = 0;
   uint64_t amount_sats = 0;
   std::array<uint8_t, 20> program{};
+  QuietProofScriptKind script_kind = QuietProofScriptKind::kP2wpkh;
 
   bool operator<(const QuietProofClaimV1& other) const {
     const int comparison = std::memcmp(txid.data(), other.txid.data(), txid.size());
@@ -145,6 +162,7 @@ struct QuietProofStatementV1 {
   bool has_bridge_binding = false;
   QuietProofBridgeBindingV1 bridge;
   std::vector<QuietProofClaimV1> claims;
+  uint8_t statement_version = 1;  // Retained on decode; never silently downgrade.
 };
 
 inline bool QuietProofUtf8(const std::string& text) {
@@ -184,7 +202,8 @@ inline bool QuietProofProgramLess(const std::array<uint8_t, 20>& left,
 }
 
 inline bool QuietProofStatementValid(const QuietProofStatementV1& statement) {
-  if (!QuietProofNetworkValid(statement.network) || statement.verifier.empty() ||
+  if ((statement.statement_version != 1 && statement.statement_version != 2) ||
+      !QuietProofNetworkValid(statement.network) || statement.verifier.empty() ||
       statement.verifier.size() > kQuietProofMaxVerifierBytes ||
       !QuietProofUtf8(statement.verifier) || !QuietProofPurposeValid(statement.purpose) ||
       statement.purpose.size() > kQuietProofMaxPurposeBytes ||
@@ -218,7 +237,10 @@ inline bool QuietProofStatementValid(const QuietProofStatementV1& statement) {
   uint64_t total_sats = 0;
   for (size_t index = 0; index < statement.claims.size(); ++index) {
     const auto& claim = statement.claims[index];
-    if (QuietProofAllZero(claim.txid) || claim.amount_sats == 0 ||
+    if (!QuietProofScriptKindValid(claim.script_kind) ||
+        (statement.statement_version == 1 &&
+         claim.script_kind != QuietProofScriptKind::kP2wpkh) ||
+        QuietProofAllZero(claim.txid) || claim.amount_sats == 0 ||
         claim.amount_sats > kQuietProofMaxMoneySats ||
         claim.amount_sats > kQuietProofMaxMoneySats - total_sats ||
         (index != 0 && !(statement.claims[index - 1] < claim))) {
@@ -232,6 +254,8 @@ inline bool QuietProofStatementValid(const QuietProofStatementV1& statement) {
   return !programs.empty() && programs.size() <= kQuietProofMaxKeys;
 }
 
+// Compatibility API name: these are distinct compressed-public-key hashes,
+// shared by ownership witnesses even when output script kinds differ.
 inline bool QuietProofDistinctPrograms(
     const QuietProofStatementV1& statement,
     std::vector<std::array<uint8_t, 20>>* programs) {
@@ -261,7 +285,7 @@ inline bool EncodeQuietProofStatement(const QuietProofStatementV1& statement,
                                     std::vector<uint8_t>* output) {
   if (output == nullptr || !QuietProofStatementValid(statement)) return false;
   output->clear();
-  output->insert(output->end(), {'Q', 'P', 'S', '1', 1,
+  output->insert(output->end(), {'Q', 'P', 'S', '1', statement.statement_version,
                                  static_cast<uint8_t>(statement.network)});
   QuietProofAppendU16(output, static_cast<uint16_t>(statement.verifier.size()));
   output->insert(output->end(), statement.verifier.begin(), statement.verifier.end());
@@ -294,6 +318,8 @@ inline bool EncodeQuietProofStatement(const QuietProofStatementV1& statement,
     output->insert(output->end(), claim.txid.begin(), claim.txid.end());
     QuietProofAppendU32(output, claim.vout);
     QuietProofAppendU64(output, claim.amount_sats);
+    if (statement.statement_version == 2)
+      output->push_back(static_cast<uint8_t>(claim.script_kind));
     output->insert(output->end(), claim.program.begin(), claim.program.end());
   }
   return output->size() <= kQuietProofMaxStatementBytes;
@@ -360,7 +386,7 @@ inline bool DecodeQuietProofStatement(
   uint8_t magic[4] = {}, version = 0, network_byte = 0;
   if (!reader.bytes(magic, sizeof(magic)) || std::memcmp(magic, "QPS1", 4) != 0)
     return false;
-  if (!reader.u8(&version) || version != 1) {
+  if (!reader.u8(&version) || (version != 1 && version != 2)) {
     if (error != nullptr) *error = QuietProofDecodeError::kUnsupported;
     return false;
   }
@@ -373,6 +399,7 @@ inline bool DecodeQuietProofStatement(
 
   QuietProofStatementV1 decoded;
   decoded.network = network;
+  decoded.statement_version = version;
   if (!reader.text(&decoded.verifier, kQuietProofMaxVerifierBytes) ||
       !reader.text(&decoded.purpose, kQuietProofMaxPurposeBytes) ||
       !reader.bytes(decoded.nonce.data(), decoded.nonce.size()) ||
@@ -412,10 +439,19 @@ inline bool DecodeQuietProofStatement(
   decoded.claims.resize(count);
   for (auto& claim : decoded.claims) {
     if (!reader.bytes(claim.txid.data(), claim.txid.size()) ||
-        !reader.u32(&claim.vout) || !reader.u64(&claim.amount_sats) ||
-        !reader.bytes(claim.program.data(), claim.program.size())) {
+        !reader.u32(&claim.vout) || !reader.u64(&claim.amount_sats)) {
       return false;
     }
+    if (version == 2) {
+      uint8_t kind = 0;
+      if (!reader.u8(&kind)) return false;
+      claim.script_kind = static_cast<QuietProofScriptKind>(kind);
+      if (!QuietProofScriptKindValid(claim.script_kind)) {
+        if (error != nullptr) *error = QuietProofDecodeError::kUnsupported;
+        return false;
+      }
+    }
+    if (!reader.bytes(claim.program.data(), claim.program.size())) return false;
   }
   if (reader.left() != 0 || !QuietProofStatementValid(decoded)) return false;
   *statement = std::move(decoded);
@@ -447,7 +483,9 @@ inline bool QuietProofStatementDigest(const QuietProofStatementV1& statement,
                                     std::array<uint8_t, 32>* digest) {
   std::vector<uint8_t> bytes;
   if (digest == nullptr || !EncodeQuietProofStatement(statement, &bytes)) return false;
-  *digest = QuietProofTaggedHash("QuietProof/statement/v1", bytes.data(), bytes.size());
+  const char* tag = statement.statement_version == 2 ?
+      "QuietProof/statement/v2" : "QuietProof/statement/v1";
+  *digest = QuietProofTaggedHash(tag, bytes.data(), bytes.size());
   return true;
 }
 

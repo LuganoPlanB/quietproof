@@ -47,6 +47,8 @@ class Handler(BaseHTTPRequestHandler):
                 request = json.loads(body)
                 block = '0123456789abcdef' * 4
                 method = request['method']
+                script = ('76a914' + 'a' * 40 + '88ac' if mode.endswith('-p2pkh')
+                          else '0014' + 'a' * 40)
                 if method == 'getblockchaininfo':
                     result = json.dumps({'chain': 'regtest', 'blocks': 101,
                                          'bestblockhash': block}).encode()
@@ -54,7 +56,7 @@ class Handler(BaseHTTPRequestHandler):
                     result = json.dumps({'isvalid': mode != 'discovery-invalid',
                                          'address': 'bcrt1qfixture',
                                          'scriptPubKey': ('5120' + 'a' * 64 if mode == 'discovery-unsupported'
-                                                          else '0014' + 'a' * 40)}).encode()
+                                                          else script)}).encode()
                 elif method == 'listunspent':
                     if mode == 'wallet-redirect':
                         self.send_response(302)
@@ -69,7 +71,7 @@ class Handler(BaseHTTPRequestHandler):
                         return
                     result = (b'[{"txid":"' + b'11' * 32 + b'","vout":0,'
                               b'"confirmations":2,"spendable":false,"safe":false,'
-                              b'"scriptPubKey":"0014' + b'a' * 40 + b'","amount":0.00000001}]')
+                              b'"scriptPubKey":"' + script.encode() + b'","amount":0.00000001}]')
                 elif method == 'scantxoutset':
                     if mode == 'discovery-timeout':
                         time.sleep(0.35)
@@ -77,7 +79,7 @@ class Handler(BaseHTTPRequestHandler):
                         time.sleep(1.1)
                     coins = [] if mode == 'discovery-empty' else [{
                         'txid': '11' * 32, 'vout': 0, 'height': 99,
-                        'scriptPubKey': '0014' + 'a' * 40, 'amount': 'MONEY_TOKEN'}]
+                        'scriptPubKey': script, 'amount': 'MONEY_TOKEN'}]
                     if mode in ('discovery-16', 'discovery-17'):
                         coins = [dict(coins[0], txid=f'{index:064x}')
                                  for index in range(int(mode.split('-')[1]), 0, -1)]
@@ -88,7 +90,7 @@ class Handler(BaseHTTPRequestHandler):
                     assert method == 'gettxout'
                     result = (b'{"bestblock":"' + block.encode() +
                               b'","confirmations":3,"value":0.00000001,'
-                              b'"scriptPubKey":{"hex":"0014' + b'a' * 40 + b'"}}')
+                              b'"scriptPubKey":{"hex":"' + script.encode() + b'"}}')
                 payload = (b'{"jsonrpc":"2.0","id":' + json.dumps(request['id']).encode() +
                            (b',"error":{"code":-8,"message":"server-secret"}}'
                             if (mode == 'discovery-busy' and method == 'scantxoutset') or
@@ -251,7 +253,9 @@ def cli_main(binary, enabled):
             assert value['observed_height'] == (101 if value['current_rechecked'] or value['source'] == 'wallet' else 100)
             assert value['current_rechecked'] == value['challenge_compatible']
             assert all(type(o['amount_sats']) is int and o['amount_sats'] == 1 and
-                       o['program'] == 'a' * 40 and o['vout'] == 0 for o in value['outputs'])
+                       o['program'] == o['key_hash'] == 'a' * 40 and
+                       o['script_type'] == ('p2pkh' if mode.endswith('-p2pkh') else 'p2wpkh') and
+                       o['vout'] == 0 for o in value['outputs'])
             return value, result
 
         try:
@@ -316,6 +320,15 @@ def cli_main(binary, enabled):
                 assert wallet_request['params'] == [1, 9999999, ['bcrt1qfixture'], False]
                 assert any(path == '/wallet/' + ''.join(f'%{b:02X}' for b in b'watch /?')
                            for path, _, _ in origin.records)
+                for mode, extra in (('discovery-p2pkh', []),
+                                    ('wallet-p2pkh', ['--rpc-wallet', 'watch /?'])):
+                    value, _ = diagnostic(mode, extra)
+                    assert value['challenge_compatible'] and value['current_rechecked']
+                    path = root / (mode + '.qpr')
+                    challenge(path, extra)
+                    inspected = json.loads(run(['inspect', str(path)]).stdout)
+                    assert inspected['claims'] == 1 and path.read_bytes()[4] == 2
+                    assert path.read_bytes()[-21:] == b'\x01' + bytes.fromhex('a' * 40)
                 for mode, category, code in (('discovery-invalid', 'invalid_address', 65),
                                              ('discovery-unsupported', 'unsupported_script', 65),
                                              ('discovery-busy', 'scan_busy', 74),
@@ -547,7 +560,7 @@ def api_driver_main(binary, full_proof=False):
                     '751e76e8199196d454941c45d1b3a323f1433bd6'))
                 run(['prove', str(matching), str(output)], key_input='0' * 63 + '1\n')
                 assert output.stat().st_mode & 0o777 == 0o600
-                assert output.read_bytes().startswith(b'QPE1\x01')
+                assert output.read_bytes().startswith(b'QPE1\x02')
                 assert len(origin.records) == before, 'offline proof used RPC'
                 result = run(['verify', 'regtest', str(output), str(nonce)] + endpoint, 5)
                 assert result.stdout.strip() == 'state_inconclusive'
@@ -666,7 +679,7 @@ def main():
                     assert json.loads(payload) == {'jsonrpc': '2.0', 'id': str(index),
                                                    'method': method, 'params': params}
                     assert path == '/' and headers.get('Authorization') == expected_auth
-            for mode in ('discovery-ok', 'discovery-empty', 'discovery-invalid',
+            for mode in ('discovery-ok', 'discovery-p2pkh', 'discovery-empty', 'discovery-invalid',
                          'discovery-unsupported', 'discovery-busy', 'discovery-incomplete',
                          'discovery-timeout'):
                 origin.scenario = mode
@@ -675,7 +688,7 @@ def main():
                 methods = ['getblockchaininfo', 'validateaddress']
                 if mode not in ('discovery-invalid', 'discovery-unsupported'):
                     methods += ['scantxoutset']
-                if mode == 'discovery-ok':
+                if mode in ('discovery-ok', 'discovery-p2pkh'):
                     methods += ['getblockchaininfo', 'gettxout', 'getblockchaininfo']
                 records = origin.records[count:]
                 assert len(records) == len(methods), 'discovery retried or omitted request'
@@ -688,7 +701,7 @@ def main():
                     assert request['params'] == params
                     assert path == '/' and headers.get('Authorization') == expected_auth
             wallet_names = {'wallet-dot': '.', 'wallet-dotdot': '..', 'wallet-unicode': 'é/財布'}
-            for mode in ('wallet-ok', 'wallet-dot', 'wallet-dotdot', 'wallet-unicode',
+            for mode in ('wallet-ok', 'wallet-p2pkh', 'wallet-dot', 'wallet-dotdot', 'wallet-unicode',
                          'wallet-missing', 'wallet-redirect', 'wallet-auth'):
                 origin.scenario = mode
                 count = len(origin.records)

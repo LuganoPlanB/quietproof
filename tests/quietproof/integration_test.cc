@@ -62,7 +62,8 @@ class FakeProvider final : public QuietProofChainProvider {
   QuietProofChainEvidence Lookup(const QuietProofChainRequest& request) override {
     ++calls;
     last_request = request;
-    auto result = evidence;
+    auto result = request.vout < evidence_by_vout.size() ?
+        evidence_by_vout[request.vout] : evidence;
     if (advance_block) result.block[0] = static_cast<uint8_t>(result.block[0] + calls);
     return result;
   }
@@ -71,6 +72,7 @@ class FakeProvider final : public QuietProofChainProvider {
   bool advance_block = false;
   QuietProofChainRequest last_request{};
   QuietProofChainEvidence evidence;
+  std::vector<QuietProofChainEvidence> evidence_by_vout;
 };
 
 QuietProofVerifierConfig Config(FakeProvider* provider) {
@@ -94,11 +96,116 @@ void SetMatchingEvidence(const QuietProofEnvelopeV1& envelope,
   provider->evidence.confirmations = 2;
   provider->evidence.block[0] = 1;
   provider->evidence.height = 100;
-  provider->evidence.script_pub_key = {0, 20};
-  provider->evidence.script_pub_key.insert(
-      provider->evidence.script_pub_key.end(),
-      envelope.statement.claims[0].program.begin(),
-      envelope.statement.claims[0].program.end());
+  const auto& claim = envelope.statement.claims[0];
+  auto& script = provider->evidence.script_pub_key;
+  script = claim.script_kind == QuietProofScriptKind::kP2pkh ?
+      std::vector<uint8_t>{0x76, 0xa9, 0x14} : std::vector<uint8_t>{0, 20};
+  script.insert(script.end(), claim.program.begin(), claim.program.end());
+  if (claim.script_kind == QuietProofScriptKind::kP2pkh)
+    script.insert(script.end(), {0x88, 0xac});
+}
+
+void TestTypedChainEvidence() {
+  for (const auto kind : {QuietProofScriptKind::kP2wpkh, QuietProofScriptKind::kP2pkh}) {
+    auto envelope = Envelope();
+    envelope.envelope_version = 2;
+    envelope.proof_created_at = 2;
+    envelope.statement.statement_version = 2;
+    envelope.statement.claims[0].script_kind = kind;
+    FakeProvider provider;
+    SetMatchingEvidence(envelope, &provider);
+    const auto valid = provider.evidence;
+    int proofs = 0, consumed = 0;
+    auto config = Config(&provider);
+    config.verify_proof = [&](const auto&) { ++proofs; return true; };
+    config.policy.consume_nonce = [&](const auto&) { ++consumed; return true; };
+    std::vector<uint8_t> wire;
+    Require(EncodeQuietProofEnvelope(envelope, &wire), "typed evidence fixture");
+    auto result = VerifyQuietProof(wire, config);
+    Require(result.result == QuietProofVerifyResult::kValidCurrent &&
+                result.total_sats == 7 && proofs == 1 && consumed == 1,
+            "typed evidence rejected");
+    auto reject = [&](const QuietProofChainEvidence& evidence) {
+      provider.evidence = evidence;
+      const int proofs_before = proofs, consumed_before = consumed;
+      Require(VerifyQuietProof(wire, config).result ==
+                  QuietProofVerifyResult::kStateInconclusive &&
+                  proofs == proofs_before + 1 && consumed == consumed_before,
+              "bad evidence accepted, proof ordering changed, or nonce consumed");
+    };
+    auto bad = valid;
+    ++bad.amount_sats;
+    reject(bad);
+    bad = valid;
+    bad.network = QuietProofNetwork::kMainnet;
+    reject(bad);
+    bad = valid;
+    bad.script_pub_key[kind == QuietProofScriptKind::kP2pkh ? 3 : 2] ^= 1;
+    reject(bad);
+    bad = valid;
+    bad.script_pub_key.push_back(0);
+    reject(bad);
+    auto other_kind = envelope;
+    other_kind.statement.claims[0].script_kind = kind == QuietProofScriptKind::kP2pkh ?
+        QuietProofScriptKind::kP2wpkh : QuietProofScriptKind::kP2pkh;
+    SetMatchingEvidence(other_kind, &provider);
+    reject(provider.evidence);  // Identical hash with the wrong script kind.
+    if (kind == QuietProofScriptKind::kP2wpkh) {
+      // Legacy requests cannot authorize the P2PKH relation either.
+      envelope.statement.statement_version = 1;
+      Require(EncodeQuietProofEnvelope(envelope, &wire), "legacy typed test fixture");
+      reject(provider.evidence);
+    }
+  }
+
+  auto mixed = Envelope();
+  mixed.envelope_version = 2;
+  mixed.proof_created_at = 2;
+  mixed.statement.statement_version = 2;
+  FakeProvider provider;
+  SetMatchingEvidence(mixed, &provider);
+  provider.evidence_by_vout.push_back(provider.evidence);
+  auto second = mixed.statement.claims[0];
+  second.vout = 1;
+  second.script_kind = QuietProofScriptKind::kP2pkh;
+  mixed.statement.claims.push_back(second);
+  auto p2pkh = mixed;
+  p2pkh.statement.claims = {second};
+  SetMatchingEvidence(p2pkh, &provider);
+  provider.evidence_by_vout.push_back(provider.evidence);
+  std::vector<std::array<uint8_t, 20>> key_hashes;
+  Require(QuietProofDistinctPrograms(mixed.statement, &key_hashes) &&
+              key_hashes.size() == 1 && key_hashes[0] == second.program,
+          "same-key mixed scripts require extra ownership witness");
+  std::vector<uint8_t> wire;
+  Require(EncodeQuietProofEnvelope(mixed, &wire), "mixed evidence fixture");
+  const auto result = VerifyQuietProof(wire, Config(&provider));
+  Require(result.result == QuietProofVerifyResult::kValidCurrent &&
+              result.total_sats == 14 && provider.calls == 2,
+          "mixed same-key evidence rejected or wrong total");
+  // Wire-level invalid claims reject before any expensive or stateful callback.
+  std::vector<uint8_t> statement_bytes;
+  Require(EncodeQuietProofStatement(mixed.statement, &statement_bytes), "mixed statement");
+  int proofs = 0, consumed = 0;
+  auto config = Config(&provider);
+  config.verify_proof = [&](const auto&) { ++proofs; return true; };
+  config.policy.consume_nonce = [&](const auto&) { ++consumed; return true; };
+  auto invalid_wire = wire;
+  const size_t second_vout = 9 + statement_bytes.size() - 65 + 32;
+  std::fill_n(invalid_wire.begin() + second_vout, 4, 0);
+  const int calls_before = provider.calls;
+  Require(VerifyQuietProof(invalid_wire, config).result ==
+              QuietProofVerifyResult::kMalformedStatement &&
+              proofs == 0 && consumed == 0 && provider.calls == calls_before,
+          "mixed duplicate reached callbacks");
+  invalid_wire = wire;
+  invalid_wire[9 + statement_bytes.size() - 65 + 44] = 2;
+  Require(VerifyQuietProof(invalid_wire, config).result ==
+              QuietProofVerifyResult::kUnsupported &&
+              proofs == 0 && consumed == 0 && provider.calls == calls_before,
+          "unknown kind reached callbacks");
+  mixed.statement.claims[1].vout = 0;
+  Require(!EncodeQuietProofEnvelope(mixed, &wire), "mixed duplicate encoded");
 }
 
 void TestVerifierStates() {
@@ -201,6 +308,24 @@ std::string TxoutJson(const std::string& amount = "0.00000007",
          "\",\"confirmations\":2,\"value\":" + amount +
          ",\"scriptPubKey\":{\"hex\":"
          "\"00140400000000000000000000000000000000000000\"}}";
+}
+
+void TestProofTimestampPolicy() {
+  auto envelope = Envelope();
+  envelope.envelope_version = 2;
+  envelope.proof_created_at = 3;
+  FakeProvider provider;
+  SetMatchingEvidence(envelope, &provider);
+  auto config = Config(&provider);
+  bool consumed = false;
+  config.policy.consume_nonce = [&](const auto&) { consumed = true; return true; };
+  std::vector<uint8_t> wire;
+  Require(EncodeQuietProofEnvelope(envelope, &wire), "timestamp fixture");
+  Require(VerifyQuietProof(wire, config).result == QuietProofVerifyResult::kInvalidProof &&
+              provider.calls == 0 && !consumed, "future timestamp accepted");
+  config.policy.now = 3;
+  Require(VerifyQuietProof(wire, config).result == QuietProofVerifyResult::kValidCurrent && consumed,
+          "current timestamp rejected");
 }
 
 void TestBitcoinAmounts() {
@@ -459,7 +584,9 @@ void TestNonceStore() {
 
 int main() {
   try {
+    proofs::TestTypedChainEvidence();
     proofs::TestVerifierStates();
+    proofs::TestProofTimestampPolicy();
     proofs::TestBitcoinAmounts();
     proofs::TestCoreSharedFields();
     proofs::TestCoreFieldFailures();

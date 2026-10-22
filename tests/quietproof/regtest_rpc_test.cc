@@ -4,6 +4,8 @@
 #include <array>
 #include <charconv>
 #include <iostream>
+#include <fstream>
+#include <iterator>
 #include <string>
 
 #include "pokc/prover.h"
@@ -23,6 +25,28 @@ std::string Hex(const Range& bytes) {
   return out;
 }
 int Run(int argc, char** argv) {
+  if (argc == 5 && std::string(argv[1]) == "mutate") {
+    std::ifstream input(argv[2], std::ios::binary);
+    const std::vector<uint8_t> bytes{std::istreambuf_iterator<char>(input), {}};
+    QuietProofEnvelopeV1 envelope;
+    if (!input.is_open() || !DecodeQuietProofEnvelope(bytes, &envelope)) return 1;
+    const std::string field = argv[3];
+    if (field == "kind") envelope.statement.claims[0].script_kind = QuietProofScriptKind::kP2wpkh;
+    else if (field == "hash") envelope.statement.claims[0].program[0] ^= 1;
+    else if (field == "amount") ++envelope.statement.claims[0].amount_sats;
+    else if (field == "request-time") --envelope.statement.not_before;
+    else if (field == "proof-time") ++envelope.proof_created_at;
+    else if (field == "expired") {
+      envelope.statement.not_before = 1;
+      envelope.statement.expires_at = 2;
+      envelope.proof_created_at = 1;
+    } else return 64;
+    std::vector<uint8_t> changed;
+    if (!EncodeQuietProofEnvelope(envelope, &changed)) return 1;
+    std::ofstream output(argv[4], std::ios::binary);
+    output.write(reinterpret_cast<const char*>(changed.data()), changed.size());
+    return output ? 0 : 1;
+  }
   if (argc == 2 && std::string(argv[1]) == "fixture") {
     // Public disposable scalar 1; never use this key outside isolated regtest.
     std::array<uint8_t, 32> secret{};

@@ -13,7 +13,7 @@ The holder does not need to move the bitcoin. The proof reveals neither the priv
 
 ## The idea without the cryptography
 
-A native P2WPKH Bitcoin address contains a short fingerprint derived from a public key. Before that bitcoin is spent, the full public key may never have appeared on-chain.
+A native P2WPKH or P2PKH Bitcoin address contains a short fingerprint derived from a public key. Before that bitcoin is spent, the full public key may never have appeared on-chain.
 
 QuietProof checks, in zero knowledge, that the holder can follow the hidden chain all the way back:
 
@@ -24,13 +24,13 @@ matching public key
         ↓
 public-key fingerprint
         ↓
-P2WPKH witness program named in the request
+compressed-key hash and script kind named in the request
 ```
 
 The verifier learns that the relationship is correct, but does not receive either key.
 
 ::: info What “zero knowledge” means here
-The proof hides keys, not coins or amounts. Recipients can trace disclosed outputs and associate them with a known prover identity.
+The proof does not newly disclose keys. Outpoints, key hashes and amounts remain public and linkable. Earlier spends or key reuse may already reveal a public key; proving cannot undo that exposure. This is not anonymous proof of funds.
 :::
 
 ## Why a fresh challenge matters
@@ -54,10 +54,10 @@ A mathematically valid proof is not enough by itself. A complete application ver
 
 QuietProof v1 provides two exact circuit shapes:
 
-- One distinct P2WPKH witness program.
-- Two distinct P2WPKH witness programs known by the same prover.
+- One distinct compressed-key hash.
+- Two distinct compressed-key hashes known by the same prover.
 
-A statement may name up to 16 outputs, but those outputs must share no more than two distinct witness programs. Outputs sharing a program reuse the same key relation.
+A statement may name up to 16 outputs, but those outputs must share no more than two distinct key hashes across native P2WPKH/P2PKH kinds. Uncompressed-key P2PKH is unsupported. Outputs sharing a hash reuse the same key relation.
 
 The two-key form reveals common key knowledge across old and new outputs to its recipients. They can share the proof; naming a verifier does not make it confidential. No on-chain link or multisig rules are created.
 

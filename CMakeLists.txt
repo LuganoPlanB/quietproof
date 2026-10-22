@@ -129,9 +129,13 @@ if(BUILD_TESTING)
       LABELS "bitcoin-regtest;proof-heavy" SKIP_RETURN_CODE 77)
   endif()
   add_pokc_test(pokc-test tests/quietproof/pokc_test.cc)
+  add_test(NAME pokc-timestamp-test COMMAND pokc-test --timestamp-roundtrip)
+  set_tests_properties(pokc-timestamp-test PROPERTIES
+    LABELS "proof-heavy" RUN_SERIAL TRUE TIMEOUT 600)
   file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tests/results")
   set_tests_properties(pokc-test PROPERTIES
-    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    LABELS "proof-heavy" RUN_SERIAL TRUE TIMEOUT 1800)
   add_pokc_test(compressed-key-sha256-test tests/quietproof/compressed_key_sha256_test.cc)
   add_pokc_test(key-ownership-test tests/quietproof/key_ownership_test.cc)
   add_pokc_test(ripemd160-test tests/quietproof/ripemd160_test.cc)
@@ -141,6 +145,9 @@ if(BUILD_TESTING)
   add_pokc_test(pokc-sage-test tests/quietproof/pokc_sage_vector_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/testdata/pokc_sage_vectors.json)
   add_test(NAME quietproof-cli-test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/cli_test.sh $<TARGET_FILE:quietproof-cli>)
+  add_test(NAME quietproof-cli-context-test COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/cli_context_test.py $<TARGET_FILE:quietproof-cli>)
+  set_tests_properties(quietproof-cli-context-test PROPERTIES TIMEOUT 180)
   if(QUIETPROOF_BUILD_RPC)
     set(_quietproof_cli_rpc_mode --cli)
   else()
@@ -153,7 +160,8 @@ if(BUILD_TESTING)
   if(QUIETPROOF_BUILD_RPC)
     add_test(NAME quietproof-wallet-export-test COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/wallet_export_test.py $<TARGET_FILE:quietproof-cli>)
-    set_tests_properties(quietproof-wallet-export-test PROPERTIES TIMEOUT 90)
+    set_tests_properties(quietproof-wallet-export-test PROPERTIES
+      TIMEOUT 300 LABELS "proof-heavy" RUN_SERIAL TRUE)
   endif()
   add_test(NAME quietproof-prove-feedback-test
     COMMAND ${Python3_EXECUTABLE}

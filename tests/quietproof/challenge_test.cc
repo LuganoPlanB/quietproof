@@ -114,6 +114,21 @@ void TestLegacyEquivalence() {
           "fixed legacy wire vector changed");
 }
 
+void TestTypedSelection() {
+  auto first = Claim(1), second = Claim(2);
+  second.script_kind = QuietProofScriptKind::kP2pkh;
+  QuietProofStatementV1 statement;
+  Require(Build({second, first}, Options(), &statement, nullptr) &&
+              statement.statement_version == 2 && statement.claims[0] == first &&
+              statement.claims[1].script_kind == QuietProofScriptKind::kP2pkh,
+          "builder did not select typed mixed statement");
+  second.txid = first.txid;
+  Reject({first, second}, Options(), QuietProofChallengeError::kInvalidClaims);
+  second = Claim(2);
+  second.script_kind = static_cast<QuietProofScriptKind>(2);
+  Reject({second}, Options(), QuietProofChallengeError::kInvalidClaims);
+}
+
 void TestMissingNetwork() {
   QuietProofChallengeOptions default_constructed;
   QuietProofChallengeOptions value_initialized{};
@@ -312,6 +327,7 @@ void TestSources() {
 int main() {
   try {
     proofs::TestLegacyEquivalence();
+    proofs::TestTypedSelection();
     proofs::TestMissingNetwork();
     proofs::TestOptions();
     proofs::TestClaimLimits();

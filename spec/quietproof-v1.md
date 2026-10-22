@@ -10,8 +10,9 @@ maintenance, integration services, and contractual warranty options
 are available separately. Please contact us for further information.
 :::
 
-QuietProof v1 is an off-chain proof of control for a bounded set of native P2WPKH
-outputs. It neither spends nor locks Bitcoin. P2SH-wrapped P2WPKH, P2WSH,
+QuietProof is an off-chain proof of control for a bounded set of native P2WPKH
+and compressed-key P2PKH outputs. Statement v1 supports P2WPKH only; statement
+v2 explicitly types each claim. Uncompressed-key P2PKH is unsupported. It neither spends nor locks Bitcoin. P2SH-wrapped P2WPKH, P2WSH,
 multisig, P2TR, and arbitrary scripts are unsupported.
 
 The generic zero-knowledge primitive is PoKC (Proof of Key Control). QuietProof
@@ -38,13 +39,15 @@ n = FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 
 The private scalar is an integer `x` with `1 <= x < n`. Let `P = xG`, normalized
 to a finite affine point `(Px, Py)`. `Px_be` is exactly 32 big-endian bytes.
-`SEC = (0x02 + (Py mod 2)) || Px_be`. The public witness program is
+`SEC = (0x02 + (Py mod 2)) || Px_be`. The public key hash (the API member `program`) is
 
 ```
 program = RIPEMD160(SHA256(SEC))
 ```
 
-and the only accepted script is `00 14 || program` (22 bytes). The circuit MUST
+and the accepted scripts are `00 14 || program` (22 bytes) for P2WPKH and
+`76 a9 14 || program || 88 ac` (25 bytes) for P2PKH. No alternate pushes,
+extra opcodes, or trailing bytes are accepted. The circuit MUST
 constrain scalar range/bitness, `P = xG`, finiteness, curve membership,
 canonical coordinates, compressed-key parity and byte order, both hash
 functions, fixed padding, and equality with the public 20-byte program.
@@ -82,7 +85,7 @@ The statement starts with ASCII `QPS1`, then:
 
 | Field | Encoding and rule |
 | --- | --- |
-| statement version | `u8`, exactly `01` |
+| statement version | `u8`, `01` (implicit P2WPKH) or `02` (typed claims) |
 | network | `u8`, section 2 |
 | verifier/entity ID | `u16(length) || UTF-8`, 1..256 bytes |
 | purpose | `u16(length) || UTF-8`, one of `proof-of-control`, `proof-of-funds`, `bridge-authorization` |
@@ -111,7 +114,12 @@ The statement digest is the BIP-340-style tagged hash
 TaggedHash("QuietProof/statement/v1", canonical_statement_bytes)
 ```
 
-where `TaggedHash(tag, m) = SHA256(SHA256(tag) || SHA256(tag) || m)`.
+for statement v1; statement v2 uses
+`TaggedHash("QuietProof/statement/v2", canonical_statement_bytes)`.
+Here `TaggedHash(tag, m) = SHA256(SHA256(tag) || SHA256(tag) || m)`.
+Decoded versions MUST be retained on re-encoding, including P2WPKH-only v2
+statements. Builders select v2 when any claim is P2PKH and otherwise default to
+v1. V1 MUST NOT encode P2PKH claims; a type cannot be silently dropped.
 
 ### 4.1 Claim encoding
 
@@ -122,12 +130,18 @@ Each claim is:
 | txid | 32 bytes in Bitcoin RPC/display order, not all zero |
 | vout | `u32` |
 | amount | `u64`, 1..2,100,000,000,000,000 satoshis |
-| program | exactly 20 bytes |
+| script kind | v2 only: `u8`, `00` = P2WPKH, `01` = compressed-key P2PKH |
+| program | exactly 20 bytes of compressed-public-key HASH160 |
 
 Claims are sorted strictly by `(txid, vout)`; duplicates are malformed. The
-script is not redundantly serialized: verifiers reconstruct exactly
-`00 14 || program` and require the chain output to equal it. More than two
-distinct programs is malformed. The checked aggregate claim value MUST NOT
+script is not redundantly serialized: verifiers reconstruct exactly the
+selected template from section 1 and require the chain output to equal it.
+V1 claims always mean P2WPKH. V2 claim bytes are
+`txid:32 || vout:u32 || amount_sats:u64 || script_kind:u8 || program:20`.
+Unknown versions and kinds are `unsupported`; malformed known encodings are
+`malformed_statement`. Duplicate outpoints are malformed regardless of kind.
+Ownership witnesses are grouped by key hash across kinds; more than two
+distinct key hashes is malformed. The checked aggregate claim value MUST NOT
 exceed 2,100,000,000,000,000 satoshis.
 
 ## 5. Optional bridge binding
@@ -150,9 +164,10 @@ atomic lock/custody and one-time-mint policy callback.
 The proof envelope starts with ASCII `QPE1`, then:
 
 ```
-envelope_version:u8 = 01
+envelope_version:u8 = 01 (legacy) or 02 (timestamped)
 statement_size:u32
 statement_bytes
+proof_created_at:u64 (version 02 only)
 circuit_digest:32 bytes
 circuit_version:u32 = 1
 rate:u32 = 4
@@ -161,13 +176,15 @@ proof_size:u32
 proof_bytes
 ```
 
+Statement v2 MUST NOT appear in envelope v1 (a malformed combination). New
+proofs keep envelope v2 and the existing circuit identities unchanged.
 `statement_size` is 1..4096. `proof_size` is 1..128 MiB and MUST equal the
 remaining envelope length. The circuit digest MUST NOT be all zero. The entire envelope is bounded before any nested
 allocation. Unknown envelope/statement/network/circuit versions or proof
 parameters are `unsupported`; malformed lengths or fields are
 `malformed_statement`.
 
-The Fiat-Shamir seed is
+The version 01 Fiat-Shamir seed is
 
 ```
 TaggedHash(
@@ -176,8 +193,23 @@ TaggedHash(
   circuit_version:u32 || rate:u32 || queries:u32)
 ```
 
-The proof therefore binds every statement byte, the exact circuit, and proof
-parameters.
+Version 02 uses `TaggedHash("PoKC/transcript/v2", v1_seed || proof_created_at:u64)`.
+Both bind every statement byte, the exact circuit and proof parameters; version
+02 additionally binds the proof timestamp. New proofs MUST use version 02.
+
+Times are Unix seconds. Challenge creation sets `not_before` to its creation
+time, exposed by inspection as `request_created_at`; the proof preserves the
+entire request. `proof_created_at` records prover start, before circuit/proof
+computation, not completion. It MUST be nonzero and satisfy
+`not_before <= proof_created_at < expires_at`; verification also requires
+`proof_created_at <= now`. These local-clock claims are not trusted timestamps.
+Legacy envelope-v1/statement-v1 proofs remain readable, with
+`proof_created_at: null` in inspection. Verifiers predating timestamped envelopes
+reject envelope v2 as unsupported; verifiers supporting envelope v2 but only
+statement v1 reject typed statement v2 as unsupported. Neither version may be
+silently downgraded. The proof does not newly disclose the public key, but public
+outpoints, amounts and key hashes remain linkable. Prior spends or key reuse may
+already reveal the key; this protocol cannot undo that exposure or provide anonymity.
 
 ## 7. Verification and result selection
 
@@ -192,7 +224,7 @@ The verifier returns one of `invalid_proof`, `malformed_statement`,
 4. Reject an unsupported circuit identity, then verify the proof and transcript
    binding before querying chain state.
 5. For every outpoint, verify the selected Bitcoin network, exact amount,
-   exact `00 14 || program` script, and unspent state using one stable chain
+   exact kind-selected script from section 1, and unspent state using one stable chain
    tip shared by every claim or an authenticated historical snapshot.
 6. Apply confirmation/finality policy and sum amounts with checked arithmetic.
 7. Apply bridge authorization when present.

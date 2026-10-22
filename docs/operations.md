@@ -19,10 +19,10 @@ build/quietproof verify proof.qpf --network signet --verifier example.org \
   --purpose proof-of-funds --nonce-store ./nonces
 ```
 
-Replace the placeholder with the full native P2WPKH address. Native RPC is the
+Replace the placeholder with the full native P2WPKH or compressed-key P2PKH address. Native RPC is the
 default, with no `bitcoin-cli` invocation or automatic backend fallback.
-Proving accepts only the request, output and protected stdin secrets; no Core
-connection, RPC flags or cookie are needed on the prover's machine.
+Plain proving uses the request, output and protected stdin secrets; no Core
+connection or cookie is needed. Explicit Roots wallet-backed proving is described below.
 
 ::: warning
 This is free and open source software provided without warranty under
@@ -103,9 +103,11 @@ not trigger a retry, port/network fallback or legacy invocation.
 ## Discovery costs and coverage
 
 Default discovery uses `validateaddress` and one `scantxoutset` address
-descriptor. It supports only native P2WPKH: P2SH, P2WSH, P2TR and arbitrary
-scripts/descriptors are unsupported. A `tb1` prefix alone cannot select between
-testnet3, testnet4 and signet; select the network and validate the node chain.
+descriptor. Discovery supports canonical native P2WPKH and P2PKH scripts.
+Proving requires a compressed public key; a P2PKH script alone cannot establish
+its encoding. P2SH, P2WSH, P2TR and arbitrary scripts/descriptors are unsupported.
+A `tb1` prefix alone cannot select between testnet3, testnet4 and signet; select
+the network and validate the node chain.
 
 A scan visits the whole UTXO set, including unrelated outputs. It may take
 minutes and compete for disk/cache resources. It excludes mempool-only outputs.
@@ -136,7 +138,8 @@ Wallet results describe tracked wallet coverage, not exhaustive address funds.
 Use this mode for an already tracking wallet or arrange discovery outside
 high-frequency request handling; no persistent index/cache is provided here.
 
-`utxos` JSON reports integer satoshis, public programs/outpoints, confirmations,
+`utxos` JSON reports integer satoshis, `script_type`, public `key_hash`/outpoints,
+confirmations (with `program` retained as an alias for `key_hash`),
 source, exclusions, observation identity, recheck and challenge compatibility.
 A valid empty set or more than 16 eligible outputs can exit 0 diagnostically.
 Challenge creation rejects both. No largest/first-16 selection occurs. Generic
@@ -171,14 +174,16 @@ Historical statements require a separate authenticated historical provider;
 the native client and CLI do not reconstruct historical spending.
 
 The node receives the address. Requests/proofs disclose outpoints,
-amounts and witness programs, allowing tracing and association with known prover
+amounts and key hashes, allowing tracing and association with known prover
 identities. Recipients can share proofs; verifier binding is not access control.
-Keys stay hidden unless disclosed elsewhere. RPC changes no formats
-or circuits. Key knowledge proves neither exclusive ownership, legal title,
+The proof does not newly disclose public keys. Earlier spends or key reuse may
+already expose a key, and proving cannot undo that exposure. This is not anonymous
+proof of funds. RPC changes no formats or circuits. Key knowledge proves neither exclusive ownership, legal title,
 solvency nor locked collateral.
 
-Supply verifier/purpose expectations locally on every verify operation. Keep
-lifetimes short (default challenge 300 seconds, maximum 86,400) and use fresh
+CLI context defaults: verifier `unscoped`, purpose `proof-of-funds`, message empty.
+Set matching verifier/purpose flags for scoped requests and verification. Keep
+lifetimes short (default 300 seconds, maximum 86,400) and use fresh
 requests/nonces. Request/proof outputs are owner-only and never overwrite an
 existing path. The nonce store is a **file** whose owner-only, regular-file,
 no-follow and locked atomic append/fsync checks must succeed. Persist it across
@@ -196,7 +201,7 @@ existing result JSON and exit codes; RPC failures usually become
 | Situation | Meaning and recovery |
 | --- | --- |
 | Invalid/wrong-network address | Check the full address/checksum and explicit network; no prefix-based network inference. |
-| Unsupported script | Use native P2WPKH; wrapping, multisig, P2WSH and P2TR are unsupported. |
+| Unsupported script | Use native P2WPKH or compressed-key P2PKH; uncompressed P2PKH, wrapping, multisig, P2WSH and P2TR are unsupported. |
 | No eligible outputs | Check funding, confirmed state and minimum confirmations; a diagnostic empty set is not a challenge. |
 | Too many outputs | More than 16 cannot become an ordinary address challenge; an advanced explicit subset is a separate caller decision. |
 | Missing/insecure cookie or authentication failure | Fix the explicit path, user ownership/mode or rotated credential; never try another node automatically. |
@@ -235,14 +240,27 @@ and `LongfellowZKQuietProof::quietproof`, without curl linkage or lookup.
 ## Advanced manual and legacy compatibility
 
 Manual claims remain fully offline, using displayed/RPC-order TXIDs and
-`TXID:VOUT:SATOSHIS:PROGRAM` (the 20-byte program after `0014`). They cannot be
-mixed with `--address` or RPC/discovery-only options:
+`TXID:VOUT:SATOSHIS:PROGRAM` for native P2WPKH (the 20-byte hash after `0014`).
+The explicit form `TXID:VOUT:SATOSHIS:SCRIPT_KIND:KEY_HASH` accepts `p2wpkh` or
+`p2pkh`. Repeat `--claim` to combine kinds; duplicate outpoints are rejected.
+Manual claims cannot be mixed with `--address` or RPC/discovery-only options:
 
 ```sh
 build/quietproof challenge create --network signet --verifier example.org \
   --purpose proof-of-funds --message 'Proof of control' \
-  --claim TXID:VOUT:SATOSHIS:PROGRAM --output request.qpr
+  --claim TXID:VOUT:SATOSHIS:p2pkh:KEY_HASH --output request.qpr
 ```
+
+P2PKH proving supports compressed public keys only. An address cannot establish
+that encoding; the supplied key must match its hash using compressed serialization.
+Requests with any P2PKH claim use statement version 2. `inspect` reports
+`statement_version`, ordered `script_kinds`, `request_created_at` and
+`proof_created_at` (null for requests). Old four-part claims retain version 1.
+Statement v1 remains implicitly P2WPKH. Statement v2 binds the kind per claim;
+same-key mixed outputs share one ownership witness. New proofs retain timestamped
+envelope v2 and the existing circuits. Statement v2 is invalid in legacy envelope
+v1. Older verifiers without statement-v2 support return `unsupported`; do not
+re-encode typed requests as v1 to make them compatible.
 
 To select the retained subprocess verifier explicitly:
 
@@ -286,9 +304,10 @@ ctest --test-dir build --output-on-failure -R '^quietproof-regtest-rpc-test$'
 
 The serial test has `bitcoin-regtest`/`proof-heavy` labels and a four-hour outer
 timeout. It creates private temporary datadirs, chooses loopback ports, disables
-peers, checks official Core version identity, holds the proof key outside Core,
+peers, checks exact official Core 28.3/30.3 version identity, holds fixture keys outside Core,
 and cleans its own child/data. It tests offline proving, rotated cookies,
-watch-only discovery, real proofs, replay single-winner, stable legacy parity,
+watch-only discovery, P2PKH-only and same/two-key mixed real proofs, exact totals,
+substitution/expiry rejection, replay single-winner, stable legacy parity,
 same-height reorgs and fresh-proof mempool/mined spend rejection. Missing Core
 binaries block this opt-in acceptance gate; disabled ordinary builds explicitly
 skip it. Verify release checksums/signatures before supplying executable paths.
@@ -319,8 +338,10 @@ v31.1-roots.3 or newer. It uses `exportaddresskey`
 directly over the existing loopback, cookie-authenticated RPC connection. The
 request supplies the network and address. Optional `--network` and `--address`
 must match it. The sole loaded wallet is selected automatically; use
-`--rpc-wallet NAME` when multiple wallets are loaded. The wallet must already be loaded and unlocked. Only one distinct native
-P2WPKH address is supported in this mode; multi-key requests use protected stdin.
+`--rpc-wallet NAME` when multiple wallets are loaded. The wallet must already be loaded and unlocked. This mode supports one distinct
+compressed-key hash across P2WPKH/P2PKH outputs; multi-key requests use protected stdin.
+Automatic address selection prefers P2PKH when present, otherwise P2WPKH.
+For same-key mixed requests, `--address` can select either claimed kind.
 Missing RPC support is reported explicitly and never triggers `listdescriptors`.
 Plain proving remains offline. Wallet export temporarily brings a spending key
 into the QuietProof process; buffer clearing cannot erase every library/OS copy.

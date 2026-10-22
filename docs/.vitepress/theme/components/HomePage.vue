@@ -93,13 +93,13 @@
               <dt>Public request</dt>
               <dd>
                 Network, verifier, purpose, nonce, expiry, and 1–16 disclosed UTXO claims. Each
-                claim supplies an outpoint, value, and 20-byte P2WPKH witness program.
+                claim supplies an outpoint, value, script kind, and 20-byte compressed-key hash.
               </dd>
             </div>
             <div>
               <dt>Private prover input</dt>
               <dd>
-                One 32-byte spend key for each distinct witness program—exactly one or two in v1.
+                One 32-byte spend key for each distinct compressed-key hash—exactly one or two.
                 Keys stay local and should enter through protected standard input.
               </dd>
             </div>
@@ -127,7 +127,7 @@
             <p>
               <strong>Current cost follows distinct keys.</strong> Each key adds an elliptic-curve,
               SHA-256, and RIPEMD-160 relation. More claims are comparatively cheap only when they
-              reuse one of the same one or two witness programs.
+              reuse one of the same one or two key hashes across P2WPKH/P2PKH kinds.
             </p>
             <p>
               <strong>Use it at discrete decision points.</strong> A custody review, OTC
@@ -205,13 +205,16 @@
         <div>
           <h2 id="two-key-title">One proof can connect two keys off-chain</h2>
           <p>
-            QuietProof v1 has exact circuit shapes for one or two distinct P2WPKH programs. In the
+            QuietProof v1 has exact circuit shapes for one or two distinct compressed-key hashes. In the
             two-key case, a selected verifier can learn that the same prover knows both keys without
             learning either public key and without creating an on-chain connection.
           </p>
           <p>
             This supports wallet continuity and reputation rollover. Recipients learn the link
-            and can share the proof.
+            and can share the proof. Native P2WPKH and compressed-key P2PKH are supported;
+            uncompressed P2PKH is unsupported. Public outpoints, key hashes and amounts stay
+            linkable. Earlier spends or key reuse may already reveal a public key; proving
+            cannot undo that exposure or provide anonymity.
           </p>
         </div>
         <div class="quietproof-linkage" role="img" aria-label="Old and new wallet outputs linked for the verifier by QuietProof">
