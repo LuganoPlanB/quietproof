@@ -670,6 +670,71 @@ bool BitcoinCoreRpc::Discover(const BitcoinUtxoQuery& query, BitcoinUtxoDiscover
                                      "Discovery response fields are malformed");
   }
 }
+bool BitcoinCoreRpc::ExportAddressKey(
+    const std::string& wallet, const std::string& address,
+    const std::array<uint8_t, 20>& expected_program,
+    std::array<uint8_t, 32>* secret, BitcoinRpcError* error) {
+  using namespace bitcoin_rpc_internal;
+  using namespace quietproof_internal;
+  auto fail = [&](BitcoinRpcErrorCode code, const char* message) {
+    return Fail(error, code, message);
+  };
+  if (!secret || wallet.empty() || wallet.size() > 1024 ||
+      !QuietProofUtf8(wallet) || !ValidAddressText(address))
+    return fail(BitcoinRpcErrorCode::kConfiguration, "Explicit wallet and address are required");
+  RpcDecodedResponse response;
+  // Erase the returned hex string even when validation fails. JSON/transport
+  // libraries may retain copies; this is not a guarantee of complete erasure.
+  struct EraseResult {
+    nlohmann::json& result;
+    ~EraseResult() {
+      if (result.is_object() && result.contains("private_key_hex") &&
+          result["private_key_hex"].is_string()) {
+        auto& text = result["private_key_hex"].get_ref<std::string&>();
+        volatile char* bytes = text.data();
+        for (size_t i = 0; i < text.size(); ++i) bytes[i] = 0;
+      }
+    }
+  } erase{response.result};
+  try {
+    auto& client = impl_->client_;
+    if (!client.Call("getblockchaininfo", nlohmann::json::array(), false, &response, error)) return false;
+    Tip tip;
+    if (!ParseTipFields(response.result, &tip))
+      return fail(BitcoinRpcErrorCode::kMalformed, "Node tip is malformed");
+    if (tip.chain != QuietProofBitcoinCoreChainName(client.config().network))
+      return fail(BitcoinRpcErrorCode::kWrongNetwork, "Bitcoin node network does not match request");
+    if (!client.Call("validateaddress", nlohmann::json::array({address}), false, &response, error)) return false;
+    const auto& validated = response.result;
+    std::vector<uint8_t> script;
+    if (!validated.is_object() || !validated.contains("isvalid") ||
+        !validated["isvalid"].is_boolean() || !validated["isvalid"].get<bool>() ||
+        !validated.contains("scriptPubKey") || !P2wpkhScript(validated["scriptPubKey"], &script))
+      return fail(BitcoinRpcErrorCode::kUnsupportedScript, "Address must use native P2WPKH on the request network");
+    if (!std::equal(expected_program.begin(), expected_program.end(), script.begin() + 2))
+      return fail(BitcoinRpcErrorCode::kInvalidAddress, "Address does not match the request; no key exported");
+    if (!client.Call("exportaddresskey", nlohmann::json::array({address}), false,
+                     &response, error, wallet)) {
+      if (error && error->rpc_code == -32601)
+        error->message = "Node does not support exportaddresskey; use protected stdin mode instead";
+      return false;
+    }
+    const auto& result = response.result;
+    if (!result.is_object() || result.size() != 2 ||
+        !result.contains("compressed") || !result["compressed"].is_boolean() ||
+        !result["compressed"].get<bool>() || !result.contains("private_key_hex") ||
+        !result["private_key_hex"].is_string() ||
+        !IsLowerHex(result["private_key_hex"].get_ref<const std::string&>(), 64))
+      return fail(BitcoinRpcErrorCode::kMalformed, "Invalid address-key export response");
+    const auto& hex = result["private_key_hex"].get_ref<const std::string&>();
+    for (size_t i = 0; i < secret->size(); ++i)
+      (*secret)[i] = (HexNibble(hex[2*i]) << 4) | HexNibble(hex[2*i+1]);
+    ClearError(error);
+    return true;
+  } catch (...) {
+    return fail(BitcoinRpcErrorCode::kMalformed, "Address-key export failed; private diagnostics suppressed");
+  }
+}
 QuietProofProviderKind BitcoinCoreRpc::kind() const {
   return QuietProofProviderKind::kCurrentTip;
 }

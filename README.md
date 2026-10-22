@@ -5,7 +5,8 @@
 Discover Bitcoin outputs, create a challenge, prove key control, verify against
 Bitcoin Core. Supply a native P2WPKH address; the CLI and C++ library discover
 its candidate outputs and independently recheck them at verification. Proving
-runs offline with the request and protected key input. Native verification
+runs offline with the request and protected key input by default; explicit wallet
+mode can obtain one address key from Bitcoin Roots. Native verification
 uses Core RPC directly, without installing or invoking `bitcoin-cli`.
 
 QuietProof uses **PoKC (Proof of Key Control)** for one or two native P2WPKH
@@ -202,3 +203,30 @@ record peak resident memory separately, and run multiple samples.
 - [Operations and production controls](docs/operations.md)
 - [Security claim matrix](docs/security.md)
 - [Performance methodology](docs/performance.md)
+
+## Prove with a Bitcoin Roots wallet
+
+Bitcoin Roots v31.1-roots.3 provides `exportaddresskey`. To obtain a key directly
+from an already loaded, unlocked descriptor wallet:
+
+```sh
+build/quietproof prove --request request.qpr --output proof.qpf \
+  --rpc-wallet signet-wallet --address tb1qYOUR_ADDRESS \
+  --rpc-datadir /path/to/bitcoin-data
+```
+
+The network comes from the request. The node's network and address script must
+match it before any key export. This mode supports a request with one distinct
+native P2WPKH address (possibly multiple outputs). P2PKH remains unsupported by
+QuietProof's proof format even though Roots can export its key. The returned
+compressed key is checked against the request before proof generation.
+
+Wallet mode is opt-in: plain `prove` still reads protected stdin without RPC.
+If the node lacks `exportaddresskey`, use stdin mode instead. Authentication,
+locked-wallet, missing-key and malformed-response errors stop the operation;
+there is no private-descriptor export or automatic wallet unlocking fallback.
+The key is never printed or passed through argv, environment variables or files.
+Owned key buffers are cleared, but JSON/HTTP libraries and the OS can retain
+copies: this does not guarantee complete memory erasure or protection from swap.
+Use only a trusted local node. Exporting a non-hardened child secret together
+with its ancestor xpub can compromise the ancestor's private subtree.

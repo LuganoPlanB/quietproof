@@ -155,6 +155,11 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/rpc_http_fixture.py
     $<TARGET_FILE:quietproof-cli> ${_quietproof_cli_rpc_mode})
   set_tests_properties(quietproof-cli-rpc-test PROPERTIES TIMEOUT 60)
+  if(QUIETPROOF_BUILD_RPC)
+    add_test(NAME quietproof-wallet-export-test COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/wallet_export_test.py $<TARGET_FILE:quietproof-cli>)
+    set_tests_properties(quietproof-wallet-export-test PROPERTIES TIMEOUT 90)
+  endif()
   add_test(NAME quietproof-prove-feedback-test
     COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/prove_feedback_test.py $<TARGET_FILE:quietproof-cli>)

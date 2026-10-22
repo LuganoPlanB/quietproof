@@ -70,7 +70,7 @@ void PrintUsage(std::ostream& output) {
          "--purpose PURPOSE --message TEXT (--address ADDRESS | --claim "
          "TXID:VOUT:SATOSHIS:PROGRAM [--claim ...]) --output REQUEST\n"
       << "  quietproof utxos --network NETWORK --address ADDRESS [RPC OPTIONS]\n"
-      << "  quietproof prove --request REQUEST --output PROOF\n"
+      << "  quietproof prove --request REQUEST --output PROOF [--rpc-wallet NAME --address ADDRESS [RPC OPTIONS]]\n"
       << "  quietproof verify PROOF --verifier ID "
          "--purpose PURPOSE --nonce-store FILE [--min-confirmations N] "
          "[--minimum-total-sats N] [--max-lifetime SECONDS] [--network NETWORK]\n"
@@ -534,7 +534,9 @@ int ChallengeCreate(int argc, char** argv) {
 
 int Prove(int argc, char** argv) {
   Options options;
-  if (!ParseOptions(argc, argv, 2, {"--request", "--output"}, &options))
+  auto allowed = kRpcOptions;
+  allowed.insert({"--request", "--output", "--rpc-wallet", "--address"});
+  if (!ParseOptions(argc, argv, 2, allowed, &options))
     return Usage();
   std::string request_path, output_path;
   if (!One(options, "--request", &request_path) ||
@@ -557,7 +559,30 @@ int Prove(int argc, char** argv) {
   std::vector<std::array<uint8_t, 20>> programs;
   if (!proofs::QuietProofDistinctPrograms(statement, &programs)) return kData;
   std::vector<std::array<uint8_t, 32>> secrets;
-  if (!ReadSecrets(programs.size(), &secrets)) {
+  const bool wallet_mode = options.count("--rpc-wallet");
+  if (!wallet_mode && HasDiscoveryOptions(options)) return Usage();
+  if (wallet_mode) {
+#ifdef QUIETPROOF_HAS_RPC
+    std::string wallet, address;
+    proofs::BitcoinCoreRpcConfig config(statement.network);
+    if (!One(options, "--rpc-wallet", &wallet) || wallet.empty() ||
+        !One(options, "--address", &address) || !ParseRpcOptions(options, &config)) return Usage();
+    if (programs.size() != 1) {
+      std::cerr << "Wallet export requires a request with one distinct P2WPKH address; use stdin for multiple keys.\n";
+      return kData;
+    }
+    proofs::BitcoinCoreRpc rpc(std::move(config));
+    proofs::BitcoinRpcError rpc_error;
+    secrets.resize(1);
+    if (!rpc.ExportAddressKey(wallet, address, programs.front(), &secrets.front(), &rpc_error)) {
+      EraseSecrets(&secrets);
+      std::cerr << rpc_error.message << '\n';
+      return kData;
+    }
+#else
+    return NativeUnavailable();
+#endif
+  } else if (!ReadSecrets(programs.size(), &secrets)) {
     EraseSecrets(&secrets);
     std::cerr << "Invalid key input: expected 64 hexadecimal characters per private key, not an address.\n";
     return kData;

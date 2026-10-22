@@ -203,6 +203,15 @@ bool RpcClient::Call(const std::string& method, const Json& params, bool scan,
     const Json request = {{"jsonrpc", "2.0"}, {"id", id}, {"method", method}, {"params", params}};
     const std::string body = request.dump();  // Only REQUESTS are serialized.
     HttpResponse response;
+    struct EraseExportBody {
+      HttpResponse& response;
+      bool sensitive;
+      ~EraseExportBody() {
+        if (!sensitive) return;
+        volatile char* bytes = response.body.data();
+        for (size_t i = 0; i < response.body.size(); ++i) bytes[i] = 0;
+      }
+    } erase{response, method == "exportaddresskey"};
     BitcoinRpcError transport_error;
     const bool received = transport_(config_, body, scan, &response, &transport_error, wallet);
     if (!received && (transport_error.code != BitcoinRpcErrorCode::kHttp || response.status == 0)) {
