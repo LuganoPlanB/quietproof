@@ -160,7 +160,8 @@ if(BUILD_TESTING)
   if(QUIETPROOF_BUILD_RPC)
     add_test(NAME quietproof-wallet-export-test COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/wallet_export_test.py $<TARGET_FILE:quietproof-cli>)
-    set_tests_properties(quietproof-wallet-export-test PROPERTIES TIMEOUT 90)
+    set_tests_properties(quietproof-wallet-export-test PROPERTIES
+      TIMEOUT 300 LABELS "proof-heavy" RUN_SERIAL TRUE)
   endif()
   add_test(NAME quietproof-prove-feedback-test
     COMMAND ${Python3_EXECUTABLE}

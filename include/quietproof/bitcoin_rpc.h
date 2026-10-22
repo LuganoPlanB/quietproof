@@ -96,6 +96,14 @@ class BitcoinCoreRpc final : public QuietProofChainProvider {
                         const std::array<uint8_t, 20>& expected_program,
                         std::array<uint8_t, 32>* secret,
                         BitcoinRpcError* = nullptr);
+  // Typed export: accepted address kinds must occur in the request. Empty
+  // address prefers P2PKH when present, otherwise P2WPKH. The original overload
+  // retains its P2WPKH-only contract.
+  bool ExportAddressKey(const std::string& wallet, const std::string& address,
+                        const std::array<uint8_t, 20>& expected_program,
+                        const std::vector<QuietProofScriptKind>& script_kinds,
+                        std::array<uint8_t, 32>* secret,
+                        BitcoinRpcError* = nullptr);
   QuietProofProviderKind kind() const override;
   QuietProofChainEvidence Lookup(const QuietProofChainRequest&) override;
 

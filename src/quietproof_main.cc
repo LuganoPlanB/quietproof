@@ -615,13 +615,19 @@ int Prove(int argc, char** argv) {
     if (!One(options, "--rpc-wallet", &wallet, false) ||
         !One(options, "--address", &address, false) || !ParseRpcOptions(options, &config)) return Usage();
     if (programs.size() != 1) {
-      std::cerr << "Wallet export requires a request with one distinct P2WPKH address; use stdin for multiple keys.\n";
+      std::cerr << "Wallet export requires a request with one distinct key hash; use stdin for multiple keys.\n";
       return kData;
     }
     proofs::BitcoinCoreRpc rpc(std::move(config));
     proofs::BitcoinRpcError rpc_error;
     secrets.resize(1);
-    if (!rpc.ExportAddressKey(wallet, address, programs.front(), &secrets.front(), &rpc_error)) {
+    std::vector<proofs::QuietProofScriptKind> script_kinds;
+    for (const auto& claim : statement.claims) {
+      if (std::find(script_kinds.begin(), script_kinds.end(), claim.script_kind) == script_kinds.end())
+        script_kinds.push_back(claim.script_kind);
+    }
+    if (!rpc.ExportAddressKey(wallet, address, programs.front(), script_kinds,
+                              &secrets.front(), &rpc_error)) {
       EraseSecrets(&secrets);
       std::cerr << rpc_error.message << '\n';
       return kData;

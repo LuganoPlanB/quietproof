@@ -232,8 +232,10 @@ The address and network come from the request. Optional `--network` must match i
 With exactly one loaded wallet, it is selected automatically; otherwise specify
 `--rpc-wallet NAME`. Optional `--address ADDRESS` must match the request.
 The node's network and address script must match it before any key export. This mode supports a request with one distinct
-native P2WPKH address (possibly multiple outputs). P2PKH requests use protected
-stdin; this explicit wallet mode remains P2WPKH-only. The returned
+compressed-key hash across P2WPKH, P2PKH, or mixed outputs. Automatic address
+selection uses P2PKH when present in the request, otherwise P2WPKH. For mixed
+requests, `--address` can select either claimed kind with the same key hash.
+Multi-key requests use protected stdin. The returned
 compressed key is checked against the request before proof generation.
 
 Supplying any RPC option (or `--address`) selects wallet mode. Plain `prove`

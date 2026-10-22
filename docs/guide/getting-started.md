@@ -116,7 +116,7 @@ secrets in argv, environment variables or shell history.
 
 Core is stopped during proving: this stage reads no RPC cookie/configuration
 when invoked without wallet/RPC options. It can run on another offline machine.
-Explicit Roots wallet-backed proving remains P2WPKH-only; P2PKH uses stdin. Requests and
+Explicit Roots wallet-backed proving supports P2WPKH/P2PKH requests sharing one key hash. Requests and
 proofs are mode `0600`, and existing output paths are never overwritten.
 The default challenge lifetime is 300 seconds; it must still be valid at
 verification. If it expires, create a fresh request and proof.
