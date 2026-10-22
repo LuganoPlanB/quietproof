@@ -134,7 +134,8 @@ if(BUILD_TESTING)
     LABELS "proof-heavy" RUN_SERIAL TRUE TIMEOUT 600)
   file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tests/results")
   set_tests_properties(pokc-test PROPERTIES
-    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    LABELS "proof-heavy" RUN_SERIAL TRUE TIMEOUT 1800)
   add_pokc_test(compressed-key-sha256-test tests/quietproof/compressed_key_sha256_test.cc)
   add_pokc_test(key-ownership-test tests/quietproof/key_ownership_test.cc)
   add_pokc_test(ripemd160-test tests/quietproof/ripemd160_test.cc)

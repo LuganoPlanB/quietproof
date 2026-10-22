@@ -21,6 +21,10 @@ required = [
     "testnet4",
     "signet",
     'TaggedHash("QuietProof/statement/v1"',
+    'TaggedHash("QuietProof/statement/v2"',
+    "76 a9 14 || program || 88 ac",
+    "script_kind:u8",
+    "Statement v2 MUST NOT appear in envelope v1",
     "2,100,000,000,000,000",
 ]
 missing = [anchor for anchor in required if anchor not in text]

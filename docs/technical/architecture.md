@@ -17,12 +17,12 @@ canonical request · transcript · expiry · nonce · chain evidence
                          │
                          ▼
 CRYPTOGRAPHIC PRIMITIVE
-PoKC: ZK knowledge of one or two P2WPKH spend keys
+PoKC: ZK knowledge of one or two compressed spend keys for P2WPKH/P2PKH
 ```
 
 ## PoKC relation
 
-For each distinct public 20-byte witness program `h`, the prover privately supplies a scalar `x` and proves:
+For each distinct public 20-byte key hash `h`, the prover privately supplies a scalar `x` and proves:
 
 ```text
 x ∈ [1, n−1]
@@ -47,6 +47,12 @@ V1 compiles one-key and two-key circuit shapes. There is no inactive padded rela
 [Read the complete PoKC circuit documentation →](/technical/pokc)
 
 ## Canonical statement and envelope
+
+Statement v1 means P2WPKH; v2 binds each claim to P2WPKH or compressed-key P2PKH.
+Mixed outputs sharing a key hash reuse one witness. New proofs use timestamped
+envelope v2; typed statements are invalid in legacy envelope v1. Older verifiers
+without statement-v2 support reject typed requests as unsupported. Circuit
+identities are unchanged.
 
 The public statement binds network, verifier, purpose, message, timestamps, a 32-byte nonce, one to 16 output claims, and optional application bindings. The proof envelope binds the exact statement bytes, circuit digest, circuit version, Ligero rate, query count, and proof bytes.
 

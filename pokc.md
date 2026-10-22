@@ -9,7 +9,7 @@ one compiled circuit and one `ZkProof`.
 
 ## Proven relation
 
-For each distinct public P2WPKH witness program `program`, the circuit proves
+For each distinct public compressed-key hash `program` for P2WPKH or P2PKH, the circuit proves
 knowledge of a scalar `x` such that
 
 ```text
@@ -20,7 +20,8 @@ program = RIPEMD160(SHA256(SEC))
 ```
 
 The scalar, point, compressed SEC key, SHA trace, and SHA digest are private.
-Only the 20-byte witness program is public. Bitcoin outpoints, values,
+Only the 20-byte key hash is public to the circuit. The proof cannot undo
+public-key exposure through prior spends or key reuse. Bitcoin outpoints, values,
 network, expiry, nonce, chain state, and bridge policy are bound by the
 canonical envelope and checked outside this arithmetic circuit.
 
@@ -126,8 +127,8 @@ parameter mismatch before accepting the proof.
 
 ## Scaling and useful workloads
 
-Let `N` be the number of claimed P2WPKH outputs and `K` the number of distinct
-witness programs among them. QuietProof groups claims by program, so each
+Let `N` be the number of claimed P2WPKH/P2PKH outputs and `K` the number of distinct
+compressed-key hashes among them, across script kinds. QuietProof groups claims by program, so each
 distinct program contributes one key-ownership and HASH160 relation:
 
 ```text
@@ -144,7 +145,7 @@ still add public claims to the envelope and require independent amount,
 script, confirmation, network, and unspent-state checks.
 
 This is useful for bounded custodial or treasury workflows where several
-UTXOs deliberately share one or two P2WPKH programs, for example:
+UTXOs deliberately share one or two compressed-key hashes, for example:
 
 - proving control of several fragmented outputs held at one operational
   address;
@@ -165,7 +166,7 @@ commitment and set-membership construction, together with a new security
 analysis.
 
 The constant-ZK-cost case should not be confused with Bitcoin multisig. Each
-program is an independent ordinary P2WPKH spending condition; the circuit
+output has an independent ordinary P2WPKH or compressed-key P2PKH spending condition; the circuit
 aggregates proofs of knowledge but creates no `m-of-n` authorization policy.
 
 ## Witness construction is not a trust boundary

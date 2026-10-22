@@ -13,10 +13,11 @@ The verifier identifies the disclosed Bitcoin outputs it expects to check. For e
 
 - displayed transaction ID;
 - output index;
-- value in satoshis; and
-- the 20-byte native P2WPKH witness program.
+- value in satoshis;
+- script kind, native P2WPKH or compressed-key P2PKH; and
+- the 20-byte compressed-public-key HASH160.
 
-The prover must control no more than two distinct witness programs in a v1 statement. Several outputs may share either program, up to 16 claims in total.
+The prover must control no more than two distinct key hashes. Several outputs may share either hash across script kinds, up to 16 claims in total.
 
 ## 1. The verifier creates a fresh request
 
@@ -29,11 +30,17 @@ The request names the verifier and purpose, selects the Bitcoin network, lists t
   --purpose proof-of-funds \
   --message '2026-Q3 custody check' \
   --expires-in 300 \
-  --claim TXID:0:100000:PROGRAM \
+  --claim TXID:0:100000:p2pkh:KEY_HASH \
   --output request.qpr
 ```
 
 Context flags are optional: verifier defaults to `unscoped`, purpose to `proof-of-funds`, message to empty. Verification requires matching verifier/purpose values; specify both for scoped proofs.
+
+The four-part `TXID:VOUT:SATOSHIS:PROGRAM` form remains P2WPKH. The five-part
+form accepts `p2wpkh` or `p2pkh`; repeat `--claim` for mixed outputs. Any P2PKH
+claim selects statement v2. Statement v1 stays implicitly P2WPKH; new proofs
+use envelope v2. Older verifiers without typed-statement support return
+`unsupported`. Uncompressed-key P2PKH is unsupported.
 
 ## 2. The prover reviews and proves
 
@@ -48,13 +55,17 @@ The prover inspects the canonical request before using any key:
 ./quietproof prove --request request.qpr --output proof.qpf
 ```
 
-`prove` reads one 32-byte hexadecimal secret from protected standard input for each distinct program. Interactive input disables terminal echo, and each secret is matched to its derived program.
+`prove` reads one 32-byte hexadecimal secret from protected standard input for each distinct key hash. Interactive input disables terminal echo, and each secret is matched to its derived compressed-key hash.
 
 ::: danger Keep spend keys out of process metadata
 Never provide a secret through command arguments, an environment variable, or shell history. Automation should use a protected pipe whose producer does not log its output.
 :::
 
-Inside the proof, PoKC constrains the secret scalar, derives the secp256k1 point, encodes the compressed public key canonically, applies SHA-256 and RIPEMD-160, and checks that the result equals the public witness program. The public key remains private witness data.
+Inside the proof, PoKC constrains the secret scalar, derives the secp256k1 point, encodes the compressed public key canonically, applies SHA-256 and RIPEMD-160, and checks that the result equals the public key hash. The public key remains private witness data.
+A P2PKH script cannot establish whether its hidden key was compressed; proving
+checks that relation. Public outpoints, hashes and amounts remain linkable.
+Earlier spends or key reuse may already expose the key; this proof cannot undo
+that exposure or provide anonymity.
 
 ## 3. The verifier checks proof and evidence
 

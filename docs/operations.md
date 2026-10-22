@@ -19,10 +19,10 @@ build/quietproof verify proof.qpf --network signet --verifier example.org \
   --purpose proof-of-funds --nonce-store ./nonces
 ```
 
-Replace the placeholder with the full native P2WPKH address. Native RPC is the
+Replace the placeholder with the full native P2WPKH or compressed-key P2PKH address. Native RPC is the
 default, with no `bitcoin-cli` invocation or automatic backend fallback.
-Proving accepts only the request, output and protected stdin secrets; no Core
-connection, RPC flags or cookie are needed on the prover's machine.
+Plain proving uses the request, output and protected stdin secrets; no Core
+connection or cookie is needed. Explicit Roots wallet-backed proving is described below.
 
 ::: warning
 This is free and open source software provided without warranty under
@@ -174,10 +174,11 @@ Historical statements require a separate authenticated historical provider;
 the native client and CLI do not reconstruct historical spending.
 
 The node receives the address. Requests/proofs disclose outpoints,
-amounts and witness programs, allowing tracing and association with known prover
+amounts and key hashes, allowing tracing and association with known prover
 identities. Recipients can share proofs; verifier binding is not access control.
-Keys stay hidden unless disclosed elsewhere. RPC changes no formats
-or circuits. Key knowledge proves neither exclusive ownership, legal title,
+The proof does not newly disclose public keys. Earlier spends or key reuse may
+already expose a key, and proving cannot undo that exposure. This is not anonymous
+proof of funds. RPC changes no formats or circuits. Key knowledge proves neither exclusive ownership, legal title,
 solvency nor locked collateral.
 
 CLI context defaults: verifier `unscoped`, purpose `proof-of-funds`, message empty.
@@ -200,7 +201,7 @@ existing result JSON and exit codes; RPC failures usually become
 | Situation | Meaning and recovery |
 | --- | --- |
 | Invalid/wrong-network address | Check the full address/checksum and explicit network; no prefix-based network inference. |
-| Unsupported script | Use native P2WPKH; wrapping, multisig, P2WSH and P2TR are unsupported. |
+| Unsupported script | Use native P2WPKH or compressed-key P2PKH; uncompressed P2PKH, wrapping, multisig, P2WSH and P2TR are unsupported. |
 | No eligible outputs | Check funding, confirmed state and minimum confirmations; a diagnostic empty set is not a challenge. |
 | Too many outputs | More than 16 cannot become an ordinary address challenge; an advanced explicit subset is a separate caller decision. |
 | Missing/insecure cookie or authentication failure | Fix the explicit path, user ownership/mode or rotated credential; never try another node automatically. |
@@ -255,6 +256,11 @@ that encoding; the supplied key must match its hash using compressed serializati
 Requests with any P2PKH claim use statement version 2. `inspect` reports
 `statement_version`, ordered `script_kinds`, `request_created_at` and
 `proof_created_at` (null for requests). Old four-part claims retain version 1.
+Statement v1 remains implicitly P2WPKH. Statement v2 binds the kind per claim;
+same-key mixed outputs share one ownership witness. New proofs retain timestamped
+envelope v2 and the existing circuits. Statement v2 is invalid in legacy envelope
+v1. Older verifiers without statement-v2 support return `unsupported`; do not
+re-encode typed requests as v1 to make them compatible.
 
 To select the retained subprocess verifier explicitly:
 
@@ -298,9 +304,10 @@ ctest --test-dir build --output-on-failure -R '^quietproof-regtest-rpc-test$'
 
 The serial test has `bitcoin-regtest`/`proof-heavy` labels and a four-hour outer
 timeout. It creates private temporary datadirs, chooses loopback ports, disables
-peers, checks official Core version identity, holds the proof key outside Core,
+peers, checks exact official Core 28.3/30.3 version identity, holds fixture keys outside Core,
 and cleans its own child/data. It tests offline proving, rotated cookies,
-watch-only discovery, real proofs, replay single-winner, stable legacy parity,
+watch-only discovery, P2PKH-only and same/two-key mixed real proofs, exact totals,
+substitution/expiry rejection, replay single-winner, stable legacy parity,
 same-height reorgs and fresh-proof mempool/mined spend rejection. Missing Core
 binaries block this opt-in acceptance gate; disabled ordinary builds explicitly
 skip it. Verify release checksums/signatures before supplying executable paths.

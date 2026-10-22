@@ -92,7 +92,7 @@ test("use cases are grouped by human jobs and retain technical caveats", () => {
   }
 
   assert.match(useCases, /not current QuietProof claims/);
-  assert.match(useCases, /at most two distinct witness programs/);
+  assert.match(useCases, /at most two distinct key hashes/);
 });
 
 test("site navigation exposes operations, security, performance, circuit, and protocol docs", () => {

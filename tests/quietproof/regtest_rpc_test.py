@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Opt-in, isolated Core 28/30 acceptance. No downloads or default node access.
 
-Only the disposable scalar 1 fixture is used. Core never receives its secret;
+Only published disposable scalar fixtures are used. Core never receives their secrets;
 the BIP143 spend is signed locally below using Python integers. This arithmetic
 is test-only, variable-time and unsuitable for production keys.
 """
@@ -95,13 +95,20 @@ def sign_fixture(digest):
     return b'\x30' + bytes([len(parts)]) + parts + b'\x01'
 
 
-def spend_fixture(txid, vout, amount_sats, destination_script):
+def spend_fixture(txid, vout, amount_sats, destination_script, p2pkh=False):
     outpoint = bytes.fromhex(txid)[::-1] + struct.pack('<I', vout)
     sequence, version, locktime = bytes.fromhex('fdffffff'), struct.pack('<I', 2), bytes(4)
     script = bytes.fromhex(destination_script)
     require(len(script) < 253 and amount_sats > 1000, 'invalid spend fixture')
     output = struct.pack('<Q', amount_sats - 1000) + bytes([len(script)]) + script
     script_code = b'\x19\x76\xa9\x14' + PROGRAM + b'\x88\xac'
+    if p2pkh:
+        preimage = (version + b'\x01' + outpoint + script_code + sequence +
+                    b'\x01' + output + locktime + struct.pack('<I', 1))
+        signature = sign_fixture(sha256d(preimage))
+        unlocking = bytes([len(signature)]) + signature + bytes([len(PUBKEY)]) + PUBKEY
+        return (version + b'\x01' + outpoint + bytes([len(unlocking)]) + unlocking +
+                sequence + b'\x01' + output + locktime).hex()
     preimage = (version + sha256d(outpoint) + sha256d(sequence) + outpoint + script_code +
                 struct.pack('<Q', amount_sats) + sequence + sha256d(output) + locktime +
                 struct.pack('<I', 1))
@@ -254,8 +261,9 @@ def preflight(directory, major):
             result = subprocess.run(command, capture_output=True, text=True, timeout=10)
         first = result.stdout.splitlines()[0] if result.stdout else ''
         # Fork versions cannot be substituted for the required Core compatibility gate.
-        require(result.returncode == 0 and re.search(rf'Bitcoin Core .*version v{major}\.\d', first),
-                f'{name} is not Bitcoin Core {major}')
+        patch = {28: '28.3', 30: '30.3'}[major]
+        require(result.returncode == 0 and re.search(rf'Bitcoin Core .*version v{re.escape(patch)}(?:\.|\b)', first),
+                f'{name} is not pinned Bitcoin Core {patch}')
         print(f'preflight: {first}', flush=True)
 
 
@@ -275,7 +283,8 @@ def workflow(args, major, root):
     def run(label, command, expected=0, secret=False, result=None):
         nonlocal checks
         started = time.monotonic()
-        completed = subprocess.run([str(c) for c in command], input=SECRET + '\n' if secret else None,
+        key_input = (SECRET + '\n' if secret is True else secret) if secret else None
+        completed = subprocess.run([str(c) for c in command], input=key_input,
                                    capture_output=True, text=True, timeout=1800, env=env)
         require(completed.returncode == expected,
                 f'{label}: exit {completed.returncode}, expected {expected}')
@@ -377,6 +386,108 @@ def workflow(args, major, root):
         lookup = [args.driver, 'lookup', 'regtest', node.url, node.cookie,
                   output['txid'], output['vout'], 'parity', wrapper]
         run('C++ evidence parity', lookup)
+        # Typed statements use exact real Core scripts, with one witness for
+        # shared hashes across kinds and two witnesses for distinct hashes.
+        second_secret = '00' * 31 + '02'
+        x, y = multiply(2)
+        second_pubkey = bytes([2 + (y & 1)]) + x.to_bytes(32, 'big')
+        second_hash = hashlib.new('ripemd160', hashlib.sha256(second_pubkey).digest()).hexdigest()
+        typed_outputs = []
+        for label, expression, amount, kind, key_hash in [
+                ('p2pkh', f'pkh({PUBKEY.hex()})', 2, 'p2pkh', program),
+                ('second', f'wpkh({second_pubkey.hex()})', 3, 'p2wpkh', second_hash)]:
+            desc = node.call('getdescriptorinfo', expression)['descriptor']
+            target = node.call('deriveaddresses', desc)[0]
+            # Core restarts above intentionally do not auto-load wallets.
+            if 'funding' not in node.call('listwallets'):
+                node.call('loadwallet', 'funding')
+            node.call('sendtoaddress', target, amount, wallet='funding')
+            node.call('generatetoaddress', 1, miner)
+            discovered = json.loads(run(f'{label} native scan', [args.cli, 'utxos',
+                '--network', 'regtest', '--address', target] + rpc_flags()))
+            require(discovered['count'] == 1 and discovered['outputs'][0]['script_type'] == kind,
+                    'typed discovery mismatch')
+            coin = discovered['outputs'][0]
+            require(coin['program'] == key_hash and coin['amount_sats'] == amount * 100000000,
+                    'typed funding mismatch')
+            typed_outputs.append(coin)
+            if 'watch /fixture' not in node.call('listwallets'):
+                node.call('loadwallet', 'watch /fixture')
+            imported = node.call('importdescriptors', [{'desc': desc, 'timestamp': 0}], wallet='watch /fixture')
+            require(all(item['success'] for item in imported), 'typed public watch import failed')
+            watched = json.loads(run(f'{label} watch-only wallet', [args.cli, 'utxos',
+                '--network', 'regtest', '--address', target, '--rpc-wallet', 'watch /fixture'] + rpc_flags()))
+            require(watched['outputs'] == discovered['outputs'], 'typed wallet/scan mismatch')
+            run(f'{label} evidence parity', [args.driver, 'lookup', 'regtest', node.url,
+                node.cookie, coin['txid'], coin['vout'], 'parity', wrapper])
+
+        def claim(coin):
+            return ':'.join(str(coin[field]) for field in
+                            ('txid', 'vout', 'amount_sats', 'script_type', 'program'))
+
+        p2pkh, second = typed_outputs
+        for label, coins, keys in [('p2pkh', [p2pkh], SECRET + '\n'),
+                ('mixed-same', [p2pkh, output], SECRET + '\n'),
+                ('mixed-two', [p2pkh, second], SECRET + '\n' + second_secret + '\n')]:
+            source, proof = root / f'{major}-{label}.qpr', root / f'{major}-{label}.qpf'
+            command = [args.cli, 'challenge', 'create', '--network', 'regtest',
+                       '--verifier', 'example.org', '--purpose', 'proof-of-funds',
+                       '--expires-in', '86400', '--output', source]
+            for coin in coins:
+                command += ['--claim', claim(coin)]
+            run(f'{label} manual challenge', command)
+            duplicate = dict(coins[0], script_type='p2wpkh')
+            duplicate_command = command[:-2]
+            duplicate_command[duplicate_command.index('--output') + 1] = root / f'{major}-{label}-duplicate.qpr'
+            run(f'{label} duplicate outpoint across kinds', duplicate_command + ['--claim', claim(coins[0]),
+                '--claim', claim(duplicate)], 65)
+            node.stop()
+            run(f'{label} offline real proof', [args.cli, 'prove', '--request', source,
+                                               '--output', proof], secret=keys)
+            node.start()
+            total = sum(coin['amount_sats'] for coin in coins)
+            untouched_typed = root / f'{major}-{label}-rejected.nonces'
+            run(f'{label} threshold rejection', verify(proof, untouched_typed,
+                ['--minimum-total-sats', str(total + 1)]), 5, result='state_inconclusive')
+            require(not untouched_typed.exists(), 'threshold failure consumed nonce')
+            for backend in ('native', 'legacy'):
+                store = root / f'{major}-{label}-{backend}.nonces'
+                extra = [] if backend == 'native' else ['--bitcoin-cli', wrapper]
+                result = json.loads(run(f'{label} {backend} valid', verify(proof, store,
+                    extra + ['--minimum-total-sats', str(total)], native=backend == 'native'),
+                    result='valid_current'))
+                require(result['total_sats'] == total and result['claims_checked'] == len(coins),
+                        'typed exact total/count mismatch')
+                run(f'{label} {backend} replay', verify(proof, store, extra,
+                    native=backend == 'native'), 67, result='invalid_proof')
+            if label == 'p2pkh':
+                for field in ('kind', 'hash', 'amount', 'request-time', 'proof-time', 'expired'):
+                    changed = root / f'{major}-{field}.qpf'
+                    run(f'mutate {field}', [args.driver, 'mutate', proof, field, changed])
+                    run(f'reject {field}', verify(changed, untouched_typed), 67, result='invalid_proof')
+                require(not untouched_typed.exists(), 'substitution consumed nonce')
+        print(f'Core {major}: typed proofs: 3 generations (P2PKH, mixed same-key, mixed two-key)', flush=True)
+        # The corresponding scalar cannot satisfy HASH160(uncompressed pubkey).
+        uncompressed = b'\x04' + GENERATOR[0].to_bytes(32, 'big') + GENERATOR[1].to_bytes(32, 'big')
+        unsupported = dict(p2pkh, program=hashlib.new('ripemd160', hashlib.sha256(uncompressed).digest()).hexdigest())
+        source = root / f'{major}-uncompressed.qpr'
+        run('uncompressed request', [args.cli, 'challenge', 'create', '--network', 'regtest',
+            '--claim', claim(unsupported), '--output', source])
+        run('uncompressed key mismatch', [args.cli, 'prove', '--request', source,
+            '--output', root / f'{major}-uncompressed.qpf'], 65, secret=True)
+        raw = spend_fixture(p2pkh['txid'], p2pkh['vout'], p2pkh['amount_sats'],
+                            node.call('validateaddress', miner)['scriptPubKey'], p2pkh=True)
+        require(node.call('testmempoolaccept', [raw])[0]['allowed'], 'P2PKH spend fixture rejected')
+        node.call('sendrawtransaction', raw)
+        for mined in (False, True):
+            if mined:
+                node.call('generatetoaddress', 1, miner)
+            for label in ('p2pkh', 'mixed-same', 'mixed-two'):
+                proof = root / f'{major}-{label}.qpf'
+                store = root / f'{major}-{label}-spent.nonces'
+                run(f'{label} {"mined" if mined else "mempool"} spent', verify(proof, store),
+                    5, result='state_inconclusive')
+                require(not store.exists(), 'spent typed claim consumed nonce')
         # 5. Replay fails and concurrent verifications authorize precisely once.
         run('replay', verify(proofs['cli'], root / f'{major}-cli.nonces'), 67, result='invalid_proof')
         race_store = root / f'{major}-race.nonces'

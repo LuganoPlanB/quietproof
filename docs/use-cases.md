@@ -13,7 +13,7 @@ QuietProof is most useful when one party needs credible evidence of Bitcoin key 
 
 A custodian, exchange, fund, broker, or escrow operator can answer:
 
-> We currently know the keys needed to spend these disclosed P2WPKH outputs.
+> We currently know the keys needed to spend these disclosed native P2WPKH or compressed-key P2PKH outputs.
 
 The proof can be checked without publishing the compressed public keys and without constructing a fake or spend-like transaction.
 
@@ -73,7 +73,7 @@ The current two-key semantics show that one prover knows both keys. Workflows in
 
 ### CoinJoin admission
 
-A coordinator can ask a participant to prove control of a proposed P2WPKH input before spending resources on transaction construction. This can deter fake-input registration while avoiding premature public-key disclosure.
+A coordinator can ask a participant to prove control of a proposed supported input before spending resources on transaction construction. This can deter fake-input registration while avoiding premature public-key disclosure.
 
 ### Liquidity and channel qualification
 
@@ -89,7 +89,7 @@ An application can use key-control evidence as one input to an escrow or bridge 
 
 V1 works with disclosed outputs and disclosed values. It could become one part of a later system that proves richer private statements:
 
-1. Key knowledge for a known P2WPKH program.
+1. Key knowledge for a known compressed-key hash.
 2. Key knowledge plus membership in a committed UTXO set.
 3. A hidden UTXO controlled by the prover.
 4. Hidden aggregate value meeting a threshold.
@@ -101,8 +101,8 @@ Those are roadmap directions, not current QuietProof claims. Each would require 
 
 QuietProof may fit when:
 
-- The relevant outputs are native P2WPKH.
-- There are at most two distinct witness programs in the v1 proof.
+- The relevant outputs are native P2WPKH or compressed-key P2PKH.
+- There are at most two distinct key hashes in the proof.
 - The verifier already knows which outputs and values it wants to check.
 - Avoiding public-key disclosure before spend has practical value.
 - The application can issue fresh challenges and verify independent Bitcoin data.
