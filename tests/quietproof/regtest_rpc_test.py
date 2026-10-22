@@ -337,19 +337,19 @@ def workflow(args, major, root):
         race_request = request('race-challenge')
         spend_request = request('fresh-spend-challenge')
         cpp_request = root / f'{major}-cpp.qpr'
-        run('C++ challenge', [args.example, 'challenge', 'regtest', address,
+        run('C++ challenge', [args.api_driver, 'challenge', 'regtest', address,
                               cpp_request, node.cookie, node.url])
-        run('request no-overwrite', [args.example, 'challenge', 'regtest', address,
+        run('request no-overwrite', [args.api_driver, 'challenge', 'regtest', address,
                                      cpp_request, node.cookie, node.url], 74)
         previous_cookie = node.cookie.read_bytes()
         node.stop()
         cpp_proof = root / f'{major}-cpp.qpf'
-        run('cpp offline real proof', [args.example, 'prove', cpp_request, cpp_proof], secret=True)
+        run('cpp offline real proof', [args.api_driver, 'prove', cpp_request, cpp_proof], secret=True)
         require(cpp_proof.stat().st_mode & 0o777 == 0o600, 'proof mode must be 0600')
         node.start()
         require(previous_cookie != node.cookie.read_bytes(), 'cookie did not rotate')
-        # Verify the example's fixed 300s challenge before other expensive proofs.
-        run('C++ valid current', [args.example, 'verify', 'regtest', cpp_proof,
+        # Verify the API driver's fixed 300s challenge before other expensive proofs.
+        run('C++ valid current', [args.api_driver, 'verify', 'regtest', cpp_proof,
                                   root / f'{major}-cpp.nonces', node.cookie, node.url], result='valid_current')
         node.stop()
         proofs = {'cpp': cpp_proof}
@@ -396,7 +396,7 @@ def workflow(args, major, root):
                                             ['--min-confirmations', '1000']), 4, result='stale_snapshot')
         run('wrong expected network', verify(proofs['spend'], untouched,
                                               ['--network', 'signet']), 67, result='invalid_proof')
-        run('wrong Core chain', [args.example, 'discover', 'signet', address,
+        run('wrong Core chain', [args.api_driver, 'discover', 'signet', address,
                                  node.cookie, node.url], 74)
         invalid_cookie = root / f'{major}-invalid.cookie'
         invalid_cookie.write_text('invalid:credential')
@@ -449,15 +449,15 @@ def main():
     parser.add_argument('--not-enabled', action='store_true')
     parser.add_argument('--core28', type=Path)
     parser.add_argument('--core30', type=Path)
-    for name in ('cli', 'example', 'driver'):
-        parser.add_argument('--' + name, type=Path)
+    for name in ('cli', 'api_driver', 'driver'):
+        parser.add_argument('--' + name.replace('_', '-'), type=Path)
     args = parser.parse_args()
     if args.not_enabled:
         print('SKIP: explicit opt-in and Core 28/30 executables required')
         return 77
     for major in (28, 30):
         preflight(getattr(args, f'core{major}'), major)
-    for name in ('cli', 'example', 'driver'):
+    for name in ('cli', 'api_driver', 'driver'):
         path = getattr(args, name)
         require(path is not None and path.is_absolute() and os.access(path, os.X_OK),
                 f'explicit built {name} executable required')

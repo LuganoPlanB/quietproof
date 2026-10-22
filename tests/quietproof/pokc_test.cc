@@ -209,7 +209,7 @@ int main() {
     proofs::TestProofRoundTrip(three_eighty_two);
     std::array<uint8_t, 32> n_minus_one = {0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xfe,0xba,0xae,0xdc,0xe6,0xaf,0x48,0xa0,0x3b,0xbf,0xd2,0x5e,0x8c,0xd0,0x36,0x41,0x40};
     proofs::TestProofRoundTrip(n_minus_one);
-    std::ofstream metrics("test/results/native_pokc_metrics.csv");
+    std::ofstream metrics("tests/results/native_pokc_metrics.csv");
     proofs::Require(metrics.good(), "metrics output unavailable");
     metrics << "target,circuit,build_ms,prove_ms,verify_ms,proof_bytes,public_inputs,total_inputs,quad_terms,crt_block_enc\n";
     for (const auto& metric : proofs::native_metrics) metrics << "native,pokc," << metric.build_ms << ',' << metric.prove_ms << ',' << metric.verify_ms << ',' << metric.proof_bytes << ',' << metric.public_inputs << ',' << metric.total_inputs << ',' << metric.quad_terms << ',' << metric.crt_block_enc << '\n';

@@ -76,7 +76,7 @@ def main():
         rpc_configure = ['cmake', '-S', str(args.source / 'tests/cmake/rpc-consumer'),
                          '-B', str(rpc), '-G', args.generator,
                          '-DCMAKE_BUILD_TYPE=Release',
-                         '-DINSTALLED_RPC_EXAMPLE=' + str(install / 'share/doc/LongfellowZKQuietProof/examples/bitcoin_rpc.cc'),
+                         '-DRPC_API_DRIVER_SOURCE=' + str(args.source / 'tests/quietproof/rpc_api_driver.cc'),
                          '-DCMAKE_PREFIX_PATH=' + prefixes] + launcher
         if args.curl_static:
             rpc_configure += curl_options + ['-DEXPECT_STATIC_CURL=TRUE']
@@ -85,9 +85,9 @@ def main():
         if enabled:
             run('rpc-build', ['cmake', '--build', str(rpc), '--parallel', '2'])
             run('rpc-run', [str(rpc / 'rpc-consumer')])
-            run('example-fixture', [os.sys.executable,
+            run('api-driver-fixture', [os.sys.executable,
                 str(args.source / 'tests/quietproof/rpc_http_fixture.py'),
-                str(rpc / 'bitcoin-rpc-example'), '--example'])
+                str(rpc / 'quietproof-rpc-api-driver'), '--api-driver'])
     print(f'Package matrix passed: {checks} checks (RPC {args.rpc_enabled}, core isolation, component consumption)')
 
 

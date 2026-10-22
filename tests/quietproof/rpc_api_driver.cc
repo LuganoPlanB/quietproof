@@ -235,10 +235,10 @@ int Verify(BitcoinCoreRpcConfig rpc, const std::string& proof_path,
 
 int Usage() {
   std::cerr << "Bitcoin RPC example (local policy example.org / proof-of-funds, 300s):\n"
-               "  bitcoin-rpc-example discover NETWORK ADDRESS [COOKIE [URL]]\n"
-               "  bitcoin-rpc-example challenge NETWORK ADDRESS REQUEST [COOKIE [URL]]\n"
-               "  bitcoin-rpc-example prove REQUEST PROOF  # one key via protected stdin\n"
-               "  bitcoin-rpc-example verify NETWORK PROOF NONCE_FILE [COOKIE [URL]]\n";
+               "  quietproof-rpc-api-driver discover NETWORK ADDRESS [COOKIE [URL]]\n"
+               "  quietproof-rpc-api-driver challenge NETWORK ADDRESS REQUEST [COOKIE [URL]]\n"
+               "  quietproof-rpc-api-driver prove REQUEST PROOF  # one key via protected stdin\n"
+               "  quietproof-rpc-api-driver verify NETWORK PROOF NONCE_FILE [COOKIE [URL]]\n";
   return 64;
 }
 

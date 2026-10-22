@@ -110,10 +110,6 @@ policy/evidence verification. `PoKCVerifyProof` alone verifies only the
 zero-knowledge relation. Applications choose verifier policy independently of
 the prover and fail closed on non-authorization outcomes.
 
-The [shipped example](examples/bitcoin_rpc.cc) separates discovery/challenge,
-offline prove and verify stages, uses protected stdin and invokes no CLI.
-[Compile its installed source and run the regtest recipe](docs/guide/getting-started.md#build-and-run-the-installed-c-example),
-or build in-tree with `-DQUIETPROOF_BUILD_EXAMPLES=ON`.
 Core-only consumers keep the original no-component package and
 `LongfellowZKQuietProof::quietproof` without curl discovery/linkage.
 
@@ -197,7 +193,7 @@ Circuit structure is deterministic. Current fixed metrics are:
 
 Reproduce the real one-key samples with
 `ctest --test-dir build -R '^pokc-test$' --output-on-failure`; results are
-written to `test/results/native_pokc_metrics.csv`. Circuit and proof sizes
+written to `tests/results/native_pokc_metrics.csv`. Circuit and proof sizes
 must be remeasured after any compiler, circuit, field, rate, query-count, or
 serialization change. For release comparisons, use an otherwise idle machine,
 record peak resident memory separately, and run multiple samples.
