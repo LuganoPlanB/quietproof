@@ -88,6 +88,25 @@ class WalletExportTest(unittest.TestCase):
                         '--rpc-url', f'http://127.0.0.1:{self.server.server_port}',
                         '--rpc-cookie', str(cookie)]
 
+    def test_existing_outputs_rejected_before_rpc(self):
+        output = self.root / 'proof'
+        output.write_bytes(b'preserve me')
+        challenge = [BINARY, 'challenge', 'create', '--network', 'signet',
+                     '--verifier', 'example.org', '--purpose', 'proof-of-control',
+                     '--message', 'fixture', '--address', ADDRESS,
+                     '--output', str(output)]
+        for option in ('--rpc-url', '--rpc-cookie'):
+            i = self.command.index(option)
+            challenge.extend(self.command[i:i+2])
+        for command in (self.command, challenge):
+            with self.subTest(command=command[1]):
+                result = subprocess.run(command, input='', text=True,
+                                        capture_output=True, timeout=5)
+                self.assertEqual(result.returncode, 74, result.stderr)
+                self.assertIn('Output destination already exists', result.stderr)
+                self.assertEqual(self.server.calls, [])
+                self.assertEqual(output.read_bytes(), b'preserve me')
+
     def test_failures_never_prove_or_leak(self):
         for mode in ('network', 'address', 'p2pkh', 'missing', 'locked', 'wrong-key',
                      'zero', 'length', 'hex', 'uncompressed', 'type', 'extra'):

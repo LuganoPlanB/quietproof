@@ -198,6 +198,21 @@ bool ReadBounded(const std::string& path, size_t maximum,
   return stream.eof();
 }
 
+// This preflight avoids expensive work. The atomic writer still enforces
+// no replacement if another process creates the destination afterward.
+bool CheckNewOutputPath(const std::string& path) {
+  struct stat status {};
+  if (lstat(path.c_str(), &status) == 0) {
+    std::cerr << "Output destination already exists\n";
+    return false;
+  }
+  if (path.empty() || errno != ENOENT) {
+    std::cerr << "Cannot inspect output destination\n";
+    return false;
+  }
+  return true;
+}
+
 bool WriteAll(int descriptor, const uint8_t* bytes, size_t size) {
   while (size != 0) {
     const ssize_t written = write(descriptor, bytes, size);
@@ -465,6 +480,7 @@ int ChallengeCreate(int argc, char** argv) {
       !One(options, "--message", &message) ||
       !One(options, "--output", &output_path) ||
       !One(options, "--expires-in", &lifetime_text, false)) return Usage();
+  if (!CheckNewOutputPath(output_path)) return kIoError;
   uint64_t lifetime = kDefaultLifetimeSeconds;
   if (!lifetime_text.empty() && !ParseU64(lifetime_text, &lifetime)) return Usage();
   if (lifetime == 0 || lifetime > kMaximumLifetimeSeconds) return Usage();
@@ -541,6 +557,7 @@ int Prove(int argc, char** argv) {
   std::string request_path, output_path;
   if (!One(options, "--request", &request_path) ||
       !One(options, "--output", &output_path)) return Usage();
+  if (!CheckNewOutputPath(output_path)) return kIoError;
   std::vector<uint8_t> request;
   proofs::QuietProofStatementV1 statement;
   proofs::QuietProofDecodeError error = proofs::QuietProofDecodeError::kMalformed;
