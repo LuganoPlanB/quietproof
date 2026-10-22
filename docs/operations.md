@@ -310,3 +310,16 @@ The optional CI ASan/UBSan installed-package gate can be enabled through the
 CI workflow's manual input, or reproduced with Clang and
 `scripts/ci-installed-package.sh`; it includes expensive real proofs. Record
 actual runtime/memory, pinned revisions/toolchains and residual assumptions.
+
+### Explicit wallet-backed proving
+
+Use `prove --request request.qpr --output proof.qpf --rpc-wallet NAME
+--address ADDRESS --rpc-datadir /path/to/bitcoin-data` with Bitcoin Roots
+v31.1-roots.3 or newer. It uses `exportaddresskey`
+directly over the existing loopback, cookie-authenticated RPC connection. The
+request selects the network; an address outside the request is rejected before
+export. The wallet must already be loaded and unlocked. Only one distinct native
+P2WPKH address is supported in this mode; multi-key requests use protected stdin.
+Missing RPC support is reported explicitly and never triggers `listdescriptors`.
+Plain proving remains offline. Wallet export temporarily brings a spending key
+into the QuietProof process; buffer clearing cannot erase every library/OS copy.
