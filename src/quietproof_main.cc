@@ -79,6 +79,9 @@ void PrintUsage(std::ostream& output) {
       << "    Native RPC is default; --bitcoin-cli /ABSOLUTE/PATH explicitly "
          "selects the deprecated legacy verifier.\n"
       << "  quietproof inspect FILE\n"
+      << "Claims: TXID:VOUT:SATOSHIS:PROGRAM implies p2wpkh; "
+         "TXID:VOUT:SATOSHIS:SCRIPT_KIND:KEY_HASH accepts p2wpkh or p2pkh.\n"
+      << "Ownership requires compressed public keys; uncompressed P2PKH is unsupported.\n"
       << "Context defaults: verifier=unscoped (no intended recipient), "
          "purpose=proof-of-funds, message=empty. Verification expects these "
          "defaults unless overridden; it does not accept arbitrary context.\n"
@@ -162,22 +165,27 @@ std::string ArrayHex(const std::array<uint8_t, N>& value) {
 
 bool ParseClaim(const std::string& text, proofs::QuietProofClaimV1* claim) {
   if (claim == nullptr) return false;
-  std::array<std::string, 4> fields;
+  std::vector<std::string> fields;
   size_t begin = 0;
-  for (size_t index = 0; index < fields.size(); ++index) {
+  while (true) {
+    if (fields.size() == 5) return false;
     const size_t separator = text.find(':', begin);
-    if ((index + 1 < fields.size() && separator == std::string::npos) ||
-        (index + 1 == fields.size() && separator != std::string::npos)) return false;
-    fields[index] = text.substr(begin, separator - begin);
-    begin = separator == std::string::npos ? text.size() : separator + 1;
+    fields.push_back(text.substr(begin, separator - begin));
+    if (separator == std::string::npos) break;
+    begin = separator + 1;
   }
+  if (fields.size() != 4 && fields.size() != 5) return false;
   uint64_t vout = 0, amount = 0;
   proofs::QuietProofClaimV1 parsed;
+  if (fields.size() == 5) {
+    if (fields[3] == "p2pkh") parsed.script_kind = proofs::QuietProofScriptKind::kP2pkh;
+    else if (fields[3] != "p2wpkh") return false;
+  }
   if (!HexArray(fields[0], &parsed.txid) || !ParseU64(fields[1], &vout) ||
       vout > std::numeric_limits<uint32_t>::max() ||
       !ParseU64(fields[2], &amount) || amount == 0 ||
       amount > proofs::kQuietProofMaxMoneySats ||
-      !HexArray(fields[3], &parsed.program)) return false;
+      !HexArray(fields.back(), &parsed.program)) return false;
   parsed.vout = static_cast<uint32_t>(vout);
   parsed.amount_sats = amount;
   *claim = parsed;
@@ -447,6 +455,8 @@ int Utxos(int argc, char** argv) {
     outputs.push_back({{"txid", ArrayHex(output.claim.txid)},
                        {"vout", output.claim.vout},
                        {"amount_sats", output.claim.amount_sats},
+                       {"script_type", proofs::QuietProofScriptKindName(output.claim.script_kind)},
+                       {"key_hash", ArrayHex(output.claim.program)},
                        {"program", ArrayHex(output.claim.program)},
                        {"confirmations", output.confirmations}});
   }
@@ -642,6 +652,11 @@ int Prove(int argc, char** argv) {
   if (supplied_programs != programs) {
     EraseSecrets(&secrets);
     std::cerr << "Private keys do not match the request; provide one key per distinct address.\n";
+    if (std::any_of(statement.claims.begin(), statement.claims.end(), [](const auto& claim) {
+          return claim.script_kind == proofs::QuietProofScriptKind::kP2pkh;
+        }))
+      std::cerr << "P2PKH requires a compressed public key; an unsupported uncompressed-key "
+                   "P2PKH hash is one possible cause of this mismatch.\n";
     return kData;
   }
   std::cerr << "Keys validated. Generating proof; this may take several minutes...\n";
@@ -788,14 +803,19 @@ int Inspect(const std::string& path) {
   proofs::QuietProofStatementV1 statement;
   if (!proofs::DecodeQuietProofStatement(bytes, &statement)) return kData;
   nlohmann::json output = {{"format", "quietproof-request-v1"},
+                           {"statement_version", statement.statement_version},
                            {"network", proofs::QuietProofNetworkName(statement.network)},
                            {"verifier", statement.verifier},
                            {"purpose", statement.purpose},
                            {"not_before", statement.not_before},
                            {"request_created_at", statement.not_before},
+                           {"proof_created_at", nullptr},
                            {"expires_at", statement.expires_at},
                            {"claims", statement.claims.size()},
                            {"has_snapshot", statement.has_snapshot}};
+  output["script_kinds"] = nlohmann::json::array();
+  for (const auto& claim : statement.claims)
+    output["script_kinds"].push_back(proofs::QuietProofScriptKindName(claim.script_kind));
   std::cout << output.dump() << '\n';
   return 0;
 }

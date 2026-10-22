@@ -752,6 +752,90 @@ void TestWalletDiscovery() {
   std::cout << "Wallet discovery cases passed: " << cases << '\n';
 }
 
+
+// The same typed relation must survive both discovery sources and fresh evidence.
+void TestTypedDiscovery() {
+  const std::string p2pkh = "76a914" + std::string(40, 'a') + "88ac";
+  size_t cases = 0;
+  for (bool wallet : {false, true}) {
+    auto run = [&](const std::string& candidate_script, const std::string& current_script,
+                   BitcoinRpcErrorCode expected, unsigned count = 2,
+                   const std::string& amount = "0.00000001", uint64_t minimum = 1) {
+      discovery_fixture = {};
+      wallet_fixture = {};
+      discovery_fixture.validation = nlohmann::json{{"isvalid", true},
+          {"address", kDiscoveryAddress}, {"scriptPubKey", p2pkh}}.dump();
+      discovery_fixture.txout = LookupTxOut(amount, "2", current_script);
+      std::vector<std::string> coins;
+      for (unsigned i = count; i > 0; --i) {
+        auto coin = wallet ? WalletCoin(i, amount) : ScanCoin(i, amount);
+        coin.replace(coin.find(kDiscoveryScript), kDiscoveryScript.size(),
+                     i == 1 ? candidate_script : p2pkh);
+        coins.push_back(coin);
+      }
+      discovery_fixture.scan = ScanResult(coins);
+      wallet_fixture.result = WalletResult(coins);
+      wallet_fixture.minimum = minimum;
+      BitcoinUtxoQuery query{kDiscoveryAddress};
+      query.min_confirmations = minimum;
+      if (wallet) query.wallet = wallet_fixture.name;
+      RpcClient client(Config(), wallet ? WalletHttp : DiscoveryHttp);
+      BitcoinUtxoDiscovery found; found.incompatibility = "sentinel";
+      BitcoinRpcError error;
+      const bool ok = DiscoverAddress(client, query, &found, &error);
+      Require(ok == (expected == BitcoinRpcErrorCode::kNone) && error.code == expected,
+              "typed discovery result category");
+      if (!ok) Require(found.incompatibility == "sentinel", "typed failure changed output");
+      ++cases;
+      return found;
+    };
+    auto found = run(p2pkh, p2pkh, BitcoinRpcErrorCode::kNone);
+    Require(found.outputs.size() == 2 && found.challenge_compatible && found.current_rechecked &&
+            found.outputs[0].claim < found.outputs[1].claim, "typed discovery ordering/recheck");
+    std::vector<QuietProofClaimV1> claims;
+    for (const auto& coin : found.outputs) {
+      Require(coin.claim.script_kind == QuietProofScriptKind::kP2pkh &&
+              coin.claim.program == found.outputs.front().claim.program &&
+              std::all_of(coin.claim.program.begin(), coin.claim.program.end(),
+                          [](uint8_t byte) { return byte == 0xaa; }), "typed hash extraction");
+      claims.push_back(coin.claim);
+    }
+    QuietProofStatementV1 statement;
+    QuietProofChallengeOptions options{QuietProofNetwork::kRegtest, "verifier", "proof-of-funds", "message"};
+    std::vector<std::array<uint8_t, 20>> keys;
+    Require(CreateQuietProofChallenge(claims, options, &statement) && statement.statement_version == 2 &&
+            QuietProofDistinctPrograms(statement, &keys) && keys.size() == 1,
+            "typed discovery challenge/grouping");
+    for (const auto& invalid : {kDiscoveryScript, p2pkh + "00", p2pkh.substr(0, 48),
+         "76a94c14" + std::string(40, 'a') + "88ac", "76a914" + std::string(40, 'b') + "88ac",
+         "a914" + std::string(40, 'a') + "87", std::string("zz")})
+      run(invalid, p2pkh, BitcoinRpcErrorCode::kMalformed);
+    for (const auto& stale : {kDiscoveryScript, p2pkh + "00", "76a914" + std::string(40, 'b') + "88ac"})
+      run(p2pkh, stale, BitcoinRpcErrorCode::kInconclusive);
+    found = run(p2pkh, p2pkh, BitcoinRpcErrorCode::kNone, 0);
+    Require(found.outputs.empty() && !found.challenge_compatible && !found.current_rechecked,
+            "typed empty discovery");
+    found = run(p2pkh, p2pkh, BitcoinRpcErrorCode::kNone, 2, "0.00000001", 3);
+    Require(found.outputs.empty() && found.excluded_below_min_confirmations == 2,
+            "typed confirmation policy");
+    found = run(p2pkh, p2pkh, BitcoinRpcErrorCode::kNone, 2, "21000000");
+    Require(found.outputs.size() == 2 && !found.challenge_compatible && !found.current_rechecked,
+            "typed aggregate money bound");
+    run(p2pkh, p2pkh, BitcoinRpcErrorCode::kMalformed, 1, "21000000.00000001");
+    // Network rejection precedes address decoding or UTXO access for either source.
+    discovery_fixture = {}; discovery_fixture.chain = "main";
+    RpcClient client(Config(), wallet ? WalletHttp : DiscoveryHttp);
+    BitcoinUtxoQuery query{kDiscoveryAddress};
+    if (wallet) query.wallet = wallet_fixture.name;
+    BitcoinUtxoDiscovery output; BitcoinRpcError error;
+    Require(!DiscoverAddress(client, query, &output, &error) &&
+            error.code == BitcoinRpcErrorCode::kWrongNetwork && discovery_fixture.requests.size() == 1,
+            "typed wrong network");
+    ++cases;
+  }
+  std::cout << "Typed discovery cases passed: " << cases << '\n';
+}
+
 void TestLookup() {
   using Status = QuietProofChainStatus;
   QuietProofChainRequest request{QuietProofNetwork::kRegtest};
@@ -859,9 +943,23 @@ void TestLookup() {
   }
   for (const auto& script : {std::string(), "0014" + std::string(38, 'a'), "0014" + std::string(42, 'a'),
                             "0014" + std::string(40, 'A'), "0020" + std::string(64, 'a'),
-                            "5114" + std::string(40, 'a')}) {
+                            "5114" + std::string(40, 'a'),
+                            "76a914" + std::string(40, 'a') + "88ac00",
+                            "76a94c14" + std::string(40, 'a') + "88ac",
+                            "76a914" + std::string(40, 'a') + "87ac"}) {
     reset(); lookup_fixture.results[1] = LookupTxOut("0.1", "2", script); run(Status::kMalformed, 2);
   }
+  reset();
+  lookup_fixture.results[1] = LookupTxOut("0.1", "2", "76a914" + std::string(40, 'a') + "88ac");
+  const auto typed = run(Status::kUnspent, 3);
+  QuietProofClaimV1 typed_claim;
+  typed_claim.amount_sats = 10000000;
+  typed_claim.program.fill(0xaa);
+  Require(QuietProofMatchClaim(typed_claim, request.network, typed) == Status::kInconclusive,
+          "native P2PKH evidence authorized implicit P2WPKH");
+  typed_claim.script_kind = QuietProofScriptKind::kP2pkh;
+  Require(QuietProofMatchClaim(typed_claim, request.network, typed) == Status::kUnspent,
+          "native P2PKH evidence rejected typed relation");
   reset(); lookup_fixture.results[1] = LookupTxOut("0.1", "2", "0014" + std::string(40, 'a'), std::string(64, 'b'));
   run(Status::kMalformed, 2);  // Preserve legacy mismatched-bestblock classification.
   for (const auto& bad : {"[]", "{}", "{\"value\":0.1}", "true", "{"}) {
@@ -1281,14 +1379,16 @@ void TestPublicDiscoveryHttp(const std::string& url, const std::string& cookie,
   found.incompatibility = "sentinel";
   BitcoinRpcError error;
   const bool ok = client.Discover(BitcoinUtxoQuery{kDiscoveryAddress}, &found, &error);
-  if (scenario == "discovery-ok" || scenario == "discovery-empty") {
+  if (scenario == "discovery-ok" || scenario == "discovery-p2pkh" || scenario == "discovery-empty") {
     Require(ok && error.code == BitcoinRpcErrorCode::kNone, "public discovery failed");
-    Require(found.outputs.size() == (scenario == "discovery-ok" ? 1 : 0), "public discovery outputs");
-    Require(found.scan_height == 100 && found.current_rechecked == (scenario == "discovery-ok"),
+    Require(found.outputs.size() == (scenario != "discovery-empty" ? 1 : 0), "public discovery outputs");
+    Require(found.scan_height == 100 && found.current_rechecked == (scenario != "discovery-empty"),
             "public discovery observation");
-    if (scenario == "discovery-ok")
+    if (scenario != "discovery-empty")
       Require(found.outputs[0].claim.amount_sats == 1 && found.observed_height == 101 &&
               found.outputs[0].confirmations == 3, "public exact money/tip advance");
+    if (scenario == "discovery-p2pkh")
+      Require(found.outputs[0].claim.script_kind == QuietProofScriptKind::kP2pkh, "HTTP typed scan lost kind");
   } else {
     const auto expected = scenario == "discovery-invalid" ? BitcoinRpcErrorCode::kInvalidAddress :
         scenario == "discovery-unsupported" ? BitcoinRpcErrorCode::kUnsupportedScript :
@@ -1317,6 +1417,8 @@ void TestPublicWalletHttp(const std::string& url, const std::string& cookie,
             found.outputs[0].claim.amount_sats == 1 && found.current_rechecked && found.challenge_compatible &&
             !found.scan_block && !found.scan_height && found.observed_height == 101,
             "public wallet route/recheck result");
+    if (scenario == "wallet-p2pkh")
+      Require(found.outputs[0].claim.script_kind == QuietProofScriptKind::kP2pkh, "HTTP typed wallet lost kind");
   }
 }
 void TestRotation(const std::string& url, const std::string& cookie) {
@@ -1333,7 +1435,7 @@ int main(int argc, char** argv) {
     else if (argc == 5 && std::string(argv[1]) == "--http") TestHttp(argv[2], argv[3], argv[4]);
     else if (argc == 5 && std::string(argv[1]) == "--rpc") TestClientHttp(argv[2], argv[3], argv[4]);
     else if (argc == 4 && std::string(argv[1]) == "--rotate") TestRotation(argv[2], argv[3]);
-    else if (argc == 1) { TestConfig(); TestCallbacks(); TestCookies(); TestEnvelopes(); TestExactMoney(); TestRequests(); TestLookup(); TestProviderParity(); TestVerifierParity(); TestDiscovery(); TestWalletDiscovery(); }
+    else if (argc == 1) { TestConfig(); TestCallbacks(); TestCookies(); TestEnvelopes(); TestExactMoney(); TestRequests(); TestLookup(); TestProviderParity(); TestVerifierParity(); TestDiscovery(); TestWalletDiscovery(); TestTypedDiscovery(); }
     else throw std::runtime_error("invalid test arguments");
     std::cout << "RPC adapter checks passed\n";
     return 0;

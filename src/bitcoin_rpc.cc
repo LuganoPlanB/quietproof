@@ -448,11 +448,13 @@ QuietProofChainEvidence LookupCurrentTip(RpcClient& client,
   const auto money = response.money.find("/result/value");
   uint64_t amount = 0, confirmations = 0;
   std::vector<uint8_t> script;
+  QuietProofScriptKind script_kind;
+  std::array<uint8_t, 20> key_hash{};
   if (money == response.money.end() ||
       !quietproof_internal::ParseTxOutFields(response.result, money->second.token,
           tip.best_block_hash, &amount, &confirmations, &script) ||
       amount == 0 || amount != money->second.sats ||
-      script.size() != 22 || script[0] != 0 || script[1] != 20)
+      !QuietProofClassifyScript(script, &script_kind, &key_hash))
     return reject(QuietProofChainStatus::kMalformed, "gettxout fields are not canonical");
 
   if (!call("getblockchaininfo", nlohmann::json::array())) return rpc_failure();
@@ -529,8 +531,13 @@ bool DiscoverAddress(RpcClient& client, const BitcoinUtxoQuery& query,
   if (!address["isvalid"].get<bool>())
     return Fail(error, BitcoinRpcErrorCode::kInvalidAddress, "Address is invalid for the selected node");
   std::vector<uint8_t> script;
-  if (!address.contains("scriptPubKey") || !P2wpkhScript(address["scriptPubKey"], &script))
-    return Fail(error, BitcoinRpcErrorCode::kUnsupportedScript, "Address must use native P2WPKH");
+  QuietProofScriptKind script_kind;
+  std::array<uint8_t, 20> key_hash{};
+  if (!address.contains("scriptPubKey") || !address["scriptPubKey"].is_string() ||
+      !DecodeHex(address["scriptPubKey"].get<std::string>(), &script) ||
+      !QuietProofClassifyScript(script, &script_kind, &key_hash))
+    return Fail(error, BitcoinRpcErrorCode::kUnsupportedScript,
+                "Address must use canonical P2WPKH or P2PKH; proving requires a compressed public key");
   if (!address.contains("address") || !address["address"].is_string() ||
       !ValidAddressText(address["address"].get<std::string>()))
     return Fail(error, BitcoinRpcErrorCode::kMalformed, "Canonical address is malformed");
@@ -590,12 +597,15 @@ bool DiscoverAddress(RpcClient& client, const BitcoinUtxoQuery& query,
         !candidate.contains("vout") || !JsonUnsigned(candidate["vout"], &vout) ||
         vout > std::numeric_limits<uint32_t>::max() ||
         !candidate.contains("scriptPubKey") ||
-        !P2wpkhScript(candidate["scriptPubKey"], &candidate_script) || candidate_script != script ||
+        !candidate["scriptPubKey"].is_string() ||
+        !DecodeHex(candidate["scriptPubKey"].get<std::string>(), &candidate_script) ||
+        candidate_script != script ||
         money == response.money.end() || money->second.sats == 0)
       return Fail(error, BitcoinRpcErrorCode::kMalformed, "UTXO candidate is malformed");
     coin.claim.vout = static_cast<uint32_t>(vout);
     coin.claim.amount_sats = money->second.sats;
-    std::copy(script.begin() + 2, script.end(), coin.claim.program.begin());
+    coin.claim.script_kind = script_kind;
+    coin.claim.program = key_hash;
     if (query.wallet) {
       if (!candidate.contains("confirmations") || !JsonUnsigned(candidate["confirmations"], &coin.confirmations) ||
           (candidate.contains("address") &&

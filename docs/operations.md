@@ -103,9 +103,11 @@ not trigger a retry, port/network fallback or legacy invocation.
 ## Discovery costs and coverage
 
 Default discovery uses `validateaddress` and one `scantxoutset` address
-descriptor. It supports only native P2WPKH: P2SH, P2WSH, P2TR and arbitrary
-scripts/descriptors are unsupported. A `tb1` prefix alone cannot select between
-testnet3, testnet4 and signet; select the network and validate the node chain.
+descriptor. Discovery supports canonical native P2WPKH and P2PKH scripts.
+Proving requires a compressed public key; a P2PKH script alone cannot establish
+its encoding. P2SH, P2WSH, P2TR and arbitrary scripts/descriptors are unsupported.
+A `tb1` prefix alone cannot select between testnet3, testnet4 and signet; select
+the network and validate the node chain.
 
 A scan visits the whole UTXO set, including unrelated outputs. It may take
 minutes and compete for disk/cache resources. It excludes mempool-only outputs.
@@ -136,7 +138,8 @@ Wallet results describe tracked wallet coverage, not exhaustive address funds.
 Use this mode for an already tracking wallet or arrange discovery outside
 high-frequency request handling; no persistent index/cache is provided here.
 
-`utxos` JSON reports integer satoshis, public programs/outpoints, confirmations,
+`utxos` JSON reports integer satoshis, `script_type`, public `key_hash`/outpoints,
+confirmations (with `program` retained as an alias for `key_hash`),
 source, exclusions, observation identity, recheck and challenge compatibility.
 A valid empty set or more than 16 eligible outputs can exit 0 diagnostically.
 Challenge creation rejects both. No largest/first-16 selection occurs. Generic
@@ -236,14 +239,22 @@ and `LongfellowZKQuietProof::quietproof`, without curl linkage or lookup.
 ## Advanced manual and legacy compatibility
 
 Manual claims remain fully offline, using displayed/RPC-order TXIDs and
-`TXID:VOUT:SATOSHIS:PROGRAM` (the 20-byte program after `0014`). They cannot be
-mixed with `--address` or RPC/discovery-only options:
+`TXID:VOUT:SATOSHIS:PROGRAM` for native P2WPKH (the 20-byte hash after `0014`).
+The explicit form `TXID:VOUT:SATOSHIS:SCRIPT_KIND:KEY_HASH` accepts `p2wpkh` or
+`p2pkh`. Repeat `--claim` to combine kinds; duplicate outpoints are rejected.
+Manual claims cannot be mixed with `--address` or RPC/discovery-only options:
 
 ```sh
 build/quietproof challenge create --network signet --verifier example.org \
   --purpose proof-of-funds --message 'Proof of control' \
-  --claim TXID:VOUT:SATOSHIS:PROGRAM --output request.qpr
+  --claim TXID:VOUT:SATOSHIS:p2pkh:KEY_HASH --output request.qpr
 ```
+
+P2PKH proving supports compressed public keys only. An address cannot establish
+that encoding; the supplied key must match its hash using compressed serialization.
+Requests with any P2PKH claim use statement version 2. `inspect` reports
+`statement_version`, ordered `script_kinds`, `request_created_at` and
+`proof_created_at` (null for requests). Old four-part claims retain version 1.
 
 To select the retained subprocess verifier explicitly:
 
