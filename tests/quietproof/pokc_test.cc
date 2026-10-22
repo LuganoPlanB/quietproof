@@ -179,6 +179,88 @@ void TestTimestampProofRoundTrip() {
   decoded = envelope;
   --decoded.statement.not_before;
   Require(!PoKCVerifyProof(decoded), "tampered request timestamp accepted");
+  decoded = envelope;
+  decoded.statement.statement_version = 2;
+  Require(EncodeQuietProofEnvelope(decoded, &wire) && !PoKCVerifyProof(decoded),
+          "v1 proof accepted under explicit v2 P2WPKH bytes");
+}
+
+void TestTypedProofRoundTrip(bool mixed) {
+  // Public fixture scalar; production keys never leave the offline prover.
+  std::array<uint8_t, 32> secret{};
+  secret[31] = 1;
+  PoKCWitnessV1<Field, EC> witness;
+  Require(witness.compute(p256k1, secret.data(), secret.size()), "typed witness");
+  QuietProofStatementV1 statement;
+  statement.statement_version = 2;
+  statement.network = QuietProofNetwork::kSignet;
+  statement.verifier = "typed-proof-test";
+  statement.purpose = "proof-of-funds";
+  statement.not_before = static_cast<uint64_t>(std::chrono::system_clock::to_time_t(
+      std::chrono::system_clock::now())) - 2;
+  statement.expires_at = statement.not_before + 3600;
+  statement.nonce[0] = mixed ? 3 : 2;
+  statement.bip322_message_hash[0] = 1;
+  QuietProofClaimV1 claim;
+  claim.txid[0] = 1;
+  claim.amount_sats = 7;
+  claim.program = witness.program();
+  claim.script_kind = QuietProofScriptKind::kP2pkh;
+  statement.claims = {claim};
+  if (mixed) {
+    claim.txid[0] = 2;
+    claim.amount_sats = 11;
+    claim.script_kind = QuietProofScriptKind::kP2wpkh;
+    statement.claims.push_back(claim);
+  }
+  std::vector<std::array<uint8_t, 20>> key_hashes;
+  Require(QuietProofDistinctPrograms(statement, &key_hashes) && key_hashes.size() == 1,
+          "typed fixture requires more than one key");
+  QuietProofEnvelopeV1 envelope;
+  Require(PoKCProve(secret.data(), secret.size(), statement, &envelope), "typed prove");
+  Require(envelope.envelope_version == 2 &&
+              envelope.proof.circuit_digest == PoKCExpectedCircuitDigest<1>(),
+          "typed proof changed the ownership circuit identity");
+  std::vector<uint8_t> wire;
+  QuietProofEnvelopeV1 decoded;
+  Require(EncodeQuietProofEnvelope(envelope, &wire) &&
+              DecodeQuietProofEnvelope(wire, &decoded) &&
+              decoded.statement.statement_version == 2 && PoKCVerifyProof(decoded),
+          "typed proof round trip");
+  auto reject = [&](QuietProofEnvelopeV1 changed, const char* message) {
+    // Require a canonical, supported statement, so rejection reaches real
+    // cryptographic verification rather than relying on parser failure.
+    Require(EncodeQuietProofEnvelope(changed, &wire) &&
+                DecodeQuietProofEnvelope(wire, &decoded) &&
+                PoKCProofSupported(decoded) && !PoKCVerifyProof(decoded), message);
+  };
+  auto changed = envelope;
+  changed.statement.claims[0].script_kind = QuietProofScriptKind::kP2wpkh;
+  reject(changed, "script-kind substitution accepted");
+  changed = envelope;
+  for (auto& output : changed.statement.claims) output.program[0] ^= 1;
+  reject(changed, "key-hash substitution accepted");
+  changed = envelope;
+  ++changed.statement.claims[0].vout;
+  reject(changed, "outpoint substitution accepted");
+  changed = envelope;
+  ++changed.statement.claims[0].amount_sats;
+  reject(changed, "amount substitution accepted");
+  changed = envelope;
+  --changed.statement.not_before;
+  reject(changed, "request-time substitution accepted");
+  changed = envelope;
+  ++changed.proof_created_at;
+  reject(changed, "proof-time substitution accepted");
+  changed = envelope;
+  changed.statement.statement_version = 1;
+  Require(!EncodeQuietProofStatement(changed.statement, &wire),
+          "P2PKH kind silently dropped by v1 encoder");
+  for (auto& output : changed.statement.claims)
+    output.script_kind = QuietProofScriptKind::kP2wpkh;
+  reject(changed, "proof survived dropping typed P2PKH relation into v1");
+  std::cout << (mixed ? "Mixed same-key" : "P2PKH")
+            << " proof: one generation, one positive verification, seven canonical substitution rejections\n";
 }
 
 void TestWitnessInputValidation() {
@@ -236,7 +318,9 @@ int main(int argc, char** argv) {
   try {
     if (argc == 2 && std::string(argv[1]) == "--timestamp-roundtrip") {
       proofs::TestTimestampProofRoundTrip();
-      std::cout << "Timestamp proof round trip and tamper checks passed\n";
+      proofs::TestTypedProofRoundTrip(false);
+      proofs::TestTypedProofRoundTrip(true);
+      std::cout << "Timestamp and typed proof round trips and tamper checks passed\n";
       return 0;
     }
     proofs::TestStableLayoutAndDigest();

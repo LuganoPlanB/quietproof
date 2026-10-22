@@ -10,8 +10,9 @@ maintenance, integration services, and contractual warranty options
 are available separately. Please contact us for further information.
 :::
 
-QuietProof v1 is an off-chain proof of control for a bounded set of native P2WPKH
-outputs. It neither spends nor locks Bitcoin. P2SH-wrapped P2WPKH, P2WSH,
+QuietProof is an off-chain proof of control for a bounded set of native P2WPKH
+and compressed-key P2PKH outputs. Statement v1 supports P2WPKH only; statement
+v2 explicitly types each claim. Uncompressed-key P2PKH is unsupported. It neither spends nor locks Bitcoin. P2SH-wrapped P2WPKH, P2WSH,
 multisig, P2TR, and arbitrary scripts are unsupported.
 
 The generic zero-knowledge primitive is PoKC (Proof of Key Control). QuietProof
@@ -44,7 +45,9 @@ to a finite affine point `(Px, Py)`. `Px_be` is exactly 32 big-endian bytes.
 program = RIPEMD160(SHA256(SEC))
 ```
 
-and the only accepted script is `00 14 || program` (22 bytes). The circuit MUST
+and the accepted scripts are `00 14 || program` (22 bytes) for P2WPKH and
+`76 a9 14 || program || 88 ac` (25 bytes) for P2PKH. No alternate pushes,
+extra opcodes, or trailing bytes are accepted. The circuit MUST
 constrain scalar range/bitness, `P = xG`, finiteness, curve membership,
 canonical coordinates, compressed-key parity and byte order, both hash
 functions, fixed padding, and equality with the public 20-byte program.
@@ -82,7 +85,7 @@ The statement starts with ASCII `QPS1`, then:
 
 | Field | Encoding and rule |
 | --- | --- |
-| statement version | `u8`, exactly `01` |
+| statement version | `u8`, `01` (implicit P2WPKH) or `02` (typed claims) |
 | network | `u8`, section 2 |
 | verifier/entity ID | `u16(length) || UTF-8`, 1..256 bytes |
 | purpose | `u16(length) || UTF-8`, one of `proof-of-control`, `proof-of-funds`, `bridge-authorization` |
@@ -111,7 +114,12 @@ The statement digest is the BIP-340-style tagged hash
 TaggedHash("QuietProof/statement/v1", canonical_statement_bytes)
 ```
 
-where `TaggedHash(tag, m) = SHA256(SHA256(tag) || SHA256(tag) || m)`.
+for statement v1; statement v2 uses
+`TaggedHash("QuietProof/statement/v2", canonical_statement_bytes)`.
+Here `TaggedHash(tag, m) = SHA256(SHA256(tag) || SHA256(tag) || m)`.
+Decoded versions MUST be retained on re-encoding, including P2WPKH-only v2
+statements. Builders select v2 when any claim is P2PKH and otherwise default to
+v1. V1 MUST NOT encode P2PKH claims; a type cannot be silently dropped.
 
 ### 4.1 Claim encoding
 
@@ -122,12 +130,18 @@ Each claim is:
 | txid | 32 bytes in Bitcoin RPC/display order, not all zero |
 | vout | `u32` |
 | amount | `u64`, 1..2,100,000,000,000,000 satoshis |
-| program | exactly 20 bytes |
+| script kind | v2 only: `u8`, `00` = P2WPKH, `01` = compressed-key P2PKH |
+| program | exactly 20 bytes of compressed-public-key HASH160 |
 
 Claims are sorted strictly by `(txid, vout)`; duplicates are malformed. The
-script is not redundantly serialized: verifiers reconstruct exactly
-`00 14 || program` and require the chain output to equal it. More than two
-distinct programs is malformed. The checked aggregate claim value MUST NOT
+script is not redundantly serialized: verifiers reconstruct exactly the
+selected template from section 1 and require the chain output to equal it.
+V1 claims always mean P2WPKH. V2 claim bytes are
+`txid:32 || vout:u32 || amount_sats:u64 || script_kind:u8 || program:20`.
+Unknown versions and kinds are `unsupported`; malformed known encodings are
+`malformed_statement`. Duplicate outpoints are malformed regardless of kind.
+Ownership witnesses are grouped by key hash across kinds; more than two
+distinct key hashes is malformed. The checked aggregate claim value MUST NOT
 exceed 2,100,000,000,000,000 satoshis.
 
 ## 5. Optional bridge binding
@@ -162,6 +176,8 @@ proof_size:u32
 proof_bytes
 ```
 
+Statement v2 MUST NOT appear in envelope v1 (a malformed combination). New
+proofs keep envelope v2 and the existing circuit identities unchanged.
 `statement_size` is 1..4096. `proof_size` is 1..128 MiB and MUST equal the
 remaining envelope length. The circuit digest MUST NOT be all zero. The entire envelope is bounded before any nested
 allocation. Unknown envelope/statement/network/circuit versions or proof
