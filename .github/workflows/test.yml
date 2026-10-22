@@ -55,14 +55,25 @@ jobs:
             -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/longfellow-prefix" \
             -DQUIETPROOF_BUILD_RPC="$RPC_MODE"
       - name: Build all tests
+        if: matrix.rpc == 'ON'
         run: cmake --build build --parallel 2
-      - name: Run tests
+      - name: Build offline CLI
+        if: matrix.rpc == 'OFF'
+        run: cmake --build build --target quietproof-cli --parallel 2
+      - name: Run full suite
+        if: matrix.rpc == 'ON'
         # Sequential execution bounds peak memory for the real proof tests.
         # Live Core integration and the optional Sage runtime require separate setup.
         run: >-
           ctest --test-dir build --output-on-failure --no-tests=error
           --parallel 1 --timeout 1800
           -E '^quietproof-regtest-rpc-test$'
+      - name: Run offline compatibility tests
+        if: matrix.rpc == 'OFF'
+        run: >-
+          ctest --test-dir build --output-on-failure --no-tests=error
+          --parallel 1 --timeout 600
+          -R '^quietproof-(package-test|cli-test|cli-rpc-test|prove-feedback-test)$'
 
   documentation:
     name: Documentation tests
