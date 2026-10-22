@@ -1,0 +1,92 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: Native tests (RPC ${{ matrix.rpc }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        rpc: ['ON', 'OFF']
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: quietproof
+          persist-credentials: false
+      - name: Check out pinned LongfellowZK SDK
+        uses: actions/checkout@v7
+        with:
+          repository: dyne/longfellow-zk
+          ref: d2b0fc515f8663e38c79a28e8900ce8438e0106e
+          path: longfellow-zk
+          persist-credentials: false
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y g++ cmake ninja-build python3 libcurl4-openssl-dev
+      - name: Build and install SDK
+        run: |
+          cmake -S longfellow-zk -B sdk-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
+            -DLONGFELLOW_ZK_BUILD_TESTING=OFF \
+            -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/longfellow-prefix"
+          cmake --build sdk-build --parallel 2
+          cmake --install sdk-build
+      - name: Configure Quietproof
+        env:
+          RPC_MODE: ${{ matrix.rpc }}
+        run: |
+          cmake -S quietproof -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
+            -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/longfellow-prefix" \
+            -DQUIETPROOF_BUILD_RPC="$RPC_MODE"
+      - name: Build all tests
+        run: cmake --build build --parallel 2
+      - name: Run tests
+        # Sequential execution bounds peak memory for the real proof tests.
+        # Live Core integration and the optional Sage runtime require separate setup.
+        run: >-
+          ctest --test-dir build --output-on-failure --no-tests=error
+          --parallel 1 --timeout 1800
+          -E '^quietproof-regtest-rpc-test$'
+
+  documentation:
+    name: Documentation tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: quietproof
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: LuganoPlanB/vite-theme
+          ref: a7fde3404a5e2b32bf57b4bcb99337479c5c75b2
+          path: vite-theme
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: quietproof/package-lock.json
+      - run: npm ci
+        working-directory: quietproof
+      - run: npm run test:site
+        working-directory: quietproof
+      - run: npm run docs:build
+        working-directory: quietproof
