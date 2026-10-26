@@ -7,10 +7,12 @@
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
-    "test:site": "node --test tests/site.test.mjs"
+    "test:site": "node --test tests/site.test.mjs",
+    "test:wasm": "node --test --test-concurrency=1 --test-timeout=60000 tests/wasm/browser.test.mjs"
   },
   "devDependencies": {
     "lugano-planb-vite-theme": "file:../vite-theme",
+    "playwright": "1.61.1",
     "vitepress": "1.6.4",
     "vue": "3.5.42"
   },
