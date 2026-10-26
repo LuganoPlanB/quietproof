@@ -4,7 +4,25 @@ project(LongfellowZKQuietProof VERSION 0.1.0 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
+set(_quietproof_native_default ON)
+if(CMAKE_SYSTEM_NAME STREQUAL "WASI")
+  set(_quietproof_native_default OFF)
+endif()
+option(BUILD_TESTING "Build the native test suite" ${_quietproof_native_default})
 include(CTest)
+option(QUIETPROOF_BUILD_CLI "Build the native command-line application" ${_quietproof_native_default})
+option(QUIETPROOF_BUILD_RPC "Build the native Bitcoin Core RPC library" ${_quietproof_native_default})
+option(QUIETPROOF_BUILD_WASM "Build the WASI browser reactor" OFF)
+if(CMAKE_SYSTEM_NAME STREQUAL "WASI")
+  if(QUIETPROOF_BUILD_CLI OR QUIETPROOF_BUILD_RPC OR BUILD_TESTING)
+    message(FATAL_ERROR "WASI requires QUIETPROOF_BUILD_CLI=OFF, QUIETPROOF_BUILD_RPC=OFF and BUILD_TESTING=OFF")
+  endif()
+elseif(QUIETPROOF_BUILD_WASM)
+  message(FATAL_ERROR "QUIETPROOF_BUILD_WASM requires a wasm32 WASI toolchain")
+endif()
+if(BUILD_TESTING AND NOT QUIETPROOF_BUILD_CLI)
+  message(FATAL_ERROR "The native test suite requires QUIETPROOF_BUILD_CLI=ON; use BUILD_TESTING=OFF for a library-only build")
+endif()
 
 set(LONGFELLOW_ZK_TARGET "LongfellowZK::static" CACHE STRING
     "Installed LongfellowZK target used by this project")
@@ -21,7 +39,6 @@ target_include_directories(quietproof INTERFACE
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/longfellow-zk-quietproof>)
 target_link_libraries(quietproof INTERFACE ${LONGFELLOW_ZK_TARGET})
 
-option(QUIETPROOF_BUILD_RPC "Build the native Bitcoin Core RPC library" ON)
 if(QUIETPROOF_BUILD_RPC)
   find_package(CURL 7.62 REQUIRED)
   add_library(quietproof-rpc STATIC src/bitcoin_rpc.cc src/bitcoin_rpc_json.cc)
@@ -43,17 +60,33 @@ if(QUIETPROOF_ENABLE_BITCOIN_REGTEST_TEST AND NOT QUIETPROOF_BUILD_RPC)
   message(FATAL_ERROR "Live regtest requires QUIETPROOF_BUILD_RPC")
 endif()
 
-find_package(Threads REQUIRED)
-add_executable(quietproof-cli src/quietproof_main.cc)
-set_target_properties(quietproof-cli PROPERTIES OUTPUT_NAME quietproof)
-target_link_libraries(quietproof-cli PRIVATE LongfellowZKQuietProof::quietproof Threads::Threads)
-if(QUIETPROOF_BUILD_RPC)
-  target_link_libraries(quietproof-cli PRIVATE LongfellowZKQuietProof::rpc)
-  target_compile_definitions(quietproof-cli PRIVATE QUIETPROOF_HAS_RPC=1)
+if(QUIETPROOF_BUILD_CLI)
+  find_package(Threads REQUIRED)
+  add_executable(quietproof-cli src/quietproof_main.cc)
+  set_target_properties(quietproof-cli PROPERTIES OUTPUT_NAME quietproof)
+  target_link_libraries(quietproof-cli PRIVATE LongfellowZKQuietProof::quietproof Threads::Threads)
+  if(QUIETPROOF_BUILD_RPC)
+    target_link_libraries(quietproof-cli PRIVATE LongfellowZKQuietProof::rpc)
+    target_compile_definitions(quietproof-cli PRIVATE QUIETPROOF_HAS_RPC=1)
+  endif()
+  install(TARGETS quietproof-cli RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+
+if(QUIETPROOF_BUILD_WASM)
+  add_executable(quietproof-wasm src/wasm/reactor.cc)
+  target_link_libraries(quietproof-wasm PRIVATE LongfellowZKQuietProof::quietproof)
+  target_link_options(quietproof-wasm PRIVATE
+    -mexec-model=reactor
+    -Wl,--initial-memory=16777216 -Wl,--max-memory=1073741824
+    -Wl,-z,stack-size=1048576
+    -Wl,--export=quietproof_wasm_abi_version
+    -Wl,--export=quietproof_wasm_alloc -Wl,--export=quietproof_wasm_free
+    -Wl,--export=quietproof_wasm_smoke)
+  set_target_properties(quietproof-wasm PROPERTIES OUTPUT_NAME quietproof SUFFIX ".wasm")
+  install(TARGETS quietproof-wasm RUNTIME DESTINATION ${CMAKE_INSTALL_DATADIR}/quietproof/wasm)
 endif()
 
 install(TARGETS quietproof EXPORT LongfellowZKQuietProofTargets)
-install(TARGETS quietproof-cli RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/longfellow-zk-quietproof)
 install(EXPORT LongfellowZKQuietProofTargets
   FILE LongfellowZKQuietProofTargets.cmake NAMESPACE LongfellowZKQuietProof::
