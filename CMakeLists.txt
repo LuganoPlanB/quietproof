@@ -77,11 +77,16 @@ if(QUIETPROOF_BUILD_WASM)
   target_link_libraries(quietproof-wasm PRIVATE LongfellowZKQuietProof::quietproof)
   target_link_options(quietproof-wasm PRIVATE
     -mexec-model=reactor
-    -Wl,--initial-memory=16777216 -Wl,--max-memory=1073741824
+    -Wl,--initial-memory=16777216 -Wl,--max-memory=2147483648
     -Wl,-z,stack-size=1048576
     -Wl,--export=quietproof_wasm_abi_version
     -Wl,--export=quietproof_wasm_alloc -Wl,--export=quietproof_wasm_free
-    -Wl,--export=quietproof_wasm_smoke)
+    -Wl,--export=quietproof_wasm_smoke
+    -Wl,--export=quietproof_wasm_create_request -Wl,--export=quietproof_wasm_inspect
+    -Wl,--export=quietproof_wasm_result_data -Wl,--export=quietproof_wasm_result_size
+    -Wl,--export=quietproof_wasm_error_data -Wl,--export=quietproof_wasm_error_size
+    -Wl,--export=quietproof_wasm_prepare -Wl,--export=quietproof_wasm_verify
+    -Wl,--export=quietproof_wasm_evaluate -Wl,--export=quietproof_wasm_reset)
   set_target_properties(quietproof-wasm PROPERTIES OUTPUT_NAME quietproof SUFFIX ".wasm")
   install(TARGETS quietproof-wasm RUNTIME DESTINATION ${CMAKE_INSTALL_DATADIR}/quietproof/wasm)
 endif()
@@ -174,6 +179,14 @@ if(BUILD_TESTING)
   add_pokc_test(ripemd160-test tests/quietproof/ripemd160_test.cc)
   add_pokc_test(quietproof-protocol-test tests/quietproof/protocol_test.cc)
   add_pokc_test(quietproof-challenge-test tests/quietproof/challenge_test.cc)
+  add_pokc_test(quietproof-browser-codec-test tests/wasm/codec_test.cc)
+  add_pokc_test(quietproof-browser-verifier-test tests/wasm/verifier_test.cc
+    ${CMAKE_CURRENT_BINARY_DIR}/tests/wasm-real)
+  set_tests_properties(quietproof-browser-verifier-test PROPERTIES
+    LABELS "proof-heavy" RUN_SERIAL TRUE TIMEOUT 600)
+  # Explicit fixture generator: public disposable scalars; never part of WASM.
+  add_executable(quietproof-browser-fixtures tests/wasm/proof_fixtures.cc)
+  target_link_libraries(quietproof-browser-fixtures PRIVATE LongfellowZKQuietProof::quietproof)
   add_pokc_test(quietproof-integration-test tests/quietproof/integration_test.cc)
   add_pokc_test(pokc-sage-test tests/quietproof/pokc_sage_vector_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/testdata/pokc_sage_vectors.json)

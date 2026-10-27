@@ -8,7 +8,9 @@
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "test:site": "node --test tests/site.test.mjs",
-    "test:wasm": "node --test --test-concurrency=1 --test-timeout=60000 tests/wasm/browser.test.mjs"
+    "test:wasm": "node --test --test-concurrency=1 --test-timeout=60000 tests/wasm/browser.test.mjs",
+    "test:wasm:feasibility": "node tests/wasm/feasibility.mjs",
+    "test:wasm:coverage": "node --test tests/wasm/coverage.test.mjs"
   },
   "devDependencies": {
     "lugano-planb-vite-theme": "file:../vite-theme",
