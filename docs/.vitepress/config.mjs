@@ -2,6 +2,7 @@ import { defineConfig } from "vitepress";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { searchForWorkspaceRoot } from "vite";
+import { secureHtml } from './security.mjs';
 
 const projectRoot = fileURLToPath(new URL("../..", import.meta.url));
 const siteBase = process.env.DOCS_BASE || "/";
@@ -15,6 +16,7 @@ export default defineConfig({
     "Prove control of P2WPKH bitcoin without revealing private keys or compressed public keys.",
   cleanUrls: true,
   lastUpdated: true,
+  transformHtml: secureHtml,
   head: [
     ["meta", { name: "theme-color", content: "#fffefa" }],
     ["link", { rel: "icon", href: `${siteBase}quietproof-mark.svg`, type: "image/svg+xml" }],

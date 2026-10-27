@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { setupProofInput } from './input.mjs';
 import { setupProvider } from '../provider/discovery.mjs';
 import { phaseLabel, failureResult, observationReasons } from './results.mjs';
@@ -11,6 +11,7 @@ const result = ref(null), state = ref('idle'), error = ref(''), ready = ref(fals
 const selectedNetwork = ref(''), online = ref(false), minConfirmations = ref('1'), minimumTotalSats = ref('0'), maxAge = ref('300');
 const verification = ref(null), progress = ref(null), now = ref(Date.now()), startedAt = ref(null);
 const history = ref(null), savedRequest = ref(null), expectedInput = ref(null), repeat = ref(false);
+const resultsHeading = ref(null), verifyButton = ref(null), inspectButton = ref(null);
 const busy = computed(() => ['loading', 'verifying'].includes(state.value));
 const elapsed = computed(() => startedAt.value === null ? 0 : Math.max(0, Math.floor((now.value - startedAt.value) / 1000)));
 const descriptor = computed(() => {
@@ -41,7 +42,17 @@ async function inspect() {
     result.value = imported; state.value = 'inspected';
   } catch (e) { if (current === generation) { error.value = e.message; state.value = 'error'; } }
 }
-function cancel() { invalidate(); state.value = 'cancelled'; }
+async function cancel() {
+  const verifying = state.value === 'verifying';
+  invalidate(); state.value = 'cancelled'; await nextTick();
+  (verifying ? verifyButton.value : inspectButton.value)?.focus();
+}
+async function focusResults(current) {
+  await nextTick();
+  if (current === generation) {
+    resultsHeading.value?.focus(); resultsHeading.value?.scrollIntoView({ block: 'start' });
+  }
+}
 function chooseSaved(row) {
   if (expectedInput.value) expectedInput.value.value = '';
   mode.value = 'request'; request.value = new File([row.bytes], row.name, { type: 'application/octet-stream' });
@@ -65,6 +76,7 @@ async function verify() {
       onProgress(event) { if (current === generation) progress.value = event; } });
     if (current !== generation) return;
     verification.value = checked; state.value = 'checked';
+    await focusResults(current);
     if (checked.metadata) {
       const marker = await history.value?.recordCheck(checked.metadata, checked, ticket);
       if (current === generation) repeat.value = marker?.repeat === true;
@@ -72,6 +84,7 @@ async function verify() {
   } catch (e) {
     if (current !== generation) return;
     verification.value = failureResult(e, progress.value); state.value = 'checked';
+    await focusResults(current);
   }
 }
 function timestamp(seconds) {
@@ -121,7 +134,7 @@ function timestamp(seconds) {
         </template>
         <p>Policy limit: request lifetime at most 86400 seconds; device clock checks freshness. Historical snapshots and bridge authorization can be inspected but are unsupported for acceptance.</p>
       </fieldset>
-      <button type="submit" :disabled="!ready || busy">Inspect proof and policy</button>
+      <button ref="inspectButton" type="submit" :disabled="!ready || busy">Inspect proof and policy</button>
       <button v-if="state === 'loading'" type="button" @click="cancel">Cancel import</button>
     </form>
     <p role="status" aria-live="polite">{{ state === 'loading' ? 'Reading and inspecting in a worker…' : state === 'cancelled' ? 'Import cancelled. No result retained.' : state === 'idle' ? 'Choose a proof to inspect.' : '' }}</p>
@@ -160,13 +173,13 @@ function timestamp(seconds) {
       <label for="qp-confirmations">Minimum confirmations</label><input id="qp-confirmations" v-model="minConfirmations" inputmode="numeric" maxlength="20">
       <label for="qp-minimum-total">Minimum unspent total (sats)</label><input id="qp-minimum-total" v-model="minimumTotalSats" inputmode="numeric" maxlength="16">
       <label for="qp-observation-age">Maximum observation age (seconds, 1–300)</label><input id="qp-observation-age" v-model="maxAge" inputmode="numeric" maxlength="3">
-      <p>These limits apply to explorer assessment. Device time is untrusted. Large proofs can take minutes and need up to 2 GiB of WASM memory; verification stops after five minutes. Cancel terminates the worker.</p>
-      <button type="button" :disabled="!ready || busy" @click="verify">{{ online ? 'Verify and check explorer' : 'Verify offline' }}</button>
+      <p>These limits apply to explorer assessment. Device time is untrusted. Large proofs can take minutes and need up to 2 GiB of WASM memory, plus browser and file buffers; verification stops after five minutes. A desktop with ample available memory is required; a mobile-size layout does not establish mobile-device support. Cancel terminates the worker.</p>
+      <button ref="verifyButton" type="button" :disabled="!ready || busy" @click="verify">{{ online ? 'Verify and check explorer' : 'Verify offline' }}</button>
       <button v-if="state === 'verifying'" type="button" @click="cancel">Cancel verification</button>
     </fieldset>
     <p v-if="state === 'verifying'" role="status" aria-live="polite">{{ phaseLabel[progress?.phase] ?? 'Preparing verification' }}… {{ elapsed }} seconds elapsed. Cryptography: {{ progress?.cryptography === 'valid' ? 'valid' : 'not checked yet' }}.</p>
     <section v-if="verification" aria-label="Verification results" class="quietproof-inspection">
-      <h2>Separate verification results</h2>
+      <h2 ref="resultsHeading" tabindex="-1">Separate verification results</h2>
       <p v-if="repeat" role="status">Local repeat warning: this request or nonce already has a retained check marker in this browser origin. Rechecking does not imply authorization or global replay prevention.</p>
       <dl>
         <dt>Proof cryptography</dt><dd data-result="crypto">{{ verification.cryptography === 'valid' ? 'Valid' : verification.cryptography === 'invalid' ? 'Invalid — do not accept' : 'Not checked to completion' }}</dd>
@@ -210,5 +223,7 @@ button:disabled { opacity: .65; }
 .quietproof-confirm { min-height: 44px; }
 .quietproof-confirm input { width: 1.25rem; height: 1.25rem; }
 .quietproof-inspection { border-top: 2px solid var(--vp-c-divider); padding-top: 1rem; margin-top: 1.5rem; }
+.quietproof-inspection h2 { scroll-margin-top: 6rem; }
+.quietproof-inspection h2:focus { outline: 3px solid var(--planb-color-focus, var(--vp-c-brand-1)); outline-offset: 3px; }
 dt { margin-top: .75rem; } dd { margin: .25rem 0; } li { margin-block: .75rem; }
 </style>

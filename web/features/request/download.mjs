@@ -1,11 +1,11 @@
 import { validateForm, selectionSummary } from './form.mjs';
+import { loadWasmAsset } from '../../wasm/asset.mjs';
 
-const MAX_WASM_BYTES = 8 * 1024 * 1024;
 const cancelled = () => Object.assign(new Error('Request creation cancelled.'), { name: 'AbortError' });
 
 // Feature boundary: each creation owns and tears down a fresh worker. Neither
 // nonce nor clock sources are configurable through this interface.
-export function setupRequest({ wasmUrl, fetch: fetcher = globalThis.fetch,
+export function setupRequest({ wasmUrl = '/wasm/quietproof.wasm', fetch: fetcher = globalThis.fetch,
   workerFactory = () => new Worker(new URL('../../wasm/worker.mjs', import.meta.url), { type: 'module' }),
   timeoutMs = 60000 } = {}) {
   let active, disposed = false;
@@ -31,24 +31,7 @@ export function setupRequest({ wasmUrl, fetch: fetcher = globalThis.fetch,
       });
     }
     try {
-      const response = await fetcher(wasmUrl, { signal: controller.signal, credentials: 'omit' });
-      if (!response.ok || Number(response.headers.get('content-length')) > MAX_WASM_BYTES)
-        throw new Error('Could not load request tools. Check your connection and reload this page.');
-      // Enforce the bound while reading, including when Content-Length is absent.
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('Request tools could not be loaded by this browser.');
-      const chunks = []; let size = 0;
-      try {
-        while (true) {
-          const { done, value } = await reader.read(); check();
-          if (done) break;
-          size += value.byteLength;
-          if (size > MAX_WASM_BYTES) throw new Error('Request tools exceed the supported download size.');
-          chunks.push(value);
-        }
-      } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
-      const wasm = new Uint8Array(size); let offset = 0;
-      for (const chunk of chunks) { wasm.set(chunk, offset); offset += chunk.byteLength; }
+      const wasm = await loadWasmAsset(wasmUrl, { fetch: fetcher, signal: controller.signal, check, label: 'request' });
       check(); worker = workerFactory();
       worker.onmessage = ({ data }) => {
         if (!pending || data?.id !== pending.id) return;
@@ -59,7 +42,7 @@ export function setupRequest({ wasmUrl, fetch: fetcher = globalThis.fetch,
       worker.onerror = event => {
         event.preventDefault?.(); pending?.reject(new Error('Request tools stopped unexpectedly. Retry or reload this page.')); pending = undefined;
       };
-      await call('initialize', { bytes: wasm.buffer }, [wasm.buffer]);
+      await call('initialize', { bytes: wasm }, [wasm]);
       const { bytes } = await call('createRequest', { options: snapshot });
       if (!(bytes instanceof ArrayBuffer) || !bytes.byteLength || bytes.byteLength > 4096)
         throw new Error('Request creation returned an invalid artifact.');

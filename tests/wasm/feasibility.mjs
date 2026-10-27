@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import { gzipSync, brotliCompressSync } from 'node:zlib';
 import os from 'node:os';
 import { REQUIRED_ENGINES, REQUIRED_KEYS, DIAGNOSTIC_ENGINES, parseSelection, assessCoverage } from './coverage.mjs';
+import { cappedMemoryArtifact, RESOURCE_BUDGETS } from './resources.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const artifact = resolve(process.env.QUIETPROOF_WASM ?? 'missing.wasm');
@@ -20,6 +21,8 @@ const engineNames = parseSelection(process.env.QUIETPROOF_ENGINES, REQUIRED_ENGI
 const keyNames = parseSelection(process.env.QUIETPROOF_KEYS, REQUIRED_KEYS, REQUIRED_KEYS, 'key');
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const wasm = readFileSync(artifact);
+const cappedWasm = cappedMemoryArtifact(wasm);
+const site = process.env.QUIETPROOF_FEASIBILITY_SITE ? resolve(process.env.QUIETPROOF_FEASIBILITY_SITE) : null;
 const report = { version: 2, supportedBrowsers: [...REQUIRED_ENGINES],
   unsupportedBrowsers: [...DIAGNOSTIC_ENGINES], observedAt: new Date().toISOString(),
   environment: { platform: os.platform(), release: os.release(), architecture: os.arch(),
@@ -27,6 +30,11 @@ const report = { version: 2, supportedBrowsers: [...REQUIRED_ENGINES],
   wasm: { path: artifact, sha256: digest(wasm), bytes: wasm.length,
     gzip9Bytes: gzipSync(wasm, { level: 9 }).length, brotliBytes: brotliCompressSync(wasm).length },
   fixtures: {}, engines: [], completeness: 'running',
+  budgets: RESOURCE_BUDGETS, site: site ? { directory: site, entry: { path: resolve(site, 'tool.html'), sha256: digest(readFileSync(resolve(site, 'tool.html'))) } } : null,
+  controlledMemoryFailure: { maximumBytes: 512 * 1024 * 1024, sha256: digest(cappedWasm), scope: 'Test-only module memory ceiling; not physical low-memory hardware.' },
+  sources: ['web/wasm/asset.mjs', 'web/wasm/codec.mjs', 'web/wasm/runtime.mjs', 'web/wasm/worker.mjs',
+    'tests/wasm/feasibility.mjs', 'tests/wasm/measured-worker.mjs', 'tests/wasm/resources.mjs',
+    'package.json', 'package-lock.json'].map(path => ({ path: resolve(root, path), sha256: digest(readFileSync(resolve(root, path))) })),
   memoryScope: 'Linear memory high-water allocation observed after synchronous calls; WASM memory never shrinks. Not process RSS or JS heap.',
   copyScope: 'Sender detachment is observed per transferred proof; implementation copy inventory is documented separately. Engine-internal physical copies are not measurable here.' };
 for (const key of ['one-key', 'two-key']) {
@@ -43,12 +51,18 @@ save();
 const server = createServer((request, response) => {
   try {
     const path = new URL(request.url, 'http://localhost').pathname;
-    if (path === '/') { response.setHeader('Content-Type', 'text/html'); response.end('<!doctype html><title>Real proof feasibility</title>'); return; }
+    if (path === '/' && !site) { response.setHeader('Content-Type', 'text/html'); response.end('<!doctype html><title>Real proof feasibility</title>'); return; }
+    if (path === '/quietproof-low-memory.wasm') {
+      response.setHeader('Content-Type', 'application/wasm'); response.end(cappedWasm); return;
+    }
     let local;
     if (path === '/quietproof.wasm') { local = artifact; response.setHeader('Content-Type', 'application/wasm'); }
     else if (/^\/fixtures\/(one-key|two-key)\.(qpf|qpr)$/.test(path)) local = resolve(fixtures, basename(path));
-    else if (/^\/(web\/wasm\/[a-z]+|tests\/wasm\/measured-worker)\.mjs$/.test(path)) {
+    else if (/^\/(web\/wasm\/[a-z]+|tests\/wasm\/(measured-worker|resources))\.mjs$/.test(path)) {
       local = resolve(root, '.' + path); response.setHeader('Content-Type', 'text/javascript');
+    } else if (site && (path === '/' || /^\/assets\/[a-zA-Z0-9_.-]+\.(js|css|woff2)$/.test(path))) {
+      local = resolve(site, path === '/' ? 'tool.html' : '.' + path);
+      response.setHeader('Content-Type', path === '/' ? 'text/html' : path.endsWith('.css') ? 'text/css' : path.endsWith('.woff2') ? 'font/woff2' : 'text/javascript');
     } else { response.writeHead(404).end(); return; }
     response.setHeader('Content-Length', statSync(local).size);
     createReadStream(local).pipe(response);
@@ -78,6 +92,8 @@ try {
       // memory failure cannot erase earlier observed qualification evidence.
       for (const key of keyNames) {
         const result = await page.evaluate(async key => {
+          const { RESOURCE_BUDGETS: budgets } = await import('/tests/wasm/resources.mjs');
+          const { loadWasmAsset } = await import('/web/wasm/asset.mjs');
           const records = [];
           let ticks = 0, maximumGap = 0, lastTick = performance.now();
           const heartbeat = setInterval(() => { const now = performance.now(); maximumGap = Math.max(maximumGap, now - lastTick); lastTick = now; ticks++; }, 20);
@@ -121,9 +137,18 @@ try {
             clients.add(api); return api;
           }
           const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
-          async function initialize() {
+          async function initialize(capped = false) {
             const api = client();
-            await api.send('initialize', { bytes: await (await fetch('/quietproof.wasm')).arrayBuffer() }).result;
+            const start = performance.now();
+            const bytes = await loadWasmAsset(capped ? '/quietproof-low-memory.wasm' : '/quietproof.wasm',
+              { fetch, check() {}, label: 'qualification' });
+            const loadMs = performance.now() - start, initializeStart = performance.now();
+            await api.send('initialize', { bytes }).result;
+            const initializeMs = performance.now() - initializeStart;
+            records.push({ label: capped ? 'controlled-low-memory-load' : 'load', loadMs, initializeMs,
+              senderDetached: bytes.byteLength === 0 });
+            if (loadMs > budgets.localAssetLoadMs || initializeMs > budgets.initializeMs)
+              throw new Error('Local asset/initialization regression budget exceeded');
             return api;
           }
           async function prepare(api, changed = false) {
@@ -152,6 +177,9 @@ try {
               cryptography: output.cryptography, policy: output.policy, explorer: output.explorer, authorizes: output.authorizes });
             if (output.cryptography !== (changed ? 'invalid' : 'valid') || output.authorizes !== false || output.explorer !== 'unavailable')
               throw new Error('Real verification or trust separation failed');
+            if (record.prepareMs > budgets.prepareMs || record.verifyMs > budgets.verifyMs[key] ||
+                record.peakObservedLinearMemoryBytes > budgets.linearMemoryBytes)
+              throw new Error('Verification regression budget exceeded');
             console.info(`qp-feasibility: ${key} ${label} ${Math.round(record.verifyMs)}ms ${record.peakObservedLinearMemoryBytes} bytes`);
             return record;
           }
@@ -161,7 +189,7 @@ try {
             const warm = await verify(api, 'repeat');
             // Linear-memory pages cannot shrink. Bound retained high-water growth
             // across identical operations; 16MiB allows allocator page rounding.
-            if (warm.peakObservedLinearMemoryBytes > cold.peakObservedLinearMemoryBytes + 16 * 1024 * 1024)
+            if (warm.peakObservedLinearMemoryBytes > cold.peakObservedLinearMemoryBytes + budgets.repeatGrowthBytes)
               throw new Error('Linear memory grows across repeated identical verification');
             await verify(api, 'changed-proof', true);
             const reset = await api.send('reset').result;
@@ -177,9 +205,18 @@ try {
             if (ticks <= ticksBefore + 3 || api.late()) throw new Error('Main thread froze or terminated worker delivered a response');
             records.push({ label: 'hard-cancel', cancellationObservationMs: performance.now() - cancelStart,
               heartbeatTicksDuringComputeAndCancel: ticks - ticksBefore, lateResponses: api.late() });
+            if (performance.now() - cancelStart > budgets.cancellationSettleMs) throw new Error('Cancellation regression budget exceeded');
             api = await initialize();
             await verify(api, 'fresh-after-cancel'); api.terminate();
-            if (maximumGap > 2000 || ticks < 10) throw new Error('Main thread responsiveness gate failed');
+            api = await initialize(true);
+            let memoryFailure;
+            try { await verify(api, 'controlled-low-memory'); }
+            catch (error) { memoryFailure = { name: error.name, message: error.message, linearMemoryBytes: error.linearMemoryBytes ?? null }; }
+            if (!memoryFailure || !/alloc|memory|trap|WorkerResetError/i.test(memoryFailure.message))
+              throw new Error('Controlled low-memory fixture did not fail at its expected allocation boundary');
+            records.push({ label: 'controlled-low-memory-failure', ...memoryFailure }); api.terminate();
+            api = await initialize(); await verify(api, 'fresh-after-low-memory'); api.terminate();
+            if (maximumGap > budgets.heartbeatGapMs || ticks < 10) throw new Error('Main thread responsiveness gate failed');
             return { key, status: 'passed', records, heartbeat: { intervalMs: 20, ticks, maximumGapMs: maximumGap },
               memoryScope: 'Observed linear-memory high-water allocation; no claim about process RSS/JS heap' };
           } catch (error) {
