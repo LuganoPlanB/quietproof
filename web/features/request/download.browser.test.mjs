@@ -54,7 +54,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
         assert.equal(wasmFetches, 0);
         await page.getByLabel('Bitcoin addresses').fill(fixtures.mainnet.p2wpkh);
         await page.getByRole('button', { name: 'Look up outputs', exact: true }).click();
-        await page.getByRole('checkbox').check();
+        await page.locator('.quietproof-claims').getByRole('checkbox').check();
         await page.getByLabel('Intended verifier').fill('Example auditor');
         await page.getByLabel('Message (optional').fill('Public fixture control');
         await page.addStyleTag({ content: `html { font-size: ${16 * scale / 100}px !important; } .quietproof-request { font-size: ${16 * scale / 100}px !important; line-height: 1.6; }` });

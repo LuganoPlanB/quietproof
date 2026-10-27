@@ -6,6 +6,12 @@ canonical request bytes in the existing WASM worker. Public lookup uses the prov
 `setupProvider` entry and disposes it on input/network changes and unmount.
 Construction and editing perform no explorer fetch.
 
+The optional [local history feature](../history/README.md) keeps canonical
+requests only after opt-in, with an explicit save action for an existing preview.
+Saved requests can be explicitly selected on `/verify` after external proving.
+History is unencrypted, bounded and local to one browser profile/origin; deleting
+or clearing it cancels pending work and never establishes global replay policy.
+
 Build the reactor using [the build guide](../../../docs/wasm-build.md), then stage
 that generated artifact for the existing static site (it is excluded from Git):
 
