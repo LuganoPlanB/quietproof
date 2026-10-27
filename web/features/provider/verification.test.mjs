@@ -41,6 +41,23 @@ test('offline cryptography remains possible without explorer requests', async ()
   const result = await h.run({ online: false });
   assert.equal(result.cryptography, 'valid'); assert.equal(result.explorer, 'unavailable'); assert.equal(h.requests.length, 0);
 });
+test('progress reports actual ordered stages and exposes no mutable proof context', async () => {
+  const h = harness(), phases = [];
+  await h.run({ onProgress: event => {
+    assert.equal(Object.isFrozen(event), true);
+    assert.equal(event.manifest, undefined); assert.equal(event.phaseToken, undefined);
+    if (event.phase === 'fetching' || event.phase === 'evaluating') assert.equal(event.cryptography, 'valid');
+    phases.push(event.phase);
+  } });
+  assert.deepEqual(phases, ['initializing','preparing','verifying','fetching','evaluating']);
+});
+test('cancellation from a progress callback prevents later stages and explorer fetch', async () => {
+  const h = harness(), controller = new AbortController();
+  await assert.rejects(h.run({ signal: controller.signal, onProgress: event => {
+    if (event.phase === 'verifying') controller.abort();
+  } }), { code: 'aborted' });
+  assert.equal(h.requests.length, 0); assert.ok(h.workers[0].terminated);
+});
 for (const [name, options, expected, reason] of [
   ['spent', { respond: url => url.includes('/outspend/') ? new Response(JSON.stringify({ spent: true, txid: '78'.repeat(32), vin: 0, status: { confirmed: false } })) : undefined }, 'reported_spent'],
   ['missing transaction', { respond: url => url.endsWith(`/tx/${fixtures.txid}`) ? new Response('', { status: 404 }) : undefined }, 'inconclusive', 'http_404'],

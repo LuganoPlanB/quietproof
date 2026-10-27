@@ -25,6 +25,23 @@ self.onmessage = async ({ data }) => {
       if (!reactor) throw new Error('Worker is not initialized.');
       const metadata = reactor.inspect(data.bytes, data.type === 'inspectProof');
       self.postMessage({ id, type: 'result', metadata }, [metadata.requestBytes]);
+    } else if (data.type === 'inspectProofInput') {
+      if (!reactor) throw new Error('Worker is not initialized.');
+      operation = undefined; reactor.reset();
+      // Inspection never establishes proof validity. The transferred proof stays
+      // in this worker for both steps; no large copy returns to the UI.
+      const metadata = reactor.inspect(data.bytes, true);
+      let binding = 'not_checked';
+      if (data.policy) {
+        try {
+          if (data.policy.expectedRequest) reactor.inspect(data.policy.expectedRequest, false);
+          binding = reactor.prepare(data.bytes, data.policy).policy;
+        } catch (error) {
+          if (error.name === 'WorkerResetError') throw error;
+          binding = error.name === 'UnsupportedError' ? 'unsupported' : 'rejected';
+        } finally { reactor.reset(); }
+      }
+      self.postMessage({ id, type: 'result', metadata, binding }, [metadata.requestBytes]);
     } else if (data.type === 'prepare') {
       if (!reactor) throw new Error('Worker is not initialized.');
       operation = undefined;

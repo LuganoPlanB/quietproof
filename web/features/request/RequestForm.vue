@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { setupProvider } from '../provider/discovery.mjs';
 import { lookupError, selectionSummary, validateForm } from './form.mjs';
 import { setupRequest, setupDownload } from './download.mjs';
+import LocalHistory from '../history/LocalHistory.vue';
 
 const props = defineProps({ wasmUrl: { type: String, required: true } });
 
@@ -12,6 +13,7 @@ const state = ref('idle'), error = ref(''), provider = ref(null), now = ref(Date
 let adapter, generation = 0, timer;
 let requestTools, download, requestGeneration = 0;
 const requestState = ref('idle'), requestError = ref(''), preview = ref(null), artifact = ref(null);
+const history = ref(null);
 function invalidateRequest() {
   requestGeneration++; requestTools?.cancel(); download?.clear();
   preview.value = null; artifact.value = null; requestState.value = 'idle'; requestError.value = '';
@@ -59,11 +61,14 @@ async function createRequest() {
   invalidateRequest();
   const operation = requestGeneration;
   try {
+    const ticket = await history.value?.ticket();
+    if (operation !== requestGeneration) return;
     validateForm(options.value); requestState.value = 'creating';
     const result = await requestTools.create(options.value);
     if (operation !== requestGeneration) return;
     preview.value = result; artifact.value = download.replace(result.bytes, result.metadata);
     requestState.value = 'ready';
+    if (ticket) await history.value?.saveRequest(result.bytes, result.metadata, ticket);
   } catch (e) {
     if (operation !== requestGeneration) return;
     requestState.value = e.name === 'AbortError' ? 'cancelled' : 'error';
@@ -71,12 +76,18 @@ async function createRequest() {
   }
 }
 function cancelRequest() { invalidateRequest(); requestState.value = 'cancelled'; }
+async function saveRequest() {
+  const operation = requestGeneration, current = preview.value;
+  const ticket = await history.value?.ticket();
+  if (current && operation === requestGeneration) await history.value?.saveRequest(current.bytes, current.metadata, ticket);
+}
 </script>
 
 <template>
   <section class="quietproof-request" aria-label="Create a request">
     <p>Choose disclosed Bitcoin outputs to request proof of spend-key control. Proving happens in the external CLI or a wallet; keep private keys there.</p>
-    <p>This static tool has no authoritative challenge service. A proof does not establish exclusive control, ownership, reserves or solvency.</p>
+    <p>This static tool has no authoritative challenge service. A proof does not establish exclusive control, ownership, reserves or solvency. Key access may be shared or temporary.</p>
+    <LocalHistory ref="history" @reset="invalidateRequest" />
     <form @submit.prevent="lookup">
       <fieldset>
         <legend>1. Find outputs</legend>
@@ -147,6 +158,7 @@ function cancelRequest() { invalidateRequest(); requestState.value = 'cancelled'
       </ul>
       <p v-if="requestExpired" role="status">This request has expired according to your device clock. Regenerate it before sending it to a prover.</p>
       <a v-else-if="artifact" class="quietproof-download" :href="artifact.url" :download="artifact.filename">Download .qpr request</a>
+      <button type="button" @click="saveRequest">Save this request locally (opt-in required)</button>
       <h3>Prove outside the browser</h3>
       <p>Send this request to the prover through your chosen channel. On the prover’s machine, inspect it and use the existing CLI with protected key input or a supported wallet. Private keys stay outside this page.</p>
       <pre><code>quietproof inspect {{ artifact?.filename }}

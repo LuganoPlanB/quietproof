@@ -21,9 +21,10 @@ export function createVerification({ provider, config, fetcher, timeoutMs, worke
   let active, disposed = false, generation = 0;
   const dispose = () => { disposed = true; active?.abort('superseded'); };
 
-  async function verify({ proof, wasmBytes, policy, signal, online = true } = {}) {
+  async function verify({ proof, wasmBytes, policy, signal, online = true, onProgress } = {}) {
     if (disposed) fail('disposed_provider');
     if (typeof online !== 'boolean') fail('invalid_mode');
+    if (onProgress !== undefined && typeof onProgress !== 'function') fail('invalid_progress');
     if (!(proof instanceof ArrayBuffer) || !proof.byteLength || proof.byteLength > MAX_ENVELOPE_BYTES ||
         !(wasmBytes instanceof ArrayBuffer) || !wasmBytes.byteLength || wasmBytes.byteLength > 128 * 1024 * 1024)
       fail('invalid_binary');
@@ -41,6 +42,12 @@ export function createVerification({ provider, config, fetcher, timeoutMs, worke
     const check = () => {
       if (controller.signal.aborted || currentGeneration !== generation || disposed)
         fail(controller.signal.reason === 'superseded' || disposed ? 'superseded' : 'aborted');
+    };
+    const progress = (phase, result = {}) => {
+      check();
+      onProgress?.(Object.freeze({ phase, cryptography: result.cryptography ?? 'not_checked',
+        policy: result.policy ?? 'not_checked', expiresAt: result.manifest?.expiresAt ?? null }));
+      check();
     };
     let worker, sequence = 0;
     // This bounds an unresponsive worker, including synchronous verification.
@@ -71,11 +78,13 @@ export function createVerification({ provider, config, fetcher, timeoutMs, worke
     }
     let operation;
     try {
-      check(); worker = workerFactory();
+      progress('initializing'); worker = workerFactory();
       const ready = await call('initialize', { bytes: owned.wasmBytes }, [owned.wasmBytes]);
       if (ready.type !== 'ready' || ready.abiVersion !== 2) fail('invalid_worker');
+      progress('preparing');
       const prepared = await call('prepare', { bytes: owned.proof, policy: expected }, [owned.proof]);
       if (prepared.phase !== 'prepared' || prepared.policy !== 'matched' || prepared.cryptography !== 'not_checked') fail('invalid_worker');
+      progress('verifying', prepared);
       const verified = await call('verify', { operationId: prepared.operationId, phaseToken: prepared.phaseToken });
       check();
       if (verified.policy !== 'matched' || verified.authorizes !== false) fail('invalid_worker');
@@ -93,6 +102,7 @@ export function createVerification({ provider, config, fetcher, timeoutMs, worke
         const id = `${claim.txid}:${claim.vout}`; if (seen.has(id)) fail('invalid_manifest'); seen.add(id);
       }
       if (!online) return freeze({ ...verified, explorer: 'unavailable', provenance: null });
+      progress('fetching', verified);
       operation = createOperation(config, fetcher, timeoutMs, controller.signal, true);
       const { get } = operation;
       const provenance = { provider: provider.endpoint, network: provider.network, trust: provider.trust,
@@ -173,11 +183,12 @@ export function createVerification({ provider, config, fetcher, timeoutMs, worke
         return freeze({ ...verified, explorer: 'unavailable', provenance, providerError: error.code ?? 'invalid_observation' });
       }
       check();
+      progress('evaluating', verified);
       const evaluated = await call('evaluate', { operationId: verified.operationId, phaseToken: verified.phaseToken, evidence });
       check();
       if (evaluated.phase !== 'finished' || evaluated.cryptography !== 'valid' || evaluated.authorizes !== false ||
           !['reported_unspent', 'reported_spent', 'inconclusive'].includes(evaluated.explorer)) fail('invalid_worker');
-      return freeze({ ...evaluated, provenance });
+      return freeze({ ...evaluated, manifest: verified.manifest, provenance });
     } finally {
       operation?.close(); worker?.terminate(); clearTimeout(timer);
       signal?.removeEventListener('abort', cancel); if (active === controller) active = undefined;

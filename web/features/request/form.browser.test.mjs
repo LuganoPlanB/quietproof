@@ -51,7 +51,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
         mode = 'empty'; release(); await page.getByText('No unspent outputs reported for these addresses.', { exact: true }).waitFor(); await capture('empty');
         mode = 'error'; await lookup.click(); await page.getByRole('alert').waitFor(); await capture('error');
         mode = 'success'; await lookup.click(); await page.getByText('17 outputs reported. Select the outputs to disclose.', { exact: true }).waitFor();
-        const boxes = page.getByRole('checkbox'); assert.equal(await boxes.count(), 17);
+        const boxes = page.locator('.quietproof-claims').getByRole('checkbox'); assert.equal(await boxes.count(), 17);
         await boxes.nth(0).focus(); await page.keyboard.press('Space');
         for (let i = 1; i < 16; i++) await boxes.nth(i).check();
         assert.equal(await boxes.nth(16).isDisabled(), true);

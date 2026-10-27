@@ -47,9 +47,9 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
           await page.getByLabel('Bitcoin addresses').fill(workflow.claims.map(c => c.address).join('\n'));
           assert.equal(requests.length, 0);
           await page.getByRole('button', { name: 'Look up outputs', exact: true }).click();
-          await page.getByRole('checkbox').first().waitFor();
-          for (const checkbox of await page.getByRole('checkbox').all()) await checkbox.check();
-          assert.equal(await page.getByRole('checkbox').count(), workflow.claims.length);
+          await page.locator('.quietproof-claims').getByRole('checkbox').first().waitFor();
+          for (const checkbox of await page.locator('.quietproof-claims').getByRole('checkbox').all()) await checkbox.check();
+          assert.equal(await page.locator('.quietproof-claims').getByRole('checkbox').count(), workflow.claims.length);
           await page.getByLabel('Intended verifier').fill('workflow.example');
           await page.getByLabel('Purpose', { exact: true }).selectOption('proof-of-funds');
           await page.getByLabel('Message (optional').fill('Public disposable request interoperability');
