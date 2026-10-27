@@ -101,6 +101,15 @@ recorded before UI work proceeds.
 
 ## Recorded qualification and release gate
 
+The table below preserves the initial feasibility observations. See
+[current browser resource qualification](./performance#browser-resource-boundary)
+for the hardened loader/CSP measurements, regression budgets, controlled
+allocation-failure recovery and automated accessibility coverage. The current
+runner additionally exercises a test-only 512 MiB memory ceiling and recovery
+with the unchanged production module. Set `QUIETPROOF_FEASIBILITY_SITE` to a
+built static site directory to run beneath its generated CSP and shared asset
+loader. Test-only memory ceilings never change production proof parameters.
+
 The measured Linux x86-64 runner reports an AMD Ryzen 7 PRO 8700GE CPU, sixteen
 logical CPUs and 66,422,718,464 bytes of host RAM. These results do not qualify
 low-memory or mobile hardware. The module is 1,712,288 bytes raw, 460,608 bytes

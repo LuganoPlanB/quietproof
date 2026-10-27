@@ -1,5 +1,6 @@
 import { MAX_ENVELOPE_BYTES, encodePolicy } from '../../wasm/codec.mjs';
 import { setupProvider } from '../provider/discovery.mjs';
+import { loadWasmAsset } from '../../wasm/asset.mjs';
 
 export function preflight(file, kind) {
   const maximum = kind === 'proof' ? MAX_ENVELOPE_BYTES : 4096;
@@ -33,7 +34,7 @@ export function expectedPolicy(options, expectedRequest) {
 
 // Each import owns a fresh worker and bounded asset stream. File bytes are
 // transferred, never encoded as JSON or copied back to the main thread.
-export function setupProofInput({ wasmUrl, fetch: fetcher = globalThis.fetch,
+export function setupProofInput({ wasmUrl = '/wasm/quietproof.wasm', fetch: fetcher = globalThis.fetch,
   workerFactory = () => new Worker(new URL('../../wasm/worker.mjs', import.meta.url), { type: 'module' }),
   timeoutMs = 60000, verificationTimeoutMs = 300000, providerFactory = setupProvider } = {}) {
   let active, disposed = false;
@@ -79,27 +80,11 @@ export function setupProofInput({ wasmUrl, fetch: fetcher = globalThis.fetch,
       check(); const policy = expectedPolicy(selected, requestBytes);
       const bytes = await readFile(proof); check();
       if (!(bytes instanceof ArrayBuffer) || bytes.byteLength !== proof.size) throw new Error('Proof read failed.');
-      const response = await fetcher(wasmUrl, { signal: controller.signal, credentials: 'omit' }); check();
-      const maximum = 8 * 1024 * 1024;
-      if (!response.ok || Number(response.headers.get('content-length')) > maximum) throw new Error('Could not load proof tools.');
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('This browser cannot load proof tools.');
-      const chunks = []; let size = 0;
-      try {
-        while (true) {
-          const { done, value } = await reader.read(); check();
-          if (done) break;
-          size += value.byteLength;
-          if (size > maximum) throw new Error('Proof tools exceed the supported download size.');
-          chunks.push(value);
-        }
-      } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
-      const wasm = new Uint8Array(size); let offset = 0;
-      for (const chunk of chunks) { wasm.set(chunk, offset); offset += chunk.byteLength; }
+      const wasm = await loadWasmAsset(wasmUrl, { fetch: fetcher, signal: controller.signal, check, label: 'proof' });
       if (verifying) {
         check();
         adapter = providerFactory({ network: selectedNetwork, workerFactory });
-        const outcome = await adapter.verify({ proof: bytes, wasmBytes: wasm.buffer,
+        const outcome = await adapter.verify({ proof: bytes, wasmBytes: wasm,
           policy: { ...policy, provider: online ? adapter.provider.endpoint : '' },
           signal: controller.signal, online, onProgress: event => { check(); onProgress?.(event); } });
         check();
@@ -115,7 +100,7 @@ export function setupProofInput({ wasmUrl, fetch: fetcher = globalThis.fetch,
         else current.resolve(data);
       };
       worker.onerror = event => { event.preventDefault?.(); pending?.reject(new Error('Proof tools stopped. Retry with a supported browser.')); pending = undefined; };
-      await call('initialize', { bytes: wasm.buffer }, [wasm.buffer]);
+      await call('initialize', { bytes: wasm }, [wasm]);
       const transfer = requestBytes ? [bytes, requestBytes] : [bytes];
       const result = await call('inspectProofInput', { bytes, policy }, transfer); check();
       if (result.metadata?.verified !== false) throw new Error('Invalid inspection response.');

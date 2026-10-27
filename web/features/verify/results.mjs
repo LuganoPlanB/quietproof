@@ -7,7 +7,7 @@ export function failureResult(error, progress = {}) {
   const reasons = {
     policy_rejected: 'The expected request or policy was rejected, or its device-clock validity window expired. Choose the correct expectations or request a fresh proof.',
     invalid_manifest: 'The verified proof does not match the independently selected verification network or supported claim format.',
-    verification_failed: 'Proof verification could not finish. The proof may be malformed or use an unsupported circuit, or this browser may lack resources.',
+    verification_failed: 'Proof verification could not finish. The proof may be malformed or use an unsupported circuit, or this browser may lack resources. Retry on a supported desktop with more available memory.',
     worker_failed: 'The verification worker stopped. Retry, or use a supported browser with more memory.',
     timeout: 'Verification reached its time limit. Retry on a supported device.',
   };
