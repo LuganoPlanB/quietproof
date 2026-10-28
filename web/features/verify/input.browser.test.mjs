@@ -31,7 +31,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
         let explorers = 0, stalled = false, release;
         try {
         await page.route('https://blockstream.info/**', route => { explorers++; return route.abort(); });
-        await page.route('**/wasm/quietproof.wasm', async route => {
+        await page.route(/\/(?:wasm\/quietproof|assets\/quietproof\.[a-f0-9]{64})\.wasm$/, async route => {
           if (stalled) await new Promise(r => { release = r; });
           await route.continue().catch(() => {});
         });

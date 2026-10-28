@@ -15,47 +15,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  configure:
+    runs-on: ubuntu-24.04
+    outputs:
+      base: ${{ steps.pages.outputs.base_path }}/
     steps:
-      - name: Check out QuietProof
-        uses: actions/checkout@v7
-        with:
-          path: quietproof
-          fetch-depth: 0
-
-      - name: Check out the Plan B Vite theme
-        uses: actions/checkout@v7
-        with:
-          repository: LuganoPlanB/vite-theme
-          ref: a7fde3404a5e2b32bf57b4bcb99337479c5c75b2
-          path: vite-theme
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: quietproof/package-lock.json
-
       - name: Configure GitHub Pages
         id: pages
         uses: actions/configure-pages@v5
-
-      - name: Install dependencies
-        run: npm ci
-        working-directory: quietproof
-
-      - name: Test documentation
-        run: npm run test:site
-        working-directory: quietproof
-
-      - name: Build website
-        run: npm run docs:build
-        working-directory: quietproof
-        env:
-          DOCS_BASE: "${{ steps.pages.outputs.base_path }}/"
-
+  qualify:
+    needs: configure
+    uses: ./.github/workflows/test.yml
+    with:
+      docs_base: ${{ needs.configure.outputs.base }}
+  build:
+    needs: qualify
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download the exact qualified static artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: quietproof-static
+          path: quietproof/docs/.vitepress/dist
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:

@@ -5,7 +5,10 @@ description: A bounded custody-attestation workflow using fresh QuietProof chall
 
 # Auditor workflow
 
-This workflow demonstrates current key knowledge for a disclosed set of native P2WPKH outputs. It is not a complete proof of reserves or solvency.
+This workflow demonstrates current key knowledge for disclosed native P2WPKH
+or compressed-key P2PKH outputs. It is not a complete proof of reserves or solvency.
+The [browser handoff](./browser-tool) and native Core-backed verifier have
+different chain-evidence and replay boundaries; choose one explicitly.
 
 ## Define the claim before asking for a proof
 
@@ -30,7 +33,18 @@ The custodian should inspect the canonical request before proving. If any claim,
 
 ## Verify independently
 
-Verification should run with a fully validated Bitcoin Core node on the expected network, an absolute `bitcoin-cli` path, resource limits, and an owner-only atomic nonce store.
+For native Core-backed verification, use a trusted fully validated node on the
+expected network, independent expected metadata/policy, resource limits and an
+owner-only atomic nonce store. Native RPC is the default; `bitcoin-cli` is only
+an explicitly selected deprecated compatibility path.
+
+For the static browser verifier, retain your own expected `.qpr` or choose an
+independent explicit context. Read crypto, policy and explorer results
+separately. The pinned explorer is trusted and its observations are non-atomic;
+the browser does not authenticate a chain snapshot or authorize acceptance.
+Device time and editable origin-local history do not provide a durable global
+nonce store. A separate integration must provide any authoritative acceptance
+and replay enforcement the engagement requires.
 
 Record non-authorization outcomes rather than trying to reinterpret them. `state_inconclusive`, `stale_snapshot`, `spent_at_snapshot`, `unsupported`, `bridge_rejected`, and every parse or proof failure must fail closed.
 
@@ -39,6 +53,13 @@ Record non-authorization outcomes rather than trying to reinterpret them. `state
 A supported conclusion is:
 
 > At the recorded time, the custodian answered the auditor’s fresh challenge with a valid QuietProof for the disclosed P2WPKH programs, and the selected Bitcoin provider confirmed the stated current output evidence under the recorded policy.
+
+That chain-evidence conclusion requires the native/integrated provider profile.
+For the browser profile, record the narrower observation: local cryptography
+and independently chosen policy passed, and the named explorer reported the
+listed outputs unspent within the recorded observation window. Preserve the
+explorer's trust/non-atomic limitation; this is not strict current or historical
+chain validity.
 
 Unsupported conclusions include:
 

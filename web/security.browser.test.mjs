@@ -40,7 +40,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
         return url.endsWith('/block-height/0') ? route.fulfill({ body: fixtures.mainnet.genesis })
           : route.fulfill({ json: url.endsWith('/utxo') ? fixture.utxos : fixture.tx });
       });
-      await page.route('**/wasm/quietproof.wasm', route => assetMode === 'missing'
+      await page.route(/\/(?:wasm\/quietproof|assets\/quietproof\.[a-f0-9]{64})\.wasm$/, route => assetMode === 'missing'
         ? route.fulfill({ status: 404, body: 'missing' }) : assetMode === 'corrupt'
           ? route.fulfill({ body: Buffer.from([0, 1, 2, 3]), contentType: 'application/wasm' }) : route.continue());
       await page.goto(origin + base + '/tool');
@@ -52,7 +52,10 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
       assert.match(csp, /script-src 'self' 'wasm-unsafe-eval' 'sha256-/);
       assert(!csp.includes("'unsafe-eval'"));
       assert.match(csp, /worker-src 'self'/);
-      const wasmResponse = await page.request.get(origin + base + '/wasm/quietproof.wasm');
+      const manifest = await (await page.request.get(origin + base + '/asset-manifest.json')).json();
+      const wasmPath = Object.keys(manifest).find(path => /^assets\/quietproof\.[a-f0-9]{64}\.wasm$/.test(path));
+      assert(wasmPath, 'one SHA256-named reactor is packaged');
+      const wasmResponse = await page.request.get(origin + base + '/' + wasmPath);
       assert.equal(wasmResponse.status(), 200); assert.match(wasmResponse.headers()['content-type'], /application\/wasm/);
       await page.getByLabel('Bitcoin addresses').fill(fixtures.mainnet.p2wpkh);
       await lookup.click(); await page.locator('.quietproof-claims').getByRole('checkbox').check();

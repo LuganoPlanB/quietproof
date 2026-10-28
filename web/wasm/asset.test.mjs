@@ -45,3 +45,13 @@ test('static CSP precedes resources and authorizes exact inline build scripts', 
   assert(!html.includes("script-src 'unsafe-inline'")); assert(!html.includes("'unsafe-eval'"));
   assert(!html.includes('frame-ancestors')); // Header-only directive, never claim meta support.
 });
+
+test('hashed reactor bytes reject stale CDN/cache substitutions independently of MIME', async () => {
+  const bytes = new Uint8Array([0, 97, 115, 109]);
+  const digest = createHash('sha256').update(bytes).digest('hex');
+  const url = `/assets/quietproof.${digest}.wasm`;
+  const load = body => loadWasmAsset(url, { check() {}, label: 'proof',
+    fetch: async () => new Response(body, { headers: { 'content-type': 'text/plain' } }) });
+  assert.deepEqual(new Uint8Array(await load(bytes)), bytes, 'bounded fetch works with a generic MIME host');
+  await assert.rejects(load(new Uint8Array([0, 97, 115, 110])), /version mismatch/);
+});

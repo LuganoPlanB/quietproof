@@ -7,6 +7,11 @@ description: The challenge, proof, chain check, and decision flow in practical t
 
 There are four stages. Keeping them separate prevents a valid cryptographic proof from being mistaken for a complete business authorization.
 
+The [browser guide](./browser-tool) applies these stages to a static public
+request and verifier. The commands below describe the native Core-backed
+profile; its durable nonce and chain-evidence checks are not supplied by local
+browser history or public explorer reports.
+
 ## Before the exchange
 
 The verifier identifies the disclosed Bitcoin outputs it expects to check. For every output it needs:
@@ -81,7 +86,7 @@ A complete verification checks several independent layers:
 
 ```sh
 ./quietproof verify proof.qpf \
-  --bitcoin-cli /usr/bin/bitcoin-cli \
+  --network signet \
   --verifier auditor.example \
   --purpose proof-of-funds \
   --nonce-store ./consumed-nonces \
@@ -90,11 +95,17 @@ A complete verification checks several independent layers:
   --max-lifetime 300
 ```
 
-The `bitcoin-cli` path must be absolute. The bundled provider selects the proof’s network explicitly and rejects a node reporting a different chain.
+Native RPC uses the selected trusted Core node and rejects a different chain.
+An absolute `--bitcoin-cli` path selects the deprecated compatibility backend
+explicitly; it is not required for the ordinary native flow.
 
 ## 4. The application decides
 
 Production integrations should fail closed for every outcome except `valid_current` or an explicitly supported `valid_historical` result.
+
+Those are native/integrated-provider outcomes. The static browser tool always
+leaves acceptance to a separate application and reports explorer observations
+without upgrading them to either strict outcome.
 
 Even then, the application has learned current challenge-bound key knowledge plus the selected chain evidence. It has not learned exclusive ownership, solvency, identity, or that funds are locked.
 

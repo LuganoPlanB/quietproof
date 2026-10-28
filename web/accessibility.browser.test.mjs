@@ -58,8 +58,18 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
         return url.endsWith('/block-height/0') ? route.fulfill({ body: fixtures.mainnet.genesis })
           : route.fulfill({ json: url.endsWith('/utxo') ? fixture.utxos : fixture.tx });
       });
-      await page.route('**/wasm/quietproof.wasm', route => lowMemory
-        ? route.fulfill({ body: Buffer.from(capped), contentType: 'application/wasm' }) : route.continue());
+      // Inject the allocation ceiling at the worker's initialization boundary.
+      // Production asset integrity remains enabled and checks the original bytes.
+      await page.route(/\/assets\/worker-[^/]+\.js$/, async route => {
+        if (!lowMemory) return route.continue();
+        const response = await route.fetch();
+        const prefix = `const ceiling = Uint8Array.from(atob('${Buffer.from(capped).toString('base64')}'), c => c.charCodeAt(0));\n`;
+        const suffix = `\nconst original = self.onmessage; self.onmessage = event => {
+          if (event.data.type === 'initialize') event.data.bytes = ceiling.buffer.slice(0);
+          return original(event);
+        };`;
+        return route.fulfill({ response, body: prefix + await response.text() + suffix });
+      });
       async function capture(state, feature, detail) {
         for (const [width,height] of [[390,844],[1440,900]]) for (const scale of [100,200]) {
           await page.setViewportSize({ width,height });

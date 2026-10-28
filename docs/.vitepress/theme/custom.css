@@ -90,6 +90,64 @@ body {
   border-top-color: color-mix(in srgb, var(--planb-color-accent) 24%, transparent);
 }
 
+/* Preserve the default 16px typography while allowing enlarged text to reflow.
+   Fixed pixel line boxes from the base theme otherwise overlap at 200%. */
+.vp-doc {
+  line-height: 1.5;
+}
+
+.vp-doc p {
+  line-height: 1.75;
+}
+
+.vp-doc p,
+.vp-doc summary,
+.vp-doc ul,
+.vp-doc ol {
+  margin-block: 1rem;
+}
+
+.vp-doc li + li {
+  margin-top: 0.5rem;
+}
+
+.vp-doc h2 {
+  margin-block: 3rem 1rem;
+  padding-top: 1.5rem;
+  font-size: 1.5rem;
+  line-height: calc(4 / 3);
+}
+
+.vp-doc h3 {
+  margin-top: 2rem;
+  font-size: 1.25rem;
+  line-height: 1.4;
+}
+
+.vp-doc h4 {
+  margin-top: 1.5rem;
+  font-size: 1.125rem;
+  line-height: calc(4 / 3);
+}
+
+.vp-doc th,
+.vp-doc td {
+  padding: 0.5rem 1rem;
+  font-size: 0.875em;
+  line-height: calc(12 / 7);
+}
+
+.vp-doc :not(pre) > code {
+  padding: 0.1875rem 0.375rem;
+  overflow-wrap: anywhere;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.vp-doc .custom-block p {
+  line-height: 1.5;
+}
+
 .vp-doc p,
 .vp-doc li {
   text-wrap: pretty;

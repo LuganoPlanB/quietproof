@@ -38,5 +38,12 @@ export async function loadWasmAsset(value, { fetch: fetcher, signal, check, labe
   if (!size) throw new Error(`Could not load ${label} tools.`);
   const wasm = new Uint8Array(size); let offset = 0;
   for (const chunk of chunks) { wasm.set(chunk, offset); offset += chunk.byteLength; }
+  const digest = /\/quietproof\.([a-f0-9]{64})\.wasm$/.exec(expected.pathname)?.[1];
+  if (digest) {
+    const actual = Array.from(new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', wasm)),
+      byte => byte.toString(16).padStart(2, '0')).join('');
+    check();
+    if (actual !== digest) throw new Error('WASM asset version mismatch. Reload the site and retry.');
+  }
   return wasm.buffer;
 }

@@ -12,23 +12,25 @@ Saved requests can be explicitly selected on `/verify` after external proving.
 History is unencrypted, bounded and local to one browser profile/origin; deleting
 or clearing it cancels pending work and never establishes global replay policy.
 
-Build the reactor using [the build guide](../../../docs/wasm-build.md), then stage
-that generated artifact for the existing static site (it is excluded from Git):
+Build the reactor using [the build guide](../../../docs/wasm-build.md), then
+select that generated artifact explicitly for a source preview:
 
 ```sh
-install -D ../.gestalt/quietproof-wasi/quietproof-build/quietproof.wasm docs/public/wasm/quietproof.wasm
+QUIETPROOF_WASM=/path/to/qualified-build/quietproof-build/quietproof.wasm npm run docs:build
+npm run docs:preview -- --host 127.0.0.1 --port 4174 --strictPort
 ```
 
-The tool resolves this path under the configured VitePress base. No reactor is
+The build emits a SHA256-named asset under the configured VitePress base. No reactor is
 loaded until explicit request creation. A missing, invalid or unsupported asset
-fails without a downloadable artifact. Production packaging is a separate
-delivery gate.
+fails without a downloadable artifact. Complete source/license/provenance
+packaging uses `scripts/build_static.py` per the guide; copying a fixed
+`docs/public/wasm/quietproof.wasm` is not production packaging.
 
-For the built artifact, run `npm run docs:build` before `npm run docs:preview`.
 Restart the preview after rebuilding so its hashed asset mapping stays current.
 
-From the repository root, start `npm run docs:dev -- --host 127.0.0.1 --port 4174`.
-In another terminal run:
+For source development only, use `QUIETPROOF_WASM=... npm run docs:dev -- --host
+127.0.0.1 --port 4174`. Production CSP checks require the built preview.
+In another terminal, from the repository root:
 
 ```sh
 node --test web/features/request/form.test.mjs
