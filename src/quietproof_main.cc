@@ -79,6 +79,7 @@ void PrintUsage(std::ostream& output) {
       << "    Native RPC is default; --bitcoin-cli /ABSOLUTE/PATH explicitly "
          "selects the deprecated legacy verifier.\n"
       << "  quietproof inspect FILE\n"
+      << "  quietproof --version\n"
       << "Claims: TXID:VOUT:SATOSHIS:PROGRAM implies p2wpkh; "
          "TXID:VOUT:SATOSHIS:SCRIPT_KIND:KEY_HASH accepts p2wpkh or p2pkh.\n"
       << "Ownership requires compressed public keys; uncompressed P2PKH is unsupported.\n"
@@ -800,6 +801,10 @@ int Inspect(const std::string& path) {
 }  // namespace
 
 int QuietProofMain(int argc, char** argv) {
+  if (argc == 2 && std::string(argv[1]) == "--version") {
+    std::cout << "QuietProof " << QUIETPROOF_VERSION << '\n';
+    return 0;
+  }
   if (argc == 2 && std::string(argv[1]) == "--help") {
     std::cout << "QuietProof — prove you control bitcoin without revealing your public key.\n";
     PrintUsage(std::cout);

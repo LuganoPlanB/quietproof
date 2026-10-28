@@ -103,6 +103,7 @@ export default defineConfig({
           { text: "Auditor workflow", link: "/guide/auditor-workflow" },
           { text: "Build and try it", link: "/guide/getting-started" },
           { text: "Operations", link: "/operations" },
+          { text: "Linux releases", link: "/releases" },
         ],
       },
       {

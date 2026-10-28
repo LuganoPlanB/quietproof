@@ -42,6 +42,11 @@ chain-evidence and durable nonce boundary.
 
 ## Build
 
+Prebuilt static Linux x86_64 binaries with native RPC support are available from
+[GitHub Releases](https://github.com/LuganoPlanB/quietproof/releases).
+See [release versioning, checksums and build instructions](docs/releases.md).
+Use `quietproof --version` to identify a binary's release.
+
 Use a C++20 compiler, CMake 3.20+, the installed
 [LongfellowZK circuit SDK](https://dyne.org/longfellow-zk) and a supported patched
 libcurl development package (API 7.62+):
