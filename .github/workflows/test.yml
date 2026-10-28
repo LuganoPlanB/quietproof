@@ -10,9 +10,13 @@ on:
       docs_base:
         type: string
         default: /
+      mode:
+        type: string
+        default: smoke
 
 permissions:
   contents: read
+  pages: read
 
 concurrency:
   group: tests-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -20,9 +24,9 @@ concurrency:
 
 jobs:
   qualification:
-    name: Native ON/OFF, WASM and focused browser smoke
+    name: ${{ inputs.mode == 'full' && 'Full proof and browser qualification' || 'Fast native, WASM and browser checks' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 240
+    timeout-minutes: ${{ inputs.mode == 'full' && 240 || 30 }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -46,6 +50,10 @@ jobs:
           node-version: 24.22.1
           cache: npm
           cache-dependency-path: quietproof/package-lock.json
+      - name: Read Pages base for the deployable main artifact
+        id: pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/configure-pages@v5
       - name: Install native build dependencies
         run: |
           sudo apt-get update
@@ -77,14 +85,15 @@ jobs:
         run: |
           npm ci
           npx playwright install --with-deps chromium webkit
-      - name: Run native, reactor and packaged browser smoke gates
+      - name: Run selected native, reactor and browser checks
         working-directory: quietproof
         env:
-          DOCS_BASE: ${{ inputs.docs_base || '/' }}
+          DOCS_BASE: ${{ steps.pages.outputs.base_path && format('{0}/', steps.pages.outputs.base_path) || inputs.docs_base || '/' }}
+          QUALIFICATION_MODE: ${{ inputs.mode || 'smoke' }}
         run: >-
           python3 scripts/qualify_static.py --sdk-source ../longfellow-zk
           --cross-work "$RUNNER_TEMP/wasm" --native-on ../native-ON --native-off ../native-OFF
-          --evidence "$RUNNER_TEMP/qualification" --base "$DOCS_BASE" --mode smoke
+          --evidence "$RUNNER_TEMP/qualification" --base "$DOCS_BASE" --mode "$QUALIFICATION_MODE"
       - name: Cross-build separation contracts
         run: >-
           python3 quietproof/tests/cmake/wasm_build_test.py --cross-work "$RUNNER_TEMP/wasm"

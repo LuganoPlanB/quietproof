@@ -1,0 +1,20 @@
+name: Full qualification
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 0'
+
+permissions:
+  contents: read
+  pages: read
+
+concurrency:
+  group: full-qualification-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  qualify:
+    uses: ./.github/workflows/test.yml
+    with:
+      mode: full

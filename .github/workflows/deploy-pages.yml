@@ -1,12 +1,20 @@
 name: Deploy website to GitHub Pages
 
 on:
-  push:
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful main-branch Tests run whose checked artifact should be deployed
+        required: true
+        type: string
 
 permissions:
   contents: read
+  actions: read
   pages: write
   id-token: write
 
@@ -15,48 +23,73 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  configure:
+  build:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-24.04
     outputs:
-      base: ${{ steps.pages.outputs.base_path }}/
+      deploy: ${{ steps.source.outputs.deploy }}
     steps:
+      - name: Verify source run and skip superseded commits
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os, subprocess
+          repository = os.environ['GITHUB_REPOSITORY']
+          run_id = os.environ['RUN_ID']
+          if not run_id.isdigit():
+              raise SystemExit('Expected a numeric Tests run ID')
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', f'repos/{repository}/{path}']))
+          run = api(f'actions/runs/{run_id}')
+          assert run['path'] == '.github/workflows/test.yml'
+          assert run['status'] == 'completed' and run['conclusion'] == 'success'
+          assert run['event'] == 'push' and run['head_branch'] == 'main'
+          assert run['head_repository']['full_name'].lower() == repository.lower()
+          current = api('git/ref/heads/main')['object']['sha']
+          deploy = run['head_sha'] == current
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'run_id={run_id}\nsha={run["head_sha"]}\ndeploy={str(deploy).lower()}\n')
+          print('Deploying checked artifact' if deploy else 'Skipping superseded main commit')
+          PYTHON
       - name: Configure GitHub Pages
         id: pages
+        if: steps.source.outputs.deploy == 'true'
         uses: actions/configure-pages@v5
-  qualify:
-    name: CI smoke checks (full local release gates are separate)
-    needs: configure
-    uses: ./.github/workflows/test.yml
-    with:
-      docs_base: ${{ needs.configure.outputs.base }}
-  build:
-    needs: qualify
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Download the exact smoke-checked static artifact
+      - uses: actions/checkout@v7
+        if: steps.source.outputs.deploy == 'true'
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+          persist-credentials: false
+      - name: Download the exact artifact from successful main CI
+        if: steps.source.outputs.deploy == 'true'
         uses: actions/download-artifact@v4
         with:
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.source.outputs.run_id }}
           name: quietproof-static
-          path: quietproof/docs/.vitepress/dist
-      - name: Report artifact qualification scope
-        run: |
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          provenance = json.loads(Path('quietproof/docs/.vitepress/dist/build-provenance.json').read_text())
-          scope = provenance['qualification']
-          assert scope['mode'] == 'smoke' and scope['status'] == 'passed'
-          assert not scope['fullBrowserSuite'] and not scope['resourceBenchmark']
-          print('CI smoke passed. Exhaustive browser/resource gates were not run here.')
-          print('Release requires separate full local evidence for the reviewed source and runtime identities.')
-          PY
-      - name: Upload GitHub Pages artifact
+          path: checked-site
+      - name: Verify artifact identity, base and qualification scope
+        if: steps.source.outputs.deploy == 'true'
+        env:
+          EXPECTED_SHA: ${{ steps.source.outputs.sha }}
+          EXPECTED_BASE: ${{ steps.pages.outputs.base_path }}/
+        run: python3 scripts/check_pages_artifact.py checked-site "$EXPECTED_SHA" "$EXPECTED_BASE"
+      - name: Upload checked GitHub Pages artifact
+        if: steps.source.outputs.deploy == 'true'
         uses: actions/upload-pages-artifact@v5
         with:
-          path: quietproof/docs/.vitepress/dist
+          path: checked-site
 
   deploy:
     needs: build
+    if: needs.build.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

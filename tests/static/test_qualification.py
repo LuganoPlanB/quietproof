@@ -82,11 +82,20 @@ class QualificationTests(unittest.TestCase):
         commands, report, provenance = self.exercise('smoke')
         self.assertEqual(report['mode'], 'smoke')
         names = {check['name'] for check in report['checks']}
-        self.assertTrue({'native-on', 'native-off', 'wasm-browser', 'provider-browser',
+        self.assertTrue({'native-on', 'native-off', 'wasm-browser-fast',
                          'units', 'site', 'packaging', 'hosting-root', 'security-root',
                          'hosting-subpath', 'security-subpath'} <= names)
         self.assertEqual({entry['name'] for entry in report['notRun']},
-                         {'fixtures', 'full-browser', 'resources'})
+                         {'native-proof-heavy', 'wasm-proof-verification', 'provider-browser',
+                          'fixtures', 'full-browser', 'resources', 'reproducibility'})
+        self.assertFalse({'wasm-browser', 'provider-browser', 'root-build-b'} & names)
+        native = next(c for c in commands if c[0] == 'ctest' and '-R' not in c)
+        self.assertEqual(native[native.index('-LE') + 1], 'proof-heavy')
+        build = commands[0]
+        self.assertIn('--target', build)
+        self.assertFalse({'pokc-test', 'quietproof-browser-verifier-test', 'quietproof-browser-fixtures'} & set(build))
+        wasm = next(c for c in commands if 'tests/wasm/browser.test.mjs' in c)
+        self.assertIn('--test-skip-pattern=^(real proof stages|browser time and phase failures)', wasm)
         self.assertTrue(all(entry['status'] == 'not_run_by_selected_mode' for entry in report['notRun']))
         self.assertFalse(any('web/exhaustive.browser.test.mjs' in command or
                              'tests/wasm/feasibility.mjs' in command for command in commands))
@@ -94,6 +103,8 @@ class QualificationTests(unittest.TestCase):
         self.assertEqual(scope['mode'], 'smoke')
         self.assertFalse(scope['fullBrowserSuite'])
         self.assertFalse(scope['resourceBenchmark'])
+        self.assertFalse(scope['nativeProofTests'])
+        self.assertFalse(scope['wasmProofVerification'])
 
     def assert_full(self, mode):
         commands, report, provenance = self.exercise(mode)
@@ -103,6 +114,12 @@ class QualificationTests(unittest.TestCase):
         self.assertTrue(any('tests/wasm/feasibility.mjs' in command for command in commands))
         self.assertTrue(provenance['qualification']['fullBrowserSuite'])
         self.assertTrue(provenance['qualification']['resourceBenchmark'])
+        self.assertTrue(provenance['qualification']['nativeProofTests'])
+        self.assertTrue(provenance['qualification']['wasmProofVerification'])
+        native = next(c for c in commands if c[0] == 'ctest' and '-R' not in c)
+        self.assertNotIn('-LE', native)
+        self.assertTrue(any('web/features/provider/verification.browser.test.mjs' in c for c in commands))
+        self.assertTrue(any(c[:3] == ['npm', 'run', 'test:wasm'] for c in commands))
 
     def test_explicit_full_selects_matrix_and_resources(self):
         self.assert_full('full')

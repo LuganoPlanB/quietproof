@@ -115,11 +115,17 @@ artifact for rollback. Hashes detect stale bytes, not a malicious deployment
 that replaces the loader itself. See [hosting/CSP limits](./browser-security).
 
 CI runs `.github/workflows/test.yml` with two compiler jobs and explicit
-`--mode smoke`. It retains native RPC ON/OFF, WASM17/provider2, unit/site/packaging,
-byte-reproducibility and focused Chromium/WebKit root/subpath hosting/security
-checks (four hosting and four security test executions), plus the build
-contracts. It omits the exhaustive `web/*.browser.test.mjs` discovery/matrix and
-resource benchmark, including their dedicated long-lived fixtures.
+`--mode smoke`. It runs native RPC ON/OFF checks excluding the `proof-heavy`
+label, 15 non-proof WASM/browser checks (the two proof-dependent tests are
+explicitly excluded), unit/site/packaging tests and focused Chromium/WebKit
+root/subpath hosting/security checks, plus build contracts. It neither builds
+proof-only native targets nor runs provider proof verification, reproducibility,
+the exhaustive browser matrix or resource benchmarks.
+
+The **Full qualification** workflow runs those expensive gates weekly on Sunday
+at 03:17 UTC, or from its **Run workflow** button. It calls `test.yml` with
+`mode: full`, as do manual Linux releases. Both the full workflow and local
+`qualify_static.py` default preserve the full gate selection.
 
 `qualification.json` records the selected mode, actual executed counts and
 `not_run_by_selected_mode` entries. Successful artifact provenance records the
