@@ -1,16 +1,13 @@
 ---
 title: Performance and portability
-description: Current proof family, measurement method, resource boundary, and supported platform.
+description: Single-key circuit, measurement method, resource boundary, and supported platform.
 ---
 
 # QuietProof v1 performance and portability
 
-PoKC has two fixed ownership circuit shapes: one or two distinct compressed-key
-hashes across P2WPKH, P2PKH or mixed claims. Typed statement v2 does not change
-the ownership circuits. A statement may contain up to 16 public claims, but
-claims sharing a fingerprint reuse its relation; more than two fingerprints are
-rejected before circuit allocation.  Four relations exceed Longfellow's CRT
-block-encoding guard and are deliberately unsupported.
+PoKC has one fixed single-key circuit for P2WPKH, P2PKH or mixed claims.
+A statement may contain up to 16 public outputs sharing that key hash.
+A second distinct key hash is rejected before circuit allocation.
 
 ## Reproducing native metrics
 
@@ -42,7 +39,7 @@ The native API requires 64-bit C++20. Record the actual configured compiler,
 flags and platform; older C++17 timing observations in the README belong to
 their recorded historical commit and explicit flags, not current CMake defaults.
 The proof-file ceiling is 134221889 bytes (128 MiB payload plus envelope),
-selected to bound allocation while admitting the supported proof family.
+selected to bound allocation while admitting the supported proof.
 Native 32-bit builds are unqualified. Browser WASM has the separate
 qualification boundary below; a generic WASM build alone does not establish
 support. Re-run the compatibility and metric checks before
@@ -79,14 +76,12 @@ context may already be warm. OS file caches and engine compilation caches are
 not forcibly purged. Repeated
 asset loads are loopback transfers, not public-internet timing measurements.
 
-Recorded 2026-10-27 with the hardened shared loader and built CSP:
+Historical single-key measurements recorded 2026-10-27 with the hardened shared loader and built CSP; these precede removal of the two-key workflow:
 
 | Engine | Keys | First verification | Same-worker repeat | Peak observed linear memory |
 | --- | --- | --- | --- | --- |
 | Chromium 149.0.7827.55 | One | 72.247 s | 69.877 s | 954,400,768 bytes |
-| Chromium 149.0.7827.55 | Two | 140.912 s | 141.197 s | 1,815,871,488 bytes |
 | WebKit 26.5 | One | 76.051 s | 73.560 s | 954,400,768 bytes |
-| WebKit 26.5 | Two | 146.923 s | 143.851 s | 1,815,871,488 bytes |
 
 Same-worker repeats observed zero linear-memory growth. Each later UI attempt
 uses a new worker instead. Transfer detachment was checked for every proof and
@@ -100,12 +95,12 @@ later fresh-worker loads were 9.7–33.6 ms and 10–13 ms respectively. Worker
 initialization ranged 3–8.9 ms and 10–46 ms; preparation ranged 10.4–37.5 ms
 and 9–72 ms. A same-worker repeat reuses its initialized module and has no
 second module load. These measurements include neither a cold OS cache nor
-public-internet latency. Fixture envelopes were 46,879,572 and 91,263,350 bytes.
+public-internet latency. Fixture envelopes were 46,879,572 bytes.
 
-Across the four qualified cases, maximum main-thread heartbeat gaps were
+Across the recorded cases, maximum main-thread heartbeat gaps were
 116.1 ms in Chromium and 48 ms in WebKit. Cancellation was observed over
 200–201 ms quiet windows with no late responses; this is not OS thread or
-memory reclamation timing. All four test-only 512 MiB ceilings produced real
+memory reclamation timing. The test-only 512 MiB ceilings produced real
 allocation/trap failures, followed by successful production-module recovery.
 The complete evidence retains original capture times and exact matching
 source/artifact/environment identities for reused Chromium cases and the
@@ -138,14 +133,14 @@ instant garbage collection or physical page reclamation by the OS.
 
 `tests/wasm/resources.mjs` sets reference-environment regression alarms:
 10 seconds each for local asset loading, initialization and preparation;
-100 seconds for one-key and 200 seconds for two-key verification; 1920 MiB
+100 seconds for single-key verification; 1920 MiB
 observed linear memory; at most 16 MiB growth across the same-worker repeat;
 2 seconds maximum main-thread heartbeat gap and cancellation settling.
-Prior browser reference maxima were 75.454/149.598 seconds for one/two keys;
+Prior browser reference maxima were 75.454 seconds for one key;
 the timing budgets allow approximately one-third headroom. The current run
 also checks these budgets. They are not an internet download SLA, minimum
 hardware promise, cryptographic parameter or global browser timeout. An initial
-60/120-second draft budget failed at a measured 72.176-second one-key check;
+60-second draft budget failed at a measured 72.176-second one-key check;
 it was corrected against browser measurements before qualification.
 
 Timing is conditional on available CPU capacity. A later WebKit recovery
@@ -166,7 +161,7 @@ OS-pressure test. It does not weaken cryptography or replace any verifier call.
 ### Reproduce qualification
 
 Build/stage the reactor using [the WASM build guide](./wasm-build), build the
-static site, and [generate current native public one/two-key fixtures](./wasm-feasibility#reproduce-the-measurements)
+static site, and [generate current native public single-key fixtures](./wasm-feasibility#reproduce-the-measurements)
 with at least one hour remaining validity. Never extend timestamps in real
 proof bytes. The feasibility runner serializes all heavy verification work:
 

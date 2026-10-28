@@ -17,12 +17,12 @@ canonical request · transcript · expiry · nonce · chain evidence
                          │
                          ▼
 CRYPTOGRAPHIC PRIMITIVE
-PoKC: ZK knowledge of one or two compressed spend keys for P2WPKH/P2PKH
+PoKC: ZK knowledge of one compressed spend key for P2WPKH/P2PKH
 ```
 
 ## PoKC relation
 
-For each distinct public 20-byte key hash `h`, the prover privately supplies a scalar `x` and proves:
+For the public 20-byte key hash `h`, the prover privately supplies a scalar `x` and proves:
 
 ```text
 x ∈ [1, n−1]
@@ -35,14 +35,13 @@ The circuit constrains scalar validity, elliptic-curve multiplication, finite no
 
 The compressed public key is internal witness data, not a public output.
 
-## Exact circuit family
+## Fixed circuit
 
-V1 compiles one-key and two-key circuit shapes. There is no inactive padded relation. The canonical count of distinct programs selects the expected circuit identity, and mismatched circuit version, digest, Ligero rate, or query count is rejected before proof acceptance.
+PoKC compiles one single-key circuit. All output claims must share its key hash. Mismatched circuit version, digest, Ligero rate, or query count is rejected before proof acceptance.
 
 | Distinct programs | Public inputs | Private inputs | Quadratic terms | Serialized circuit |
 | ---: | ---: | ---: | ---: | ---: |
 | 1 | 21 | 3,010 | 2,067,522 | 24,876,346 B |
-| 2 | 41 | 6,020 | 4,133,092 | 49,663,186 B |
 
 [Read the complete PoKC circuit documentation →](/technical/pokc)
 
@@ -72,7 +71,7 @@ The repository includes:
 
 - deterministic protocol and circuit fixtures;
 - positive and negative native tests;
-- real one- and two-key proof round trips;
+- real single-key proof round trips;
 - an independent Sage 10.6 executable mathematical oracle;
 - canonical encoding and circuit-digest anchors; and
 - a claim-by-claim security review map.

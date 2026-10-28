@@ -3,18 +3,16 @@
 This is a real-cryptography gate. `fixtures.mjs` is Node-only public fixture
 composition; no private-key or proving module is imported by the website.
 Browser inputs contain public addresses and selected outputs. Native CLI stdin
-receives only the well-known disposable scalars 1/2, outside the browser.
+receives only the well-known disposable scalar 1, outside the browser.
 
-Each required engine (Chromium/WebKit) executes ten distinct-fingerprint
+Each required engine (Chromium/WebKit) executes six single-key
 positive cases, plus two same-fingerprint mixed cases in the focused supplement:
 
 | Network | Case suffix | Keys | Statement | Claims |
 | --- | --- | --- | --- | --- |
 | mainnet and signet | `p2wpkh` | 1 | v1 | P2WPKH |
 | mainnet and signet | `p2pkh` | 1 | typed v2 | P2PKH |
-| mainnet and signet | `p2wpkh-two-key` | 2 | v1 | P2WPKH + P2WPKH |
-| mainnet and signet | `p2pkh-two-key` | 2 | typed v2 | P2PKH + P2PKH |
-| mainnet and signet | `mixed-two-key` | 2 | typed v2 | P2WPKH + P2PKH |
+| mainnet and signet | `mixed-same-key` | 1 | typed v2 | P2WPKH + P2PKH with the same fingerprint |
 | mainnet and signet | `mixed-one-key` (supplement) | 1 | typed v2 | P2WPKH + P2PKH with the same fingerprint |
 
 For every case the real request UI discovers deterministic exact outputs,

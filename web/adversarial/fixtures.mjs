@@ -22,13 +22,7 @@ export function witnessAddress(network, program) {
 }
 
 export const roundtrips = ['mainnet','signet'].flatMap(network => {
-  const base = workflows.filter(w=>w.network===network);
-  const witness = base.find(w=>w.id===`${network}-p2wpkh`), legacy = base.find(w=>w.id===`${network}-p2pkh`);
-  const mixed = base.find(w=>w.claims.length===2), second = mixed.claims[1];
-  const twoWitness = { id:`${network}-p2wpkh-two-key`,network,version:1,publicDisposableScalars:[1,2],
-    claims:[witness.claims[0],{...second,scriptKind:'p2wpkh',scriptPubKey:'0014'+second.program,address:witnessAddress(network,second.program)}] };
-  const twoLegacy = { id:`${network}-p2pkh-two-key`,network,version:2,publicDisposableScalars:[1,2],claims:[legacy.claims[0],second] };
-  return [witness,legacy,twoWitness,twoLegacy,mixed].map(w=>({...w,keyCount:w.publicDisposableScalars.length}));
+  return workflows.filter(w => w.network === network).map(w => ({ ...w, keyCount: 1 }));
 });
 
 export function observationResponse(workflow,url,mode='unspent') {

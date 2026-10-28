@@ -32,7 +32,7 @@ cmake --build build --parallel 2
 ctest --test-dir build --output-on-failure -E '^pokc-test$'
 ```
 
-The separate `pokc-test` runs real one- and two-key proofs and uses substantial
+The separate `pokc-test` runs real single-key proofs and uses substantial
 CPU and memory. The opt-in Core integration test is explicitly skipped by
 normal builds; see the [operations runbook](../operations.md#testing-and-release).
 The executable is `build/quietproof`.

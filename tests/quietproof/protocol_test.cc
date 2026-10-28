@@ -51,7 +51,7 @@ QuietProofStatementV1 Statement() {
   second.txid[0] = 2;
   second.vout = 1;
   second.amount_sats = 99;
-  second.program[1] = 8;
+  second.program = first.program;
   statement.claims = {first, second};
   return statement;
 }
@@ -94,10 +94,10 @@ void TestStatementRoundTrip() {
   Require(EncodeQuietProofStatement(decoded, &again) && encoded == again,
           "statement is not canonical");
   const std::array<uint8_t, 32> expected_digest = {
-      0x5e, 0x0b, 0x62, 0xe6, 0x0d, 0x8a, 0x87, 0x7c,
-      0x72, 0xf8, 0x0c, 0xdb, 0x56, 0x57, 0x43, 0x00,
-      0x5b, 0xc1, 0xcd, 0xc3, 0x67, 0x4c, 0xc1, 0xd9,
-      0xc5, 0x3e, 0xd3, 0x5c, 0xf0, 0x4b, 0xfc, 0xaa};
+      0x76, 0x46, 0xf5, 0xcf, 0x56, 0xdc, 0x57, 0xa8,
+      0x33, 0x69, 0xc4, 0xc8, 0xdf, 0x3f, 0xc4, 0x93,
+      0x65, 0x17, 0x39, 0xb5, 0x0c, 0xad, 0x19, 0x44,
+      0xdd, 0x0c, 0x9e, 0xc3, 0xcd, 0x7d, 0xa5, 0x76};
   std::array<uint8_t, 32> digest{};
   Require(QuietProofStatementDigest(statement, &digest) &&
               digest == expected_digest,
@@ -113,6 +113,17 @@ void TestStatementRoundTrip() {
   trailing.push_back(0);
   Require(!DecodeQuietProofStatement(trailing, &decoded),
           "trailing statement byte accepted");
+
+  // A formerly supported second key is rejected on both sides of the codec.
+  auto second_key = statement;
+  second_key.claims[1].program[0] ^= 1;
+  Require(!QuietProofStatementValid(second_key) &&
+              !EncodeQuietProofStatement(second_key, &again),
+          "second key hash accepted by encoder");
+  auto old_two_key_wire = encoded;
+  old_two_key_wire[old_two_key_wire.size() - 20] ^= 1;
+  Require(!DecodeQuietProofStatement(old_two_key_wire, &decoded),
+          "second key hash accepted by decoder");
 
   auto snapshot = statement;
   snapshot.has_snapshot = true;
@@ -208,14 +219,14 @@ void TestTypedStatements() {
   statement.claims[1].script_kind = QuietProofScriptKind::kP2pkh;
   // Independent Python struct.pack big-endian encoding and hashlib tagged hash.
   const std::string expected_wire =
-      "51505331020200106d65726368616e742e6578616d706c65000e70726f6f662d6f662d"
-      "66756e64730102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d"
-      "1e1f20201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a0908070605040302"
-      "01000000000000006400000000000000c80000000201000000000000000000000000"
-      "0000000000000000000000000000000000000000000002000000000000002a0009"
-      "000000000000000000000000000000000000000200000000000000000000000000"
-      "000000000000000000000000000000000000000000010000000000000063010008"
-      "000000000000000000000000000000000000";
+      "51505331020200106d65726368616e742e6578616d706c65000e70726f6f662d6f66"
+      "2d66756e64730102030405060708090a0b0c0d0e0f101112131415161718191a1b1c"
+      "1d1e1f20201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a09080706050403"
+      "0201000000000000006400000000000000c800000002010000000000000000000000"
+      "000000000000000000000000000000000000000000000002000000000000002a0009"
+      "00000000000000000000000000000000000000020000000000000000000000000000"
+      "00000000000000000000000000000000000000000100000000000000630109000000"
+      "00000000000000000000000000000000";
   std::vector<uint8_t> bytes, again;
   std::array<uint8_t, 32> digest{};
   Require(EncodeQuietProofStatement(statement, &bytes) &&
@@ -223,7 +234,7 @@ void TestTypedStatements() {
           "typed independent wire vector changed");
   Require(QuietProofStatementDigest(statement, &digest) &&
               Hex(digest.data(), digest.size()) ==
-                  "f2f13dc932116f5559ddf4d8944ea9c6025bbbb884816fe952d6163adbd6af12",
+                  "7efeed7e864ed7f55d7ea7f07544bf67ef8c7d10f791740908917981f4b45ef0",
           "typed independent digest vector changed");
   QuietProofStatementV1 decoded;
   Require(DecodeQuietProofStatement(bytes, &decoded) &&
@@ -284,7 +295,7 @@ void TestTypedStatements() {
   Require(!EncodeQuietProofStatement(bounded, &again), "17 typed claims accepted");
   bounded.claims.pop_back();
   bounded.claims.back().program[0] = 42;
-  Require(!EncodeQuietProofStatement(bounded, &again), "third typed key accepted");
+  Require(!EncodeQuietProofStatement(bounded, &again), "second typed key accepted");
 
   statement.claims[1].script_kind = QuietProofScriptKind::kP2pkh;
   QuietProofEnvelopeV1 envelope;
@@ -387,10 +398,10 @@ void TestEnvelopeAndTranscript() {
   envelope.proof.bytes = {1, 2, 3, 4};
   const auto seed = PoKCTranscriptSeed(envelope.statement, envelope.proof);
   const std::array<uint8_t, 32> sage_seed = {
-      0xa4, 0x12, 0xb1, 0x70, 0xb0, 0x67, 0x06, 0xf6,
-      0x00, 0x50, 0x19, 0x1e, 0x6d, 0xf8, 0xc2, 0x39,
-      0x74, 0x66, 0x48, 0x55, 0xce, 0x4e, 0xef, 0xc3,
-      0x5d, 0x7a, 0xc0, 0x38, 0x15, 0x06, 0xd6, 0x02};
+      0x17, 0x3d, 0x6e, 0x1d, 0xb9, 0xa4, 0x7f, 0x6d,
+      0xd9, 0x84, 0xd2, 0x00, 0x52, 0x3f, 0x4c, 0x80,
+      0x3f, 0x0a, 0x63, 0x14, 0x6b, 0x4b, 0xb6, 0xba,
+      0x09, 0xcc, 0x74, 0xe2, 0x54, 0x4a, 0xf3, 0x46};
   Require(seed == sage_seed, "transcript seed differs from Sage vector");
   envelope.statement.nonce[0] ^= 1;
   Require(seed != PoKCTranscriptSeed(envelope.statement, envelope.proof),

@@ -95,7 +95,7 @@ async function saveRequest() {
         <select id="qp-network" v-model="network"><option value="mainnet">Mainnet</option><option value="signet">Signet</option></select>
         <p v-if="provider" class="quietproof-provider"><strong>Provider: {{ provider.name }}</strong><br>{{ provider.endpoint }}<br>{{ provider.privacy }}</p>
         <p>Nothing is sent until you select Look up outputs. Explorer reports are trusted, non-atomic observations, not authenticated chain snapshots. Funding block metadata does not establish current unspentness.</p>
-        <label for="qp-addresses">Bitcoin addresses (one or two, one per line)</label>
+        <label for="qp-addresses">Bitcoin addresses (same key fingerprint, one per line)</label>
         <textarea id="qp-addresses" v-model="addresses" rows="3" maxlength="182" spellcheck="false" autocomplete="off" aria-describedby="qp-scripts" required />
         <p id="qp-scripts">Supported: compressed-key P2PKH and native P2WPKH (a common Bitcoin address with a key fingerprint). Taproot, multisig, P2SH and P2WSH are unsupported. Signet shares testnet address encoding; the chosen endpoint determines the network.</p>
         <button type="submit" :disabled="!provider || state === 'loading'">Look up outputs</button>
@@ -106,7 +106,7 @@ async function saveRequest() {
     <p v-if="error" role="alert">{{ error }}</p>
     <fieldset v-if="claims.length" :aria-busy="state === 'loading'">
       <legend>2. Select disclosed outputs</legend>
-      <p>At most 16 outputs and two distinct key fingerprints. Selected coins, amounts and wallet links become public to the proof recipient. Fresh chain observations are needed when verifying a proof.</p>
+      <p>Select up to 16 outputs sharing one key fingerprint. Selected coins, amounts and wallet links become public to the proof recipient. Fresh chain observations are needed when verifying a proof.</p>
       <ul class="quietproof-claims">
         <li v-for="(claim, index) in claims" :key="`${claim.txid}:${claim.vout}`">
           <label :for="`qp-claim-${index}`"><input :id="`qp-claim-${index}`" v-model="selected" type="checkbox" :value="index" :disabled="blocked(index)">
@@ -118,7 +118,7 @@ async function saveRequest() {
         </li>
       </ul>
     </fieldset>
-    <p class="quietproof-total" role="status">Selected: {{ summary.count }}/16 outputs · {{ summary.keys }}/2 key fingerprints · <strong>{{ summary.totalSats }} sats</strong></p>
+    <p class="quietproof-total" role="status">Selected: {{ summary.count }}/16 outputs · {{ summary.keys }}/1 key fingerprints · <strong>{{ summary.totalSats }} sats</strong></p>
     <fieldset>
       <legend>3. Set the request context</legend>
       <label for="qp-verifier">Intended verifier (up to 256 UTF-8 bytes)</label>

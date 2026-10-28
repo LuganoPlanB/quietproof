@@ -46,7 +46,7 @@ A short-lived request created by the verifier. It identifies the verifier, purpo
 
 ### Circuit
 
-The arithmetic rules checked by the zero-knowledge proof. QuietProof has exact circuit shapes for one and two distinct compressed-key hashes, shared across supported script kinds.
+The arithmetic rules checked by the zero-knowledge proof. QuietProof has one fixed circuit for a single compressed-key hash, shared across supported script kinds.
 
 ### Nonce
 

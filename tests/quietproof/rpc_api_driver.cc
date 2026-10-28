@@ -188,7 +188,7 @@ int Prove(const std::string& request_path, const std::string& proof_path) {
   Secret secret;
   if (!ReadSecret(&secret)) { std::cerr << "Expected one hexadecimal key on protected stdin\n"; return 65; }
   QuietProofEnvelopeV1 proof;
-  const bool proved = PoKCProveKeys<1>(secret.keys, request, &proof);
+  const bool proved = PoKCProve(secret.keys.front(), request, &proof);
   for (auto& key : secret.keys) Erase(key.data(), key.size());
   if (!proved) { std::cerr << "Proof generation failed\n"; return 67; }
   bytes.clear();

@@ -47,16 +47,15 @@ shortcut.
 
 ### 1. Public input allocation
 
-`PoKCBuildCircuit<Keys>` allocates all program elements before calling
+`PoKCBuildCircuit` allocates all program elements before calling
 `private_input()`. Longfellow's mandatory constant-one input is followed by
-exactly `20 * Keys` byte-shaped program elements:
+exactly `20` byte-shaped program elements:
 
 ```text
-[ constant one | program_0[0..19] | program_1[0..19] ]
+[ constant one | program[0..19] ]
 ```
 
-The second program exists only in the two-key family member. Programs are
-sorted and deduplicated by the protocol layer before circuit selection.
+All claimed outputs must share this public key hash.
 
 ### 2. Key ownership
 
@@ -105,69 +104,29 @@ The adapter explicitly reconciles FlatSHA's field-integer bit order with the
 SHA byte stream before applying RIPEMD-160. Its resulting 20 bytes are
 constrained equal to the plucked public program bytes.
 
-## One- and two-key circuit family
+## Single-key circuit
 
-PoKC v1 compiles two exact circuit shapes:
+PoKC compiles one fixed circuit:
 
-| Distinct keys | Public inputs | Private inputs | Total inputs | Quadratic terms | Serialized circuit |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 21 | 3,010 | 3,031 | 2,067,522 | 24,876,346 B |
-| 2 | 41 | 6,020 | 6,061 | 4,133,092 | 49,663,186 B |
-
-There is no inactive padded relation. A statement with several claims that
-share one program uses the one-key member; two distinct programs use the
-two-key member; three distinct programs are rejected before circuit
-allocation. This makes unused-witness semantics unambiguous and gives each
-shape a distinct circuit identity.
+| Public inputs | Private inputs | Total inputs | Quadratic terms | Serialized circuit |
+| ---: | ---: | ---: | ---: | ---: |
+| 21 | 3,010 | 3,031 | 2,067,522 | 24,876,346 B |
 
 The serialized circuit bytes, circuit version `1`, Ligero rate `4`, and `128`
-queries are hashed into the proof identity. Verification selects the family
-member from the canonical distinct-program count and rejects an identity or
-parameter mismatch before accepting the proof.
+queries determine the proof identity. Verification rejects identity or parameter
+mismatches. The existing single-key circuit identity is preserved.
 
 ## Scaling and useful workloads
 
-Let `N` be the number of claimed P2WPKH/P2PKH outputs and `K` the number of distinct
-compressed-key hashes among them, across script kinds. QuietProof groups claims by program, so each
-distinct program contributes one key-ownership and HASH160 relation:
+A statement supports up to 16 P2WPKH/P2PKH outputs sharing one compressed-key
+hash. Additional outputs do not enlarge the circuit or systematically grow the
+proof; serialized proof size can vary slightly with randomness. Public statement
+size and independent chain-state checks grow linearly with the number of outputs.
 
-```text
-ZK circuit, proof size, and proof work:  O(K)
-Canonical statement and envelope data:  O(N)
-Bitcoin chain-state lookups:             O(N)
-```
-
-Consequently, the ZK portion is constant in `N` only while `K` remains fixed.
-QuietProof v1 fixes `K <= 2` and `N <= 16`, so additional outputs controlled by
-either already-proven key do not enlarge the circuit or systematically grow
-the proof (serialized size can vary slightly with proof randomness). They
-still add public claims to the envelope and require independent amount,
-script, confirmation, network, and unspent-state checks.
-
-This is useful for bounded custodial or treasury workflows where several
-UTXOs deliberately share one or two compressed-key hashes, for example:
-
-- proving control of several fragmented outputs held at one operational
-  address;
-- combining outputs split across one hot and one cold or migration address;
-- a signet or regtest reserve, custody, or bridge integration test whose
-  outputs use a deliberately bounded key set; or
-- proving control without revealing the compressed public key of an unspent
-  P2WPKH output that has never exposed that key through a spend.
-
-It is not an efficient general proof of a modern HD wallet or exchange reserve
-when every UTXO uses a fresh address. In that case `K` grows with `N`, and the
-current construction repeats scalar multiplication, SHA-256, and RIPEMD-160
-for every key. Circuit size, proof size, proving time, and verification time
-then grow approximately linearly; merely raising the template limit also runs
-into Longfellow's CRT block-encoding capacity. Supporting many unrelated keys
-would require a different aggregation design, such as recursion or a suitable
-commitment and set-membership construction, together with a new security
-analysis.
-
-The constant-ZK-cost case should not be confused with Bitcoin multisig. Each
-output has an independent ordinary P2WPKH or compressed-key P2PKH spending condition; the circuit
-aggregates proofs of knowledge but creates no `m-of-n` authorization policy.
+This suits several fragmented outputs controlled by the same key. It does not
+aggregate a modern HD wallet with a fresh key for every output. Different keys
+require separate requests and proofs, with any coordination defined by the
+application. No Bitcoin multisignature spending policy is created.
 
 ## Witness construction is not a trust boundary
 
@@ -186,7 +145,7 @@ identity, or serialized proof is covered by negative tests.
 
 ## Files
 
-- `pokc_circuit.h`: composition root and one/two-key family.
+- `pokc_circuit.h`: single-key composition root.
 - `key_ownership.h`: scalar validity, `xG`, affine normalization, and canonical
   compressed-key derivation.
 - `compressed_key_sha256.h`: fixed 33-byte SEC SHA-256 adapter.

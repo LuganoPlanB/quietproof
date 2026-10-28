@@ -50,16 +50,11 @@ QuietProof deliberately separates two questions:
 
 A mathematically valid proof is not enough by itself. A complete application verifies the proof, the challenge policy, replay state, and current or authenticated historical Bitcoin evidence.
 
-## One key or two keys
+## One key, several outputs
 
-QuietProof v1 provides two exact circuit shapes:
+A statement may name up to 16 outputs sharing one compressed-key hash across native P2WPKH/P2PKH kinds. All claims use the same key relation. Uncompressed-key P2PKH is unsupported.
 
-- One distinct compressed-key hash.
-- Two distinct compressed-key hashes known by the same prover.
-
-A statement may name up to 16 outputs, but those outputs must share no more than two distinct key hashes across native P2WPKH/P2PKH kinds. Uncompressed-key P2PKH is unsupported. Outputs sharing a hash reuse the same key relation.
-
-The two-key form reveals common key knowledge across old and new outputs to its recipients. They can share the proof; naming a verifier does not make it confidential. No on-chain link or multisig rules are created.
+Use separate requests and proofs for different keys. Each proof has its own challenge, transcript and verification decision; applications define any workflow connecting them. QuietProof does not implement a Bitcoin multisignature spending policy.
 
 ## What it does not prove
 

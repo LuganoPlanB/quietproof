@@ -192,7 +192,7 @@ QuietProofStatementV1 ReferenceStatement() {
   second.txid[0] = 2;
   second.vout = 1;
   second.amount_sats = 99;
-  second.program[1] = 8;
+  second.program = first.program;
   statement.claims = {first, second};
   return statement;
 }

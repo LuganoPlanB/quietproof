@@ -68,9 +68,6 @@ test("the homepage gives a factual operating profile", () => {
   assert.match(home, /29\.892 s/);
   assert.match(home, /19\.899 s/);
   assert.match(home, /44\.71 MiB/);
-  assert.match(home, /60\.200 s/);
-  assert.match(home, /38\.967 s/);
-  assert.match(home, /87\.04 MiB/);
   assert.match(home, /Public request/);
   assert.match(home, /Private prover input/);
   assert.match(home, /Proof artifact/);
@@ -85,7 +82,7 @@ test("use cases are grouped by human jobs and retain technical caveats", () => {
   for (const heading of [
     "Custody and audit",
     "Qualification before a deal",
-    "Off-chain continuity and peer credit",
+    "Separate proofs in application workflows",
     "Collaborative Bitcoin protocols",
     "future directions",
   ]) {
@@ -93,7 +90,7 @@ test("use cases are grouped by human jobs and retain technical caveats", () => {
   }
 
   assert.match(useCases, /not current QuietProof claims/);
-  assert.match(useCases, /at most two distinct key hashes/);
+  assert.match(useCases, /All outputs share one key hash/);
 });
 
 test("site navigation exposes operations, security, performance, circuit, and protocol docs", () => {

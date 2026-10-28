@@ -172,7 +172,7 @@ confirmations (with `program` retained as an alias for `key_hash`),
 source, exclusions, observation identity, recheck and challenge compatibility.
 A valid empty set or more than 16 eligible outputs can exit 0 diagnostically.
 Challenge creation rejects both. No largest/first-16 selection occurs. Generic
-challenges also permit at most two distinct programs, reject duplicates and
+challenges also permit exactly one distinct program, reject duplicates and
 check aggregate MAX_MONEY. Advanced callers can explicitly select manual
 claims; subsets require their own rechecks. Verification always looks up the
 actual proof claims afresh.
@@ -259,7 +259,7 @@ link `LongfellowZKQuietProof::rpc`. The
 installed-package consumers under `tests/cmake/` exercise core/RPC link closure.
 The [native tutorial](guide/getting-started.md#build) builds the CLI with the
 same client and keeps plain proving independent of RPC. Applications can use
-existing `PoKCProveKeys<1|2>`, the shared
+existing `PoKCProve`, the shared
 `CreateQuietProofChallenge` builder and `VerifyQuietProof` with their own
 policy/provider. A bare `PoKCVerifyProof` verifies the relation only.
 One RPC instance is sequential/non-thread-safe; use separate instances across
@@ -320,7 +320,7 @@ ctest --test-dir build --output-on-failure -E '^pokc-test$'
 ctest --test-dir build --output-on-failure -R '^pokc-test$'
 ```
 
-The real one/two-key proof gate is expensive. To execute isolated native CLI
+The real single-key proof gate is expensive. To execute isolated native CLI
 and C++ workflows against both pinned official Core releases:
 
 ```sh
@@ -335,7 +335,7 @@ The serial test has `bitcoin-regtest`/`proof-heavy` labels and a four-hour outer
 timeout. It creates private temporary datadirs, chooses loopback ports, disables
 peers, checks exact official Core 28.3/30.3 version identity, holds fixture keys outside Core,
 and cleans its own child/data. It tests offline proving, rotated cookies,
-watch-only discovery, P2PKH-only and same/two-key mixed real proofs, exact totals,
+watch-only discovery, P2PKH-only and same-key mixed real proofs, exact totals,
 substitution/expiry rejection, replay single-winner, stable legacy parity,
 same-height reorgs and fresh-proof mempool/mined spend rejection. Missing Core
 binaries block this opt-in acceptance gate; disabled ordinary builds explicitly
@@ -373,7 +373,7 @@ directly over the existing loopback, cookie-authenticated RPC connection. The
 request supplies the network and address. Optional `--network` and `--address`
 must match it. The sole loaded wallet is selected automatically; use
 `--rpc-wallet NAME` when multiple wallets are loaded. The wallet must already be loaded and unlocked. This mode supports one distinct
-compressed-key hash across P2WPKH/P2PKH outputs; multi-key requests use protected stdin.
+compressed-key hash across P2WPKH/P2PKH outputs.
 Automatic address selection prefers P2PKH when present, otherwise P2WPKH.
 For same-key mixed requests, `--address` can select either claimed kind.
 Missing RPC support is reported explicitly and never triggers `listdescriptors`.

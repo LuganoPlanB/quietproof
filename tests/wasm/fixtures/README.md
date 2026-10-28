@@ -1,8 +1,7 @@
 # Native codec golden bytes
 
 These public, synthetic claims use no private key. `0` is v1 P2WPKH with
-one distinct program; `1` is v2 P2PKH with two programs; `2` is mixed v2 with
-two programs. The `.options` files use the browser's QWC1 options transport;
+one distinct program; `1` is v2 P2PKH; `2` is mixed v2. All use one key hash. The `.options` files use the browser's QWC1 options transport;
 `.qpr` files are native canonical requests with nonce bytes `07` and creation
 second `1700000000`. The production worker cannot select these sources.
 

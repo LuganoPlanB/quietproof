@@ -43,7 +43,6 @@ constexpr size_t kQuietProofMaxVerifierBytes = 256;
 constexpr size_t kQuietProofMaxPurposeBytes = 64;
 constexpr size_t kQuietProofMaxAssetIdBytes = 256;
 constexpr size_t kQuietProofMaxClaims = 16;
-constexpr size_t kQuietProofMaxKeys = 2;
 constexpr size_t kQuietProofMaxStatementBytes = 4096;
 constexpr uint64_t kQuietProofMaxMoneySats = 21000000ULL * 100000000ULL;
 
@@ -196,11 +195,6 @@ inline bool QuietProofPurposeValid(const std::string& purpose) {
          purpose == "bridge-authorization";
 }
 
-inline bool QuietProofProgramLess(const std::array<uint8_t, 20>& left,
-                                const std::array<uint8_t, 20>& right) {
-  return std::memcmp(left.data(), right.data(), left.size()) < 0;
-}
-
 inline bool QuietProofStatementValid(const QuietProofStatementV1& statement) {
   if ((statement.statement_version != 1 && statement.statement_version != 2) ||
       !QuietProofNetworkValid(statement.network) || statement.verifier.empty() ||
@@ -232,8 +226,6 @@ inline bool QuietProofStatementValid(const QuietProofStatementV1& statement) {
     return false;
   }
 
-  std::vector<std::array<uint8_t, 20>> programs;
-  programs.reserve(statement.claims.size());
   uint64_t total_sats = 0;
   for (size_t index = 0; index < statement.claims.size(); ++index) {
     const auto& claim = statement.claims[index];
@@ -247,11 +239,9 @@ inline bool QuietProofStatementValid(const QuietProofStatementV1& statement) {
       return false;
     }
     total_sats += claim.amount_sats;
-    programs.push_back(claim.program);
+    if (claim.program != statement.claims.front().program) return false;
   }
-  std::sort(programs.begin(), programs.end(), QuietProofProgramLess);
-  programs.erase(std::unique(programs.begin(), programs.end()), programs.end());
-  return !programs.empty() && programs.size() <= kQuietProofMaxKeys;
+  return true;
 }
 
 // Compatibility API name: these are distinct compressed-public-key hashes,
@@ -260,11 +250,7 @@ inline bool QuietProofDistinctPrograms(
     const QuietProofStatementV1& statement,
     std::vector<std::array<uint8_t, 20>>* programs) {
   if (programs == nullptr || !QuietProofStatementValid(statement)) return false;
-  programs->clear();
-  programs->reserve(statement.claims.size());
-  for (const auto& claim : statement.claims) programs->push_back(claim.program);
-  std::sort(programs->begin(), programs->end(), QuietProofProgramLess);
-  programs->erase(std::unique(programs->begin(), programs->end()), programs->end());
+  programs->assign(1, statement.claims.front().program);
   return true;
 }
 

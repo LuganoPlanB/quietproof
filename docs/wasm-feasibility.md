@@ -1,8 +1,8 @@
 # Browser proof feasibility
 
-The browser executes the native PoKC verifier with unchanged circuits, rate 4,
+The browser executes the native PoKC verifier with the single-key circuit, rate 4,
 and 128 queries. Requests support the existing maximum of sixteen claims and
-two distinct key programs. The browser exports no proving or private-key API.
+one key hash. The browser exports no proving or private-key API.
 
 ## Reproduce the measurements
 
@@ -18,9 +18,8 @@ QUIETPROOF_WASM=../.gestalt/quietproof-wasi/quietproof-build/quietproof.wasm \
   npm run test:wasm:feasibility
 ```
 
-The generator uses **public disposable scalars 1 and 2** and verifies both proofs
-natively before writing them. The one-key fixture is a mainnet v1 P2WPKH request;
-the two-key fixture is a signet typed-v2 request with P2PKH and P2WPKH claims.
+The generator uses **public disposable scalar 1** and verifies the proof
+natively before writing it. The fixture is a mainnet v1 P2WPKH request.
 Each `.json` provenance file records its generator, public scalars, creation and
 expiry times, sizes, and native verification. The explicitly selected fixture
 lifetime is 86400 seconds, the core maximum, so a long qualification run does not
@@ -30,7 +29,7 @@ changing the browser clock or trusting expired proofs.
 
 Provision the pinned Playwright browsers before running. The required command
 requires Chromium and WebKit serially and returns failure if either engine
-or either one/two-key family is missing, duplicated, unavailable or failed.
+or the single-key fixture is missing, duplicated, unavailable or failed.
 Firefox is explicitly unsupported and unqualified for the initial release
 (user-approved scope revision, 2026-10-27). `QUIETPROOF_{CHROMIUM,FIREFOX,WEBKIT}_EXECUTABLE` may select an
 existing matching browser. Missing libraries and unwritable caches must be
@@ -45,7 +44,7 @@ tagged `supported: false` / `unsupported-diagnostic` even if checks pass. Option
 Firefox failure does not fail an otherwise complete required matrix, and optional
 Firefox success never changes the supported-browser list.
 
-For each key count, the runner checks cold verification, repeated verification,
+For the single-key fixture, the runner checks cold verification, repeated verification,
 changed-proof rejection, reset/disposal, hard cancellation during synchronous
 computation, and genuine verification in a fresh worker after cancellation. A
 test-only wrapper announces entry into the production verification handler;
@@ -56,11 +55,7 @@ operation/phase identifiers and observed linear-memory size.
 
 ## Memory and copies
 
-The reactor starts with 16 MiB and has an explicit **2 GiB maximum**. The former
-1 GiB bootstrap limit admitted the one-key fixture but trapped on the genuine
-two-key fixture during circuit work. Increasing the allocation ceiling admits the
-same circuits and proof parameters; parsing bounds remain at the core 128 MiB
-proof-payload ceiling. This is a large desktop workload, with browser and JS
+The reactor starts with 16 MiB and has an explicit **2 GiB maximum**. Parsing bounds remain at the core 128 MiB proof-payload ceiling. This is a large desktop workload, with browser and JS
 memory in addition to linear memory. A maximum allocation is not a claim that
 any device with that amount of total RAM can run the tool.
 
@@ -101,7 +96,7 @@ recorded before UI work proceeds.
 
 ## Recorded qualification and release gate
 
-The table below preserves the initial feasibility observations. See
+The table below retains the single-key initial feasibility observations. These historical measurements precede the removal of the two-key workflow. See
 [current browser resource qualification](./performance#browser-resource-boundary)
 for the hardened loader/CSP measurements, regression budgets, controlled
 allocation-failure recovery and automated accessibility coverage. The current
@@ -114,18 +109,18 @@ The measured Linux x86-64 runner reports an AMD Ryzen 7 PRO 8700GE CPU, sixteen
 logical CPUs and 66,422,718,464 bytes of host RAM. These results do not qualify
 low-memory or mobile hardware. The module is 1,712,288 bytes raw, 460,608 bytes
 with gzip level 9, and 358,468 bytes with the tested Brotli encoder. The native
-fixture envelopes are 46,879,572 bytes (one key) and 91,263,350 bytes (two keys).
+fixture envelopes are 46,879,572 bytes (one key).
 
-| Engine | One-key valid runs | Two-key valid runs | Peak observed WASM allocation |
-| --- | --- | --- | --- |
-| Chromium 149.0.7827.55 | 68.9–71.7 s | 134.0–138.6 s | 954,400,768 / 1,815,871,488 bytes |
-| WebKit 26.5 | 69.5–76.0 s | 144.0–149.1 s | 954,400,768 / 1,815,871,488 bytes |
-| Firefox 151.0, Playwright build 1532 | Unverified | Unverified | Unverified |
+| Engine | One-key valid runs | Peak observed WASM allocation |
+| --- | --- | --- |
+| Chromium 149.0.7827.55 | 68.9–71.7 s | 954,400,768 bytes |
+| WebKit 26.5 | 69.5–76.0 s | 954,400,768 bytes |
+| Firefox 151.0, Playwright build 1532 | Unverified | Unverified |
 
 Chromium and WebKit pass cold/repeat/fresh-after-cancel verification and changed
-proof rejection for both key counts. Repeated allocation high-water growth is
+proof rejection for the single-key fixture. Repeated allocation high-water growth is
 zero in these runs. Maximum observed main-thread heartbeat gaps are 109 ms in
-Chromium and 71 ms in WebKit; all four cancellation cases retain responsive
+Chromium and 71 ms in WebKit; the cancellation cases retain responsive
 heartbeats and deliver no late response. Cancellation is observed over a 200 ms
 quiet window; this is not a measurement of OS memory reclamation latency.
 
@@ -147,7 +142,7 @@ disabling or widened permissions were used. These startup failures establish no
 conclusion about Firefox proof cryptography or memory support.
 
 The current required gate selects exactly Chromium/WebKit by default and checks
-complete unique one/two-key coverage. Missing required coverage cannot be filled
+complete unique single-key coverage. Missing required coverage cannot be filled
 by optional Firefox records. Any later Firefox support claim requires a separate
 explicit scope decision and real qualification; optional diagnostics alone cannot
 expand support. The earlier external Firefox handoff bundle is historical and is

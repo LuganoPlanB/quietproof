@@ -154,16 +154,13 @@ class WalletExportTest(unittest.TestCase):
 
     def test_multiple_key_request_rejected_before_rpc(self):
         request = self.root / 'two-keys'
-        subprocess.run([BINARY, 'challenge', 'create', '--network', 'signet',
+        result = subprocess.run([BINARY, 'challenge', 'create', '--network', 'signet',
                         '--verifier', 'example.org', '--purpose', 'proof-of-control', '--message', 'fixture',
                         '--claim', '01' + '00' * 31 + ':0:7:' + PROGRAM,
                         '--claim', '02' + '00' * 31 + ':0:7:' + 'aa' * 20,
-                        '--output', str(request)], check=True, capture_output=True)
-        command = self.command.copy()
-        command[command.index('--request') + 1] = str(request)
-        result = subprocess.run(command, input='', text=True, capture_output=True, timeout=10)
+                        '--output', str(request)], text=True, capture_output=True)
         self.assertEqual(result.returncode, 65)
-        self.assertIn('one distinct', result.stderr)
+        self.assertFalse(request.exists())
         self.assertEqual(self.server.calls, [])
 
     def automatic_command(self):

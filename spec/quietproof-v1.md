@@ -71,9 +71,8 @@ Other values are unsupported. Implementations MUST compare the node-reported
 ## 3. Circuit input layout and identity
 
 The Longfellow public vector begins with its mandatory constant-one slot,
-followed by 20 byte-shaped inputs for each distinct program. Programs are
-sorted lexicographically and unique. The circuit family contains exactly one
-or two ownership relations; no inactive padding relation exists.
+followed by exactly 20 byte-shaped inputs for one public key hash. The circuit
+contains one ownership relation. Every output claim MUST use that same hash.
 
 The circuit digest is SHA-256 over the exact Longfellow circuit serialization
 followed by three little-endian `u64` values: circuit version, proof rate, and
@@ -140,8 +139,8 @@ V1 claims always mean P2WPKH. V2 claim bytes are
 `txid:32 || vout:u32 || amount_sats:u64 || script_kind:u8 || program:20`.
 Unknown versions and kinds are `unsupported`; malformed known encodings are
 `malformed_statement`. Duplicate outpoints are malformed regardless of kind.
-Ownership witnesses are grouped by key hash across kinds; more than two
-distinct key hashes is malformed. The checked aggregate claim value MUST NOT
+All claims MUST share one key hash across kinds; a second distinct key hash
+is malformed. The checked aggregate claim value MUST NOT
 exceed 2,100,000,000,000,000 satoshis.
 
 ## 5. Optional bridge binding
@@ -239,7 +238,7 @@ authenticate existence and spending state at the named snapshot.
 
 Implementations MUST test every network mapping, unsupported IDs/versions,
 empty/all-zero nonce, zero message hash, invalid UTF-8, invalid purpose,
-duplicate/unsorted/zero/excess claims, more than two programs, lifetime
+duplicate/unsorted/zero/excess claims, a second distinct program, lifetime
 boundaries, snapshot consistency, bridge consistency, truncated/trailing and
 oversized encodings, wrong proof parameters, exact BTC-to-satoshi boundaries,
 wrong-node networks, within-lookup and cross-claim node tip races, replay

@@ -69,32 +69,6 @@ class PoKCCircuitV1 {
   BytePlucker bytes_;
 };
 
-// A circuit family is used instead of inactive padded ownership relations:
-// dummy keys would otherwise need their own meaningful witness semantics.
-// The selected member count is included in the serialized circuit digest.
-template <class LogicCircuit, class Field, class EC, size_t Keys>
-class PoKCMultiCircuitV1 {
- public:
-  static_assert(Keys >= 1 && Keys <= 2,
-                "PoKC v1 supports at most two key relations");
-  using Single = PoKCCircuitV1<LogicCircuit, Field, EC>;
-  using EltW = typename LogicCircuit::EltW;
-  using Witness = typename Single::Witness;
-  static constexpr size_t kProgramBytes = Single::kProgramBytes;
-
-  explicit PoKCMultiCircuitV1(const LogicCircuit& lc, const EC& ec)
-      : single_(lc, ec) {}
-
-  void assert_programs(
-      const std::array<std::array<EltW, kProgramBytes>, Keys>& programs,
-      const std::array<Witness, Keys>& witnesses) const {
-    for (size_t i = 0; i < Keys; ++i) single_.assert_program(programs[i], witnesses[i]);
-  }
-
- private:
-  Single single_;
-};
-
 }  // namespace proofs
 
 #endif  // PRIVACY_PROOFS_ZK_LIB_CIRCUIT_POKC_CIRCUIT_H_

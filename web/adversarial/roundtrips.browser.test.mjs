@@ -166,11 +166,11 @@ async function check(page,{crypto,policy='Matched at check time',explorer='Unava
   assert(measured.transfers.every(t=>t.detached),'binary transfer detaches every sender');
   return {observedAt,completedAt:now(),crypto,policy,explorer,metrics:measured};
 }
-function budgets(record,keyCount) {
+function budgets(record) {
   const result=record.metrics.outcomes.filter(o=>o.operation==='verify').at(-1);
   assert(result && result.cryptography==='valid' && result.policy==='matched');
   assert.equal(result.authorizes,false);assert.equal(result.explorer,'unavailable');
-  const limit=RESOURCE_BUDGETS.verifyMs[keyCount===1?'one-key':'two-key'];
+  const limit=RESOURCE_BUDGETS.verifyMs['one-key'];
   assert(result.elapsedMs<=limit,`unchanged verification timing budget: ${result.elapsedMs}ms > ${limit}ms`);
   assert(result.linearMemoryBytes<=RESOURCE_BUDGETS.linearMemoryBytes,'linear-memory regression budget');
   assert(record.metrics.maxGapMs<=RESOURCE_BUDGETS.heartbeatGapMs,'computation leaves the main thread responsive');
@@ -199,7 +199,7 @@ for(const [name,engine] of engines){
         });
         await prepare(page,fixture);
         await page.getByRole('checkbox',{name:'After valid cryptography',exact:false}).check();assert.equal(requests.length,0);
-        const result=await check(page,{crypto:'Valid',explorer:'Reported unspent under selected limits',button:'Verify and check explorer'});budgets(result,workflow.keyCount);
+        const result=await check(page,{crypto:'Valid',explorer:'Reported unspent under selected limits',button:'Verify and check explorer'});budgets(result);
         assert(requests.length>0);const evaluation=result.metrics.outcomes.at(-1);
         assert.equal(evaluation.operation,'evaluate');assert.equal(evaluation.authorizes,false);assert.equal(evaluation.explorer,'reported_unspent');
         assert.match(await page.getByRole('region',{name:'Verification results',exact:true}).innerText(),/does not authorize acceptance/);
@@ -246,12 +246,12 @@ for(const [name,engine] of engines){
       const stale=await check(page,{crypto:'Not checked to completion',policy:'Rejected — do not accept',button:'Verify and check explorer'});
       assert.equal(requests.length,0);records.push({scenario:'naturally-expired',fixture:expired,...stale,screenshots:await capture(page,`${name}-expired`,page.getByRole('heading',{name:'Separate verification results'}))});
       await proofInput.setInputFiles(fixture.qpf);await expected.setInputFiles(fixture.qpr);mode='outage';barrier=(await metrics(page)).outcomes.length;
-      const outage=await check(page,{crypto:'Valid',button:'Verify and check explorer'});budgets(outage,1);
+      const outage=await check(page,{crypto:'Valid',button:'Verify and check explorer'});budgets(outage);
       assert.equal(requests.length,1,'provider outage is bounded without retries');
       assert.match(await page.getByRole('region',{name:'Verification results',exact:true}).innerText(),/could not supply usable fresh observations/);
       records.push({scenario:'provider-outage',...outage,screenshots:await capture(page,`${name}-outage`,page.getByRole('heading',{name:'Separate verification results'}))});
       await online.uncheck();const before=requests.length;
-      const repeated=await check(page,{crypto:'Valid'});budgets(repeated,1);assert.equal(requests.length,before);
+      const repeated=await check(page,{crypto:'Valid'});budgets(repeated);assert.equal(requests.length,before);
       records.push({scenario:'repeated-offline-recovery',...repeated,screenshots:await capture(page,`${name}-repeated`,page.getByRole('heading',{name:'Separate verification results'}))});
       await writeFile(resolve(directory,`${name}-adversarial.json`),JSON.stringify({engine:name,browserVersion:browser.version(),fixture,
         bindings,harnessSha256,records,providerRequests:requests,source:'local',completeness:'complete'},null,2)+'\n');

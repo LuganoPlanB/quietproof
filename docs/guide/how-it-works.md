@@ -22,7 +22,7 @@ The verifier identifies the disclosed Bitcoin outputs it expects to check. For e
 - script kind, native P2WPKH or compressed-key P2PKH; and
 - the 20-byte compressed-public-key HASH160.
 
-The prover must control no more than two distinct key hashes. Several outputs may share either hash across script kinds, up to 16 claims in total.
+The prover supplies one spend key. All outputs must share its key hash across script kinds, up to 16 claims in total.
 
 ## 1. The verifier creates a fresh request
 

@@ -256,7 +256,7 @@ void TestClaimLimits() {
   Reject(claims, options, invalid);
   claims = {Claim(1), Claim(2), Claim(3)};
   claims[1].program[0] = 5;
-  Require(Build(claims, options, &output, nullptr), "two programs rejected");
+  Reject(claims, options, invalid);
   claims[2].program[0] = 6;
   Reject(claims, options, invalid);
 }

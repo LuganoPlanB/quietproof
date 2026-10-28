@@ -37,7 +37,7 @@ const report = { version: 2, supportedBrowsers: [...REQUIRED_ENGINES],
     'package.json', 'package-lock.json'].map(path => ({ path: resolve(root, path), sha256: digest(readFileSync(resolve(root, path))) })),
   memoryScope: 'Linear memory high-water allocation observed after synchronous calls; WASM memory never shrinks. Not process RSS or JS heap.',
   copyScope: 'Sender detachment is observed per transferred proof; implementation copy inventory is documented separately. Engine-internal physical copies are not measurable here.' };
-for (const key of ['one-key', 'two-key']) {
+for (const key of ['one-key']) {
   const provenance = JSON.parse(readFileSync(resolve(fixtures, key + '.json')));
   if (provenance.expiresAt <= Math.floor(Date.now() / 1000) + 3600)
     throw new Error(`${key} fixture expires within one hour; regenerate native fixtures.`);
@@ -57,7 +57,7 @@ const server = createServer((request, response) => {
     }
     let local;
     if (path === '/quietproof.wasm') { local = artifact; response.setHeader('Content-Type', 'application/wasm'); }
-    else if (/^\/fixtures\/(one-key|two-key)\.(qpf|qpr)$/.test(path)) local = resolve(fixtures, basename(path));
+    else if (/^\/fixtures\/(one-key)\.(qpf|qpr)$/.test(path)) local = resolve(fixtures, basename(path));
     else if (/^\/(web\/wasm\/[a-z]+|tests\/wasm\/(measured-worker|resources))\.mjs$/.test(path)) {
       local = resolve(root, '.' + path); response.setHeader('Content-Type', 'text/javascript');
     } else if (site && (path === '/' || /^\/assets\/[a-zA-Z0-9_.-]+\.(js|css|woff2)$/.test(path))) {
