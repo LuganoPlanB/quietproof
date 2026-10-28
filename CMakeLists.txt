@@ -175,6 +175,10 @@ if(BUILD_TESTING)
   add_test(NAME pokc-timestamp-test COMMAND pokc-test --timestamp-roundtrip)
   set_tests_properties(pokc-timestamp-test PROPERTIES
     LABELS "proof-heavy" RUN_SERIAL TRUE TIMEOUT 600)
+  add_pokc_test(p2sh-multisig-test tests/quietproof/p2sh_multisig_test.cc)
+  add_test(NAME p2sh-multisig-proof-test COMMAND p2sh-multisig-test --proofs)
+  set_tests_properties(p2sh-multisig-proof-test PROPERTIES
+    LABELS "proof-heavy" RUN_SERIAL TRUE TIMEOUT 1800)
   file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tests/results")
   set_tests_properties(pokc-test PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
