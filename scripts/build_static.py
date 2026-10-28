@@ -146,6 +146,7 @@ def main():
         'WASI SDK distribution and source: https://github.com/WebAssembly/wasi-sdk/releases/tag/wasi-sdk-34\n'
         'This artifact needs a static HTTP host only; no runtime Node, RPC, keys or prover.\n')
     record = {'schema': 1, 'sourceCommit': git(ROOT, 'rev-parse', 'HEAD'), 'dirtyReviewBuild': dirty,
+              'qualification': {'mode': None, 'status': 'not_run'},
               'sourceDateEpoch': environment['SOURCE_DATE_EPOCH'], 'base': args.base,
               'packageLockSha256': sha(ROOT / 'package-lock.json'),
               'themeLicense': 'No license identifier declared in pinned theme package metadata; scoped owner authorization is recorded separately',

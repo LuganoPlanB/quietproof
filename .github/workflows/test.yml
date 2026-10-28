@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   qualification:
-    name: Native ON/OFF, WASM and static browser qualification
+    name: Native ON/OFF, WASM and focused browser smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     steps:
@@ -77,26 +77,26 @@ jobs:
         run: |
           npm ci
           npx playwright install --with-deps chromium webkit
-      - name: Qualify native and packaged static artifact
+      - name: Run native, reactor and packaged browser smoke gates
         working-directory: quietproof
         env:
           DOCS_BASE: ${{ inputs.docs_base || '/' }}
         run: >-
           python3 scripts/qualify_static.py --sdk-source ../longfellow-zk
           --cross-work "$RUNNER_TEMP/wasm" --native-on ../native-ON --native-off ../native-OFF
-          --evidence "$RUNNER_TEMP/qualification" --base "$DOCS_BASE"
+          --evidence "$RUNNER_TEMP/qualification" --base "$DOCS_BASE" --mode smoke
       - name: Cross-build separation contracts
         run: >-
           python3 quietproof/tests/cmake/wasm_build_test.py --cross-work "$RUNNER_TEMP/wasm"
           --work "$RUNNER_TEMP/build-contracts" --native-prefix "$RUNNER_TEMP/longfellow-prefix"
           --wasi-sdk "$RUNNER_TEMP/wasi-sdk"
-      - name: Upload qualified static artifact
+      - name: Upload smoke-checked static artifact
         uses: actions/upload-artifact@v4
         with:
           name: quietproof-static
           path: quietproof/docs/.vitepress/dist
           if-no-files-found: error
-      - name: Retain complete qualification evidence
+      - name: Retain selected-gate evidence and explicit omissions
         if: always()
         uses: actions/upload-artifact@v4
         with:

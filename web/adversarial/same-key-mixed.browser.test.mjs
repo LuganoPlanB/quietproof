@@ -17,9 +17,11 @@ assert(cli && output,'Supply the current native CLI and new artifact directory.'
 const directory=resolve(output,`same-key-mixed-${Date.now()}-${process.pid}`);
 const root=fileURLToPath(new URL('../../',import.meta.url)),hash=b=>createHash('sha256').update(b).digest('hex');
 const bindings={nativeCLI:hash(await readFile(cli)),harness:hash(await readFile(new URL(import.meta.url)))};
-for(const path of ['package-lock.json','docs/.vitepress/dist/tool.html','docs/.vitepress/dist/verify.html','docs/public/wasm/quietproof.wasm',
+for(const path of ['package-lock.json','docs/.vitepress/dist/tool.html','docs/.vitepress/dist/verify.html',
   'web/wasm/runtime.mjs','web/wasm/codec.mjs','web/wasm/worker.mjs','web/features/verify/ProofInput.vue','web/features/provider/verification.mjs'])
   bindings[path]=hash(await readFile(resolve(root,path)));
+const wasmPath=resolve(process.env.QUIETPROOF_WASM || resolve(root,'docs/public/wasm/quietproof.wasm'));
+bindings[wasmPath]=hash(await readFile(wasmPath));
 before(()=>mkdir(directory,{recursive:true}));
 
 for(const [name,engine] of [['chromium',chromium],['webkit',webkit]])for(const network of ['mainnet','signet']){

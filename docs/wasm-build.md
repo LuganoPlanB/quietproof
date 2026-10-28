@@ -114,17 +114,36 @@ deployment's matching HTML/JS/WASM together and retain the prior complete
 artifact for rollback. Hashes detect stale bytes, not a malicious deployment
 that replaces the loader itself. See [hosting/CSP limits](./browser-security).
 
-CI runs `.github/workflows/test.yml` with two compiler jobs and serial heavy
-proof/browser tests, then retains the static artifact and qualification logs.
-The Pages workflow consumes that qualified artifact. Local qualification does
-not prove hosted-runner success or production-origin CORS/headers. To reproduce
-the full CI gate after configuring native RPC ON/OFF builds:
+CI runs `.github/workflows/test.yml` with two compiler jobs and explicit
+`--mode smoke`. It retains native RPC ON/OFF, WASM17/provider2, unit/site/packaging,
+byte-reproducibility and focused Chromium/WebKit root/subpath hosting/security
+checks (four hosting and four security test executions), plus the build
+contracts. It omits the exhaustive `web/*.browser.test.mjs` discovery/matrix and
+resource benchmark, including their dedicated long-lived fixtures.
+
+`qualification.json` records the selected mode, actual executed counts and
+`not_run_by_selected_mode` entries. Successful artifact provenance records the
+same scope; a direct `build_static.py` build records qualification as `not_run`.
+Pages consumes the smoke-checked artifact, not a full-browser-qualified release.
+Keep separate successful full local evidence for the reviewed source, WASM,
+worker and environment identities before a release. Smoke success does not
+clear a previous full-suite failure. Neither mode establishes production-origin
+CORS/headers.
+
+After configuring native RPC ON/OFF builds, run the full local release gate:
 
 ```sh
 python3 scripts/qualify_static.py --sdk-source ../longfellow-zk-dyne \
   --cross-work "$QP_BUILD/wasm" --native-on build-native-on \
-  --native-off build-native-off --evidence "$QP_BUILD/qualification" --base /
+  --native-off build-native-off --evidence "$QP_BUILD/qualification" --base / --mode full
 ```
+
+Omitting `--mode` preserves the full local default. To reproduce CI's selected
+scope, use the same command with `--mode smoke` and a different new evidence
+directory. Full mode additionally executes the exhaustive Chromium/WebKit web
+suite (48 named tests in the recorded baseline, including 24 real positive
+matrix scenarios and ten negative scenarios) and four resource profiles.
+These are not run in smoke mode; actual counts are retained in each report.
 
 The evidence directory must be new. Install both required Playwright engines
 first with `npx playwright install chromium webkit` (host libraries must also

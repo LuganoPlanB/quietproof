@@ -21,7 +21,9 @@ const bindings={};
 for (const path of ['package-lock.json','web/wasm/asset.mjs','web/wasm/runtime.mjs','web/wasm/codec.mjs','web/wasm/worker.mjs',
   'web/features/request/RequestForm.vue','web/features/request/download.mjs','web/features/verify/ProofInput.vue','web/features/verify/input.mjs',
   'web/features/verify/results.mjs','web/features/provider/discovery.mjs','web/features/provider/verification.mjs','web/features/provider/esplora.mjs',
-  'docs/.vitepress/dist/tool.html','docs/.vitepress/dist/verify.html','docs/public/wasm/quietproof.wasm']) bindings[path]=hash(await readFile(resolve(root,path)));
+  'docs/.vitepress/dist/tool.html','docs/.vitepress/dist/verify.html']) bindings[path]=hash(await readFile(resolve(root,path)));
+const wasmPath=resolve(process.env.QUIETPROOF_WASM || resolve(root,'docs/public/wasm/quietproof.wasm'));
+bindings[wasmPath]=hash(await readFile(wasmPath));
 bindings.nativeCLI=hash(await readFile(cli));
 const harnessSha256=hash(await readFile(new URL(import.meta.url)));
 const engines=[['chromium',chromium],['webkit',webkit]];

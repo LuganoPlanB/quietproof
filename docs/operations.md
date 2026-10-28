@@ -354,12 +354,13 @@ LONGFELLOW_ZK_INCLUDE_DIR=/path/to/longfellow-prefix/include/longfellow-zk \
 Keep deterministic protocol/vector, naming and spec gates. The independent
 Sage 10.6 reference is optional (`QUIETPROOF_ENABLE_POKC_SAGE_TEST=ON`, requiring
 Sage or Docker); the deterministic Sage vectors remain in the normal suite.
-The current `test.yml` workflow runs native RPC ON/OFF, WASM and serial required
-browser/static gates; it has no sanitizer input or installed-package shell
+The current `test.yml` workflow selects smoke mode: native RPC ON/OFF, WASM17,
+provider2 and focused Chromium/WebKit hosting/security checks. The exhaustive
+web matrix/resource benchmark remain full local release gates. It has no sanitizer input or installed-package shell
 driver. A separately configured sanitizer/static-analysis run needs its own
 retained evidence and must not be inferred from ordinary CI. See the
 [static qualification command](wasm-build.md#build-and-preview-the-complete-static-artifact)
-for the full browser/source/toolchain artifact gate. Record actual runtime/
+for explicit full and CI smoke commands and their artifact provenance. Record actual runtime/
 memory, pinned revisions/toolchains and residual assumptions. Prepare local
 artifacts only until deployment is explicitly authorized.
 

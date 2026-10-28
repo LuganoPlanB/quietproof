@@ -140,10 +140,14 @@ Core-only consumers keep the original no-component package and
 
 The `Tests` GitHub Actions workflow runs on every pull request and pushes to
 `main`: the full native CTest suite with RPC enabled (including real proof
-tests), package/CLI compatibility tests with RPC disabled, WASM/fixture and
-serial Chromium/WebKit browser suites, documentation and reproducible root/
-subpath static artifacts. Pages consumes the qualified artifact. Local
-qualification does not establish hosted-runner success or deployed headers/CORS.
+tests), package/CLI compatibility tests with RPC disabled, WASM17/provider2,
+unit/site/packaging tests and reproducible root/subpath artifacts with focused
+Chromium/WebKit hosting/security smoke checks. CI explicitly selects
+`qualify_static.py --mode smoke`: it does not run the exhaustive web browser
+matrix or resource benchmark. Pages consumes a smoke-checked artifact whose
+provenance records that scope. Full local release qualification remains the
+default (`--mode full`); see [the build guide](docs/wasm-build.md). Smoke success
+does not establish the omitted gates or deployed headers/CORS.
 Live Bitcoin-node integration
 and the optional Sage reference runtime remain opt-in; deterministic Sage vectors
 run in CI.
