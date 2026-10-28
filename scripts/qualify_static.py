@@ -21,8 +21,25 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def record_artifact_scope(output, mode, not_run):
+    """Attach successful selected-gate scope without claiming omitted gates."""
+    path = output / 'build-provenance.json'
+    provenance = json.loads(path.read_text())
+    provenance['qualification'] = {
+        'mode': mode, 'status': 'passed', 'fullBrowserSuite': mode == 'full',
+        'resourceBenchmark': mode == 'full', 'notRun': not_run,
+    }
+    path.write_text(json.dumps(provenance, sort_keys=True, indent=2) + '\n')
+    assets = output / 'asset-manifest.json'
+    hashes = json.loads(assets.read_text())
+    hashes[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    assets.write_text(json.dumps(hashes, sort_keys=True, indent=2) + '\n')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--mode', choices=['full', 'smoke'], default='full',
+                        help='Full local release gates (default), or focused CI smoke gates')
     parser.add_argument('--cross-work', type=Path, required=True)
     parser.add_argument('--sdk-source', type=Path, required=True)
     parser.add_argument('--native-on', type=Path, required=True)
@@ -37,7 +54,13 @@ def main():
     native, offline, cross = args.native_on.resolve(), args.native_off.resolve(), args.cross_work.resolve()
     wasm = cross / 'quietproof-build/quietproof.wasm'
     output = ROOT / 'docs/.vitepress/dist'
-    manifest = {'schema': 1, 'startedAt': now(), 'cwd': str(ROOT), 'checks': [],
+    not_run = [{'name': name, 'status': 'not_run_by_selected_mode',
+                'reason': ('Dedicated full-web/resource fixtures are unnecessary for smoke; native reactor fixtures remain exercised'
+                           if name == 'fixtures' else
+                           'Smoke mode omits the exhaustive web matrix and resource benchmark; run --mode full locally')}
+               for name in ['fixtures', 'full-browser', 'resources']] if args.mode == 'smoke' else []
+    manifest = {'schema': 2, 'mode': args.mode, 'notRun': not_run,
+                'startedAt': now(), 'cwd': str(ROOT), 'checks': [],
                 'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
                 'environment': {key: os.environ[key] for key in ['QUIETPROOF_WEBKIT_EXECUTABLE', 'PLAYWRIGHT_BROWSERS_PATH'] if key in os.environ},
                 'status': 'running', 'servers': []}
@@ -168,7 +191,8 @@ def main():
                          '--parallel', '1', '--timeout', '1800', '-E', '^quietproof-regtest-rpc-test$'])
         run('native-off', ['ctest', '--test-dir', offline, '--output-on-failure', '--no-tests=error',
                           '--parallel', '1', '--timeout', '600', '-R', '^quietproof-(package-test|cli-test|cli-rpc-test|prove-feedback-test)$'])
-        run('fixtures', [native / 'quietproof-browser-fixtures', args.evidence / 'fixtures'])
+        if args.mode == 'full':
+            run('fixtures', [native / 'quietproof-browser-fixtures', args.evidence / 'fixtures'])
         run('wasm-browser', ['npm', 'run', 'test:wasm'])
         # These fixtures have one-hour validity. Exercise both direct reactor
         # suites before the longer, independently generated 24-hour matrix.
@@ -187,15 +211,17 @@ def main():
         (args.evidence / 'reproducibility.json').write_text(json.dumps(comparison, sort_keys=True, indent=2) + '\n')
         if first != second:
             raise RuntimeError('static rebuild bytes differ; see reproducibility.json')
-        browser_checks('/', True)
-        environment.update(QUIETPROOF_WASM_FIXTURES=str(args.evidence / 'fixtures'),
-                           QUIETPROOF_FEASIBILITY_REPORT=str(args.evidence / 'resources.json'),
-                           QUIETPROOF_FEASIBILITY_SITE=str(output))
-        run('resources', ['node', 'tests/wasm/feasibility.mjs'])
+        browser_checks('/', args.mode == 'full')
+        if args.mode == 'full':
+            environment.update(QUIETPROOF_WASM_FIXTURES=str(args.evidence / 'fixtures'),
+                               QUIETPROOF_FEASIBILITY_REPORT=str(args.evidence / 'resources.json'),
+                               QUIETPROOF_FEASIBILITY_SITE=str(output))
+            run('resources', ['node', 'tests/wasm/feasibility.mjs'])
         packaged_build('/quietproof/', 'subpath-build')
         browser_checks('/quietproof/', False)
         if args.base != '/quietproof/':
             packaged_build(args.base, 'final-build')
+        record_artifact_scope(output, args.mode, not_run)
         manifest['artifact'] = snapshot()
         manifest['status'] = 'passed'
     except BaseException as error:

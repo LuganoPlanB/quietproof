@@ -68,16 +68,27 @@ Before an explicitly authorized publication:
    cache behavior and provider CORS behavior. Local servers cannot establish
    these. Plan a post-deployment smoke check and an authorized rollback.
 
-The existing Pages workflow calls `test.yml` for qualification with the base
+The existing Pages workflow calls `test.yml` for **smoke** checks with the base
 path from `configure-pages`. It downloads the `quietproof-static` artifact,
 uploads that exact directory as the Pages artifact and deploys it in the
-`github-pages` environment. It does not rebuild the site after qualification.
+`github-pages` environment. It does not rebuild the site after those checks.
+The artifact's `build-provenance.json.qualification` records mode `smoke`,
+successful selected gates and the exhaustive browser/resource omissions.
+CI smoke success is not full release qualification. Retain a separately
+successful `--mode full` local report tied to the reviewed source, WASM/worker,
+executable-asset and environment identities before authorizing a release.
+Compare the source/toolchain, WASM/worker and website executable-asset digests;
+the two provenance/manifest files intentionally differ when recording full
+versus smoke scope. A failed or
+cancelled full attempt remains failed; selecting smoke does not waive it.
 Its current configuration is not evidence of a successful hosted run or
 configured approval protection. Trigger publication only after the separate
 deployment authorization and the release prerequisites above are satisfied.
 
-The qualification job allows 240 minutes, with native builds limited to two
-jobs and proof/browser suites serialized. The complete local qualification
+The CI job retains its 240-minute upper bound, with native builds limited to
+two jobs and the retained native/reactor/smoke checks serialized. The exhaustive
+web matrix and resource benchmark run only in full local mode. The previously
+recorded complete local qualification
 took approximately 163 minutes with existing native build prerequisites;
 cold dependency/compiler/browser setup needs additional time. This observation
 is not a hosted CI timing guarantee. The larger job budget does not change the
@@ -102,8 +113,8 @@ with new assets, change a single WASM file in place, or substitute an
 unqualified directory. Retain the failed candidate and its logs for diagnosis.
 
 For the existing source-driven Pages workflow, an alternative is an accepted
-revert to the retained previous source revision followed by its normal full
-qualification/deployment path. That rebuild is a new candidate: verify its
+revert to the retained previous source revision, full local release evidence,
+then its normal smoke CI/deployment path. That rebuild is a new candidate: verify its
 digests and prerequisites rather than assuming it reproduces the old
 deployment. A revert/push or workflow dispatch is itself a production trigger
 and requires authorization. Do not bypass qualification with a manual upload
@@ -123,7 +134,8 @@ challenge/acceptance backend and no authenticated or atomic chain snapshot.
 See the [operator guide](guide/browser-tool.md) for exact supported scripts,
 policy choices, privacy and clocks/history boundaries.
 
-Desktop Chromium and WebKit are qualified. Firefox, physical low-memory/mobile
+The supported browsers are desktop Chromium and WebKit; full local release
+qualification is separate from CI smoke. Firefox, physical low-memory/mobile
 hardware, actual screen-reader use and native browser zoom behavior remain
 unqualified. The extra 195-CSS-pixel stress viewport is outside the required
 390-CSS-pixel text-scaling matrix. Peak WASM linear memory is not process RSS.

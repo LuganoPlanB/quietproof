@@ -24,6 +24,7 @@ jobs:
         id: pages
         uses: actions/configure-pages@v5
   qualify:
+    name: CI smoke checks (full local release gates are separate)
     needs: configure
     uses: ./.github/workflows/test.yml
     with:
@@ -32,11 +33,23 @@ jobs:
     needs: qualify
     runs-on: ubuntu-24.04
     steps:
-      - name: Download the exact qualified static artifact
+      - name: Download the exact smoke-checked static artifact
         uses: actions/download-artifact@v4
         with:
           name: quietproof-static
           path: quietproof/docs/.vitepress/dist
+      - name: Report artifact qualification scope
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          provenance = json.loads(Path('quietproof/docs/.vitepress/dist/build-provenance.json').read_text())
+          scope = provenance['qualification']
+          assert scope['mode'] == 'smoke' and scope['status'] == 'passed'
+          assert not scope['fullBrowserSuite'] and not scope['resourceBenchmark']
+          print('CI smoke passed. Exhaustive browser/resource gates were not run here.')
+          print('Release requires separate full local evidence for the reviewed source and runtime identities.')
+          PY
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:
