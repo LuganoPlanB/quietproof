@@ -27,7 +27,8 @@ def record_artifact_scope(output, mode, not_run):
     provenance = json.loads(path.read_text())
     provenance['qualification'] = {
         'mode': mode, 'status': 'passed', 'fullBrowserSuite': mode == 'full',
-        'resourceBenchmark': mode == 'full', 'notRun': not_run,
+        'resourceBenchmark': mode == 'full', 'nativeProofTests': mode == 'full',
+        'wasmProofVerification': mode == 'full', 'notRun': not_run,
     }
     path.write_text(json.dumps(provenance, sort_keys=True, indent=2) + '\n')
     assets = output / 'asset-manifest.json'
@@ -39,7 +40,7 @@ def record_artifact_scope(output, mode, not_run):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--mode', choices=['full', 'smoke'], default='full',
-                        help='Full local release gates (default), or focused CI smoke gates')
+                        help='Full release gates (default), or fast CI without proof generation/verification')
     parser.add_argument('--cross-work', type=Path, required=True)
     parser.add_argument('--sdk-source', type=Path, required=True)
     parser.add_argument('--native-on', type=Path, required=True)
@@ -55,10 +56,9 @@ def main():
     wasm = cross / 'quietproof-build/quietproof.wasm'
     output = ROOT / 'docs/.vitepress/dist'
     not_run = [{'name': name, 'status': 'not_run_by_selected_mode',
-                'reason': ('Dedicated full-web/resource fixtures are unnecessary for smoke; native reactor fixtures remain exercised'
-                           if name == 'fixtures' else
-                           'Smoke mode omits the exhaustive web matrix and resource benchmark; run --mode full locally')}
-               for name in ['fixtures', 'full-browser', 'resources']] if args.mode == 'smoke' else []
+                'reason': 'Fast CI omits expensive qualification; run --mode full explicitly or on schedule'}
+               for name in ['native-proof-heavy', 'wasm-proof-verification', 'provider-browser',
+                            'fixtures', 'full-browser', 'resources', 'reproducibility']] if args.mode == 'smoke' else []
     manifest = {'schema': 2, 'mode': args.mode, 'notRun': not_run,
                 'startedAt': now(), 'cwd': str(ROOT), 'checks': [],
                 'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
@@ -185,32 +185,47 @@ def main():
         old = native / 'tests/wasm-real'
         if old.exists():
             shutil.copytree(old, args.evidence / 'previous-wasm-real')
-        run('native-on-build', ['cmake', '--build', native, '--parallel', '2'])
+        native_build = ['cmake', '--build', native, '--parallel', '2']
+        if args.mode == 'smoke':
+            native_build += ['--target', 'quietproof-cli', 'quietproof-rpc-test',
+                             'compressed-key-sha256-test', 'key-ownership-test', 'ripemd160-test',
+                             'quietproof-protocol-test', 'quietproof-challenge-test',
+                             'quietproof-browser-codec-test', 'quietproof-integration-test',
+                             'pokc-sage-test', 'quietproof-progress-test']
+        run('native-on-build', native_build)
         run('native-off-build', ['cmake', '--build', offline, '--target', 'quietproof-cli', '--parallel', '2'])
-        run('native-on', ['ctest', '--test-dir', native, '--output-on-failure', '--no-tests=error',
-                         '--parallel', '1', '--timeout', '1800', '-E', '^quietproof-regtest-rpc-test$'])
+        native_tests = ['ctest', '--test-dir', native, '--output-on-failure', '--no-tests=error',
+                        '--parallel', '1', '--timeout', '1800', '-E', '^quietproof-regtest-rpc-test$']
+        if args.mode == 'smoke':
+            native_tests += ['-LE', 'proof-heavy']
+        run('native-on', native_tests)
         run('native-off', ['ctest', '--test-dir', offline, '--output-on-failure', '--no-tests=error',
                           '--parallel', '1', '--timeout', '600', '-R', '^quietproof-(package-test|cli-test|cli-rpc-test|prove-feedback-test)$'])
         if args.mode == 'full':
             run('fixtures', [native / 'quietproof-browser-fixtures', args.evidence / 'fixtures'])
-        run('wasm-browser', ['npm', 'run', 'test:wasm'])
-        # These fixtures have one-hour validity. Exercise both direct reactor
-        # suites before the longer, independently generated 24-hour matrix.
-        run('provider-browser', ['node', '--test', '--test-concurrency=1',
-                                 'web/features/provider/verification.browser.test.mjs'])
+        if args.mode == 'full':
+            run('wasm-browser', ['npm', 'run', 'test:wasm'])
+            # Use fresh native proof fixtures before the long full-web matrix.
+            run('provider-browser', ['node', '--test', '--test-concurrency=1',
+                                     'web/features/provider/verification.browser.test.mjs'])
+        else:
+            run('wasm-browser-fast', ['node', '--test', '--test-concurrency=1', '--test-timeout=60000',
+                '--test-skip-pattern=^(real proof stages|browser time and phase failures)',
+                'tests/wasm/browser.test.mjs'])
         units = sorted(str(p.relative_to(ROOT)) for parent in [ROOT / 'web', ROOT / 'tests/wasm']
                        for p in parent.rglob('*.test.mjs') if not p.name.endswith('.browser.test.mjs') and p.name != 'browser.test.mjs')
         run('units', ['node', '--test', '--test-concurrency=1', *units])
         run('site', ['npm', 'run', 'test:site'])
         run('packaging', ['python3', '-m', 'unittest', 'discover', '-s', 'tests/static', '-p', 'test_*.py'])
         packaged_build('/', 'root-build-a')
-        first = snapshot()
-        packaged_build('/', 'root-build-b')
-        second = snapshot()
-        comparison = {'first': first, 'second': second, 'identical': first == second}
-        (args.evidence / 'reproducibility.json').write_text(json.dumps(comparison, sort_keys=True, indent=2) + '\n')
-        if first != second:
-            raise RuntimeError('static rebuild bytes differ; see reproducibility.json')
+        if args.mode == 'full':
+            first = snapshot()
+            packaged_build('/', 'root-build-b')
+            second = snapshot()
+            comparison = {'first': first, 'second': second, 'identical': first == second}
+            (args.evidence / 'reproducibility.json').write_text(json.dumps(comparison, sort_keys=True, indent=2) + '\n')
+            if first != second:
+                raise RuntimeError('static rebuild bytes differ; see reproducibility.json')
         browser_checks('/', args.mode == 'full')
         if args.mode == 'full':
             environment.update(QUIETPROOF_WASM_FIXTURES=str(args.evidence / 'fixtures'),

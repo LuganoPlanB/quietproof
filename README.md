@@ -150,16 +150,18 @@ Core-only consumers keep the original no-component package and
 
 ## Testing
 
-The `Tests` GitHub Actions workflow runs on every pull request and pushes to
-`main`: the full native CTest suite with RPC enabled (including real proof
-tests), package/CLI compatibility tests with RPC disabled, WASM17/provider2,
-unit/site/packaging tests and reproducible root/subpath artifacts with focused
-Chromium/WebKit hosting/security smoke checks. CI explicitly selects
-`qualify_static.py --mode smoke`: it does not run the exhaustive web browser
-matrix or resource benchmark. Pages consumes a smoke-checked artifact whose
-provenance records that scope. Full local release qualification remains the
-default (`--mode full`); see [the build guide](docs/wasm-build.md). Smoke success
-does not establish the omitted gates or deployed headers/CORS.
+The `Tests` workflow runs fast checks on pull requests and pushes to `main`:
+native tests excluding `proof-heavy`, RPC ON/OFF package/CLI compatibility,
+non-proof WASM/browser checks, units, and root/subpath hosting/security checks.
+It selects `qualify_static.py --mode smoke` and records the omitted gates.
+Pages downloads that exact main CI artifact and deploys it without rerunning tests.
+
+The **Full qualification** workflow runs weekly (Sunday 03:17 UTC) and on manual
+request. It selects `--mode full`, including real native proofs, WASM/provider
+proof verification, the exhaustive browser matrix, reproducibility and resource
+benchmarks. Manual Linux releases also request full qualification. The local
+default remains `--mode full`; see [the build guide](docs/wasm-build.md).
+Smoke success does not establish these omitted gates or deployed headers/CORS.
 Live Bitcoin-node integration
 and the optional Sage reference runtime remain opt-in; deterministic Sage vectors
 run in CI.

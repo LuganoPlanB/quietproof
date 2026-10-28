@@ -1,7 +1,7 @@
 # Static Linux release dependencies
 
 The musl release archive includes QuietProof's GPLv3 license (`COPYING`), the
-pinned Longfellow SDK's Apache 2.0 license, and the notices below for libraries
+pinned Longfellow SDK's distribution license, and the notices below for libraries
 and compiler runtimes linked from the Dyne x86_64 toolchain.
 
 | Notice | Source |

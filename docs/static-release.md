@@ -68,10 +68,12 @@ Before an explicitly authorized publication:
    cache behavior and provider CORS behavior. Local servers cannot establish
    these. Plan a post-deployment smoke check and an authorized rollback.
 
-The existing Pages workflow calls `test.yml` for **smoke** checks with the base
-path from `configure-pages`. It downloads the `quietproof-static` artifact,
-uploads that exact directory as the Pages artifact and deploys it in the
-`github-pages` environment. It does not rebuild the site after those checks.
+The Pages workflow follows a successful main-branch `Tests` run. Main CI reads
+the Pages base and builds/checks the artifact for that base. Pages downloads
+`quietproof-static` from that specific run, verifies its commit, base,
+qualification scope and asset hashes, then uploads and deploys that directory.
+It does not call the test workflow or rebuild the site. Superseded main commits
+are skipped; manual deployment requires an eligible successful main Tests run ID.
 The artifact's `build-provenance.json.qualification` records mode `smoke`,
 successful selected gates and the exhaustive browser/resource omissions.
 CI smoke success is not full release qualification. Retain a separately
@@ -85,10 +87,10 @@ Its current configuration is not evidence of a successful hosted run or
 configured approval protection. Trigger publication only after the separate
 deployment authorization and the release prerequisites above are satisfied.
 
-The CI job retains its 240-minute upper bound, with native builds limited to
-two jobs and the retained native/reactor/smoke checks serialized. The exhaustive
-web matrix and resource benchmark run only in full local mode. The previously
-recorded complete local qualification
+Fast CI has a 30-minute timeout and native builds use two jobs. The separate
+**Full qualification** workflow has a 240-minute timeout and runs manually or
+weekly (Sunday 03:17 UTC). It retains real-proof verification, the exhaustive
+web matrix, reproducibility and resource benchmarks. The previous full local run
 took approximately 163 minutes with existing native build prerequisites;
 cold dependency/compiler/browser setup needs additional time. This observation
 is not a hosted CI timing guarantee. The larger job budget does not change the

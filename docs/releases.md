@@ -8,8 +8,10 @@ description: Semantic release versioning and static Linux x86_64 downloads.
 The [release workflow](https://github.com/LuganoPlanB/quietproof/actions/workflows/release.yml)
 publishes a static Linux x86_64 CLI after the main-branch `Tests` workflow
 succeeds. It builds the exact tested commit. A maintainer can also run the
-release workflow manually on `main`; that path runs the test workflow first.
-Pull requests build and test the binary without creating tags or releases.
+release workflow manually on `main`; that path requires full proof/browser qualification first.
+Automatic releases use fast main CI plus musl native checks; full qualification
+is a separate weekly/manual gate. Pull requests build and test the binary without
+creating tags or releases.
 
 The first release is `v0.1.0`. Later versions are calculated by
 [`ietf-tools/semver-action`](https://github.com/ietf-tools/semver-action) from

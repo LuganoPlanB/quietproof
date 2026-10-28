@@ -19,6 +19,7 @@ on:
 
 permissions:
   contents: read
+  pages: read
 
 concurrency:
   group: release-linux-${{ github.event.pull_request.number || 'main' }}
@@ -76,6 +77,8 @@ jobs:
   qualify-manual:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     uses: ./.github/workflows/test.yml
+    with:
+      mode: full
 
   musl:
     needs: version
