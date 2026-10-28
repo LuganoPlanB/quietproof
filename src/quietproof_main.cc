@@ -287,39 +287,24 @@ class TerminalEchoGuard {
   bool active_ = false;
 };
 
-bool ReadSecrets(size_t count,
-                 std::vector<std::array<uint8_t, 32>>* secrets) {
-  if (secrets == nullptr || count == 0 || count > proofs::kQuietProofMaxKeys)
-    return false;
-  secrets->clear();
-  secrets->reserve(count);
+bool ReadSecret(std::array<uint8_t, 32>* secret) {
+  if (secret == nullptr) return false;
   const bool terminal = isatty(STDIN_FILENO);
   if (terminal)
-    std::cerr << "Enter " << count << " private key(s), each as 64 hexadecimal characters.\n"
-              << "Input is hidden; paste a key and press Enter (not an address).\n";
+    std::cerr << "Enter one private key as 64 hexadecimal characters.\n"
+              << "Input is hidden; paste the key and press Enter (not an address).\n";
   TerminalEchoGuard echo_guard;
-  for (size_t index = 0; index < count; ++index) {
-    if (terminal) std::cerr << "Key " << index + 1 << '/' << count << ": ";
-    std::string line;
-    const bool read = static_cast<bool>(std::getline(std::cin, line));
-    if (terminal) std::cerr << '\n';
-    std::array<uint8_t, 32> secret{};
-    const bool valid = read && HexArray(line, &secret);
-    if (!line.empty()) SecureErase(line.data(), line.size());
-    if (!valid) {
-      SecureErase(secret.data(), secret.size());
-      return false;
-    }
-    secrets->push_back(secret);
-    SecureErase(secret.data(), secret.size());
-  }
-  return true;
+  if (terminal) std::cerr << "Key 1/1: ";
+  std::string line;
+  const bool read = static_cast<bool>(std::getline(std::cin, line));
+  if (terminal) std::cerr << '\n';
+  const bool valid = read && HexArray(line, secret);
+  if (!line.empty()) SecureErase(line.data(), line.size());
+  return valid;
 }
 
-void EraseSecrets(std::vector<std::array<uint8_t, 32>>* secrets) {
-  if (secrets == nullptr) return;
-  for (auto& secret : *secrets) SecureErase(secret.data(), secret.size());
-  secrets->clear();
+void EraseSecret(std::array<uint8_t, 32>* secret) {
+  if (secret != nullptr) SecureErase(secret->data(), secret->size());
 }
 
 int PrintResult(const proofs::QuietProofVerification& verification) {
@@ -593,9 +578,8 @@ int Prove(int argc, char** argv) {
     std::cerr << "QuietProof request is not currently valid\n";
     return kData;
   }
-  std::vector<std::array<uint8_t, 20>> programs;
-  if (!proofs::QuietProofDistinctPrograms(statement, &programs)) return kData;
-  std::vector<std::array<uint8_t, 32>> secrets;
+  const auto& program = statement.claims.front().program;
+  std::array<uint8_t, 32> secret{};
   if (options.count("--network")) {
     std::string network_name;
     proofs::QuietProofNetwork network;
@@ -614,50 +598,40 @@ int Prove(int argc, char** argv) {
     proofs::BitcoinCoreRpcConfig config(statement.network);
     if (!One(options, "--rpc-wallet", &wallet, false) ||
         !One(options, "--address", &address, false) || !ParseRpcOptions(options, &config)) return Usage();
-    if (programs.size() != 1) {
-      std::cerr << "Wallet export requires a request with one distinct key hash; use stdin for multiple keys.\n";
-      return kData;
-    }
     proofs::BitcoinCoreRpc rpc(std::move(config));
     proofs::BitcoinRpcError rpc_error;
-    secrets.resize(1);
     std::vector<proofs::QuietProofScriptKind> script_kinds;
     for (const auto& claim : statement.claims) {
       if (std::find(script_kinds.begin(), script_kinds.end(), claim.script_kind) == script_kinds.end())
         script_kinds.push_back(claim.script_kind);
     }
-    if (!rpc.ExportAddressKey(wallet, address, programs.front(), script_kinds,
-                              &secrets.front(), &rpc_error)) {
-      EraseSecrets(&secrets);
+    if (!rpc.ExportAddressKey(wallet, address, program, script_kinds,
+                              &secret, &rpc_error)) {
+      EraseSecret(&secret);
       std::cerr << rpc_error.message << '\n';
       return kData;
     }
 #else
     return NativeUnavailable();
 #endif
-  } else if (!ReadSecrets(programs.size(), &secrets)) {
-    EraseSecrets(&secrets);
+  } else if (!ReadSecret(&secret)) {
+    EraseSecret(&secret);
     std::cerr << "Invalid key input: expected 64 hexadecimal characters per private key, not an address.\n";
     return kData;
   }
-  std::cerr << "Key input received. Checking keys against the request...\n";
-  std::vector<std::array<uint8_t, 20>> supplied_programs;
-  for (const auto& secret : secrets) {
-    proofs::PoKCWitnessV1<proofs::PoKCField, proofs::PoKCEC> witness;
-    const bool valid = witness.compute(proofs::p256k1, secret.data(), secret.size());
-    if (valid) supplied_programs.push_back(witness.program());
-    SecureErase(&witness, sizeof(witness));
-    if (!valid) {
-      EraseSecrets(&secrets);
-      std::cerr << "Invalid private key: scalar must be nonzero and below the secp256k1 order.\n";
-      return kData;
-    }
+  std::cerr << "Key input received. Checking key against the request...\n";
+  proofs::PoKCWitnessV1<proofs::PoKCField, proofs::PoKCEC> witness;
+  const bool valid = witness.compute(proofs::p256k1, secret.data(), secret.size());
+  const bool matches = valid && witness.program() == program;
+  SecureErase(&witness, sizeof(witness));
+  if (!valid) {
+    EraseSecret(&secret);
+    std::cerr << "Invalid private key: scalar must be nonzero and below the secp256k1 order.\n";
+    return kData;
   }
-  std::sort(supplied_programs.begin(), supplied_programs.end());
-  std::sort(programs.begin(), programs.end());
-  if (supplied_programs != programs) {
-    EraseSecrets(&secrets);
-    std::cerr << "Private keys do not match the request; provide one key per distinct address.\n";
+  if (!matches) {
+    EraseSecret(&secret);
+    std::cerr << "Private key does not match the request.\n";
     if (std::any_of(statement.claims.begin(), statement.claims.end(), [](const auto& claim) {
           return claim.script_kind == proofs::QuietProofScriptKind::kP2pkh;
         }))
@@ -665,18 +639,15 @@ int Prove(int argc, char** argv) {
                    "P2PKH hash is one possible cause of this mismatch.\n";
     return kData;
   }
-  std::cerr << "Keys validated. Generating proof; this may take several minutes...\n";
+  std::cerr << "Key validated. Generating proof; this may take several minutes...\n";
   proofs::QuietProofEnvelopeV1 envelope;
   bool proved = false;
   {
     quietproof_cli::ProofProgress progress(std::cerr);
     const auto phase = [&progress](const char* name) { progress.SetPhase(name); };
-    if (programs.size() == 1)
-      proved = proofs::PoKCProveKeys<1>(secrets, statement, &envelope, phase);
-    else if (programs.size() == 2)
-      proved = proofs::PoKCProveKeys<2>(secrets, statement, &envelope, phase);
+    proved = proofs::PoKCProve(secret, statement, &envelope, phase);
   }
-  EraseSecrets(&secrets);
+  EraseSecret(&secret);
   std::vector<uint8_t> wire;
   if (!proved || !proofs::EncodeQuietProofEnvelope(envelope, &wire)) {
     std::cerr << "proof generation failed\n";

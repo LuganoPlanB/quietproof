@@ -40,9 +40,69 @@
 #include "zk/zk_prover.h"
 #include "pokc/verifier.h"
 namespace proofs {
-template <size_t Keys>
-inline bool PoKCProveKeys(const std::vector<std::array<uint8_t, 32>>& secrets, QuietProofStatementV1 statement, QuietProofEnvelopeV1* out, const std::function<void(const char*)>& progress = {}) { std::vector<std::array<uint8_t,20>> programs; if(!out || secrets.size()!=Keys || !QuietProofDistinctPrograms(statement,&programs) || programs.size()!=Keys)return false; const auto created_at = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count(); if(created_at <= 0 || static_cast<uint64_t>(created_at) < statement.not_before || static_cast<uint64_t>(created_at) >= statement.expires_at)return false; std::array<PoKCWitnessV1<PoKCField,PoKCEC>,Keys> witnesses; for(size_t i=0;i<Keys;++i) { bool found=false; for(size_t j=0;j<Keys;++j) { PoKCWitnessV1<PoKCField,PoKCEC> candidate; if(!candidate.compute(p256k1,secrets[j].data(),secrets[j].size()))return false; if(candidate.program()==programs[i]) { if(found)return false; witnesses[i]=candidate; found=true; } } if(!found)return false; } if(progress)progress("building circuit"); QuadCircuit<PoKCField> q(p256k1_base); auto c=PoKCBuildCircuit<Keys>(&q); const size_t block=PoKCBlock(*c,q); if(!PoKCCrtBlockSupported(block))return false; if(progress)progress("preparing proof inputs"); auto in=std::make_unique<Dense<PoKCField>>(1,c->ninputs); { DenseFiller<PoKCField> f(*in); f.push_back(p256k1_base.one()); BitPluckerEncoder<PoKCField,8> encoder(p256k1_base); for(const auto& program:programs)for(auto x:program)f.push_back(encoder.encode(x)); for(const auto& witness:witnesses)witness.fill_witness(f); } using CF=CrtConvolutionFactory<CRT256<PoKCField>,PoKCField>; using RS=ReedSolomonFactory<PoKCField,CF>; CF cf(p256k1_base); RS rs(cf,p256k1_base); ZkProof<PoKCField> p(*c,4,128,block); ZkProver<PoKCField,RS> prover(*c,p256k1_base,rs); SecureRandomEngine rng; QuietProofEnvelopeV1 e; e.statement=std::move(statement); e.envelope_version=2; e.proof_created_at=static_cast<uint64_t>(created_at); e.proof.circuit_digest=PoKCExpectedCircuitDigest<Keys>(); const auto seed=PoKCTranscriptSeed(e); Transcript t(seed.data(),seed.size()); if(progress)progress("computing commitment"); prover.commit(p,*in,t,rng); if(progress)progress("generating proof"); if(!prover.prove(p,*in,t))return false; if(progress)progress("serializing proof"); p.write(e.proof.bytes,p256k1_base); *out=std::move(e); return true; }
-inline bool PoKCProve(const uint8_t* secret, size_t n, QuietProofStatementV1 statement, QuietProofEnvelopeV1* out) { if(!secret || n!=32 || !QuietProofStatementValid(statement))return false; std::array<uint8_t,32> key{}; std::memcpy(key.data(),secret,32); const bool result=PoKCProveKeys<1>({key},std::move(statement),out); volatile uint8_t* wipe=key.data(); for(size_t i=0;i<key.size();++i)wipe[i]=0; return result; }
+inline bool PoKCProve(const std::array<uint8_t, 32>& secret,
+                      QuietProofStatementV1 statement,
+                      QuietProofEnvelopeV1* out,
+                      const std::function<void(const char*)>& progress = {}) {
+  if (!out || !QuietProofStatementValid(statement)) return false;
+  const auto created_at = std::chrono::duration_cast<std::chrono::seconds>(
+      std::chrono::system_clock::now().time_since_epoch()).count();
+  if (created_at <= 0 || static_cast<uint64_t>(created_at) < statement.not_before ||
+      static_cast<uint64_t>(created_at) >= statement.expires_at) return false;
+  PoKCWitnessV1<PoKCField, PoKCEC> witness;
+  if (!witness.compute(p256k1, secret.data(), secret.size()) ||
+      witness.program() != statement.claims.front().program) return false;
 
+  if (progress) progress("building circuit");
+  QuadCircuit<PoKCField> q(p256k1_base);
+  auto circuit = PoKCBuildCircuit(&q);
+  const size_t block = PoKCBlock(*circuit, q);
+  if (!PoKCCrtBlockSupported(block)) return false;
+  if (progress) progress("preparing proof inputs");
+  auto inputs = std::make_unique<Dense<PoKCField>>(1, circuit->ninputs);
+  {
+    DenseFiller<PoKCField> filler(*inputs);
+    filler.push_back(p256k1_base.one());
+    BitPluckerEncoder<PoKCField, 8> encoder(p256k1_base);
+    for (auto byte : statement.claims.front().program)
+      filler.push_back(encoder.encode(byte));
+    witness.fill_witness(filler);
+  }
+  using CF = CrtConvolutionFactory<CRT256<PoKCField>, PoKCField>;
+  using RS = ReedSolomonFactory<PoKCField, CF>;
+  CF cf(p256k1_base);
+  RS rs(cf, p256k1_base);
+  ZkProof<PoKCField> proof(*circuit, 4, 128, block);
+  ZkProver<PoKCField, RS> prover(*circuit, p256k1_base, rs);
+  SecureRandomEngine rng;
+  QuietProofEnvelopeV1 envelope;
+  envelope.statement = std::move(statement);
+  envelope.envelope_version = 2;
+  envelope.proof_created_at = static_cast<uint64_t>(created_at);
+  envelope.proof.circuit_digest = PoKCExpectedCircuitDigest();
+  const auto seed = PoKCTranscriptSeed(envelope);
+  Transcript transcript(seed.data(), seed.size());
+  if (progress) progress("computing commitment");
+  prover.commit(proof, *inputs, transcript, rng);
+  if (progress) progress("generating proof");
+  if (!prover.prove(proof, *inputs, transcript)) return false;
+  if (progress) progress("serializing proof");
+  proof.write(envelope.proof.bytes, p256k1_base);
+  *out = std::move(envelope);
+  return true;
 }
+
+inline bool PoKCProve(const uint8_t* secret, size_t size,
+                      QuietProofStatementV1 statement,
+                      QuietProofEnvelopeV1* out) {
+  if (!secret || size != 32) return false;
+  std::array<uint8_t, 32> key{};
+  std::memcpy(key.data(), secret, key.size());
+  const bool result = PoKCProve(key, std::move(statement), out);
+  volatile uint8_t* wipe = key.data();
+  for (size_t i = 0; i < key.size(); ++i) wipe[i] = 0;
+  return result;
+}
+
+}  // namespace proofs
 #endif

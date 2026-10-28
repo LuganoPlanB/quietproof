@@ -261,7 +261,7 @@ def statement_vector():
     nonce = bytes(range(1, 33))
     message_hash = bytes(range(32, 0, -1))
     first = bytes([1]) + bytes(31) + u32(2) + u64(42) + bytes([9]) + bytes(19)
-    second = bytes([2]) + bytes(31) + u32(1) + u64(99) + bytes([0, 8]) + bytes(18)
+    second = bytes([2]) + bytes(31) + u32(1) + u64(99) + bytes([9]) + bytes(19)
     encoded = (b"QPS1" + bytes([1, 2]) + u16(len(verifier)) + verifier +
                u16(len(purpose)) + purpose + nonce + message_hash + u64(100) +
                u64(200) + bytes([0, 0]) + u16(2) + first + second)

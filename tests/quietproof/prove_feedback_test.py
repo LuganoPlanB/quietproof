@@ -76,7 +76,7 @@ class ProveFeedbackTest(unittest.TestCase):
                 self.rejected(value + '\n', 'Invalid private key: scalar')
 
     def test_wrong_key(self):
-        self.rejected('0' * 63 + '2\n', 'Private keys do not match the request')
+        self.rejected('0' * 63 + '2\n', 'Private key does not match the request')
 
     def test_interactive_feedback_without_echo(self):
         master, slave = pty.openpty()
@@ -96,9 +96,9 @@ class ProveFeedbackTest(unittest.TestCase):
             read_until(b'Key 1/1: ')
             self.assertIn(b'Input is hidden', received)
             os.write(master, (KEY + '\n').encode())
-            read_until(b'Keys validated. Generating proof;')
+            read_until(b'Key validated. Generating proof;')
             read_until(b'Proof phase: building circuit')
-            self.assertIn(b'Key input received. Checking keys', received)
+            self.assertIn(b'Key input received. Checking key', received)
             self.assertNotIn(KEY.encode(), received)
         finally:
             if process.poll() is None:

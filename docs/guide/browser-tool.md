@@ -20,11 +20,11 @@ business decision or establishes exclusive control, ownership or solvency.
 | Boundary | Browser support |
 | --- | --- |
 | Networks | Mainnet and signet; choose explicitly. A `tb1` address does not identify signet by itself. |
-| Scripts | Native P2WPKH and compressed-key P2PKH, including mixed claims sharing one fingerprint or using two fingerprints. A P2PKH address alone cannot establish key encoding. |
-| Request size | One or two addresses; select 1–16 exact outputs with at most two distinct key fingerprints. No automatic output selection. |
+| Scripts | Native P2WPKH and compressed-key P2PKH, including mixed claims sharing one fingerprint. A P2PKH address alone cannot establish key encoding. |
+| Request size | One or two addresses sharing a key hash; select 1–16 exact outputs with one key fingerprint. No automatic output selection. |
 | Unsupported | P2SH, P2WSH, P2TR, uncompressed-key P2PKH and other scripts; historical snapshot and bridge verification. Metadata inspection is not acceptance. |
 | Browsers | Qualified desktop Chromium and WebKit. Firefox is unsupported and unqualified. |
-| Resources | Real proofs are roughly 45/87 MiB for one/two keys and can take minutes. Measured linear allocation is about 0.95/1.82 GB; the module maximum is 2 GiB, **plus** browser, file and JavaScript memory. These are not process RSS or total-RAM requirements. |
+| Resources | Real proofs are roughly 45 MiB for one key and can take minutes. Measured linear allocation is about 0.95 GB; the module maximum is 2 GiB, **plus** browser, file and JavaScript memory. These are not process RSS or total-RAM requirements. |
 
 Use a desktop with ample available memory and run one proof at a time. A
 390-pixel layout does not qualify a phone or a low-RAM device. Physical mobile/
@@ -36,7 +36,7 @@ can replace the verifier and results.
 ## 1. Create and retain the request
 
 1. Open [Create a request](/tool), choose **Bitcoin network**, and enter one or
-   two **Bitcoin addresses**, one per line.
+   two **Bitcoin addresses** sharing the same key fingerprint, one per line.
 2. Select **Look up outputs**. This explicit action sends the addresses to the
    displayed public explorer. Editing the form alone does not query it.
 3. Review and select the exact disclosed outputs. Check scripts, amounts,
@@ -88,8 +88,7 @@ Compatible wallet support is integration-specific. The native CLI's explicit
 [Bitcoin Roots wallet-backed mode](/operations#explicit-wallet-backed-proving)
 can use an already loaded/unlocked wallet for a request sharing one distinct
 key fingerprint. It obtains a key into the native process; it is not a browser
-wallet connector and does not guarantee complete memory erasure. Multi-key
-requests use protected stdin. Configure and unlock the trusted wallet outside
+wallet connector and does not guarantee complete memory erasure. Configure and unlock the trusted wallet outside
 the browser; unavailable wallet support does not trigger an export fallback.
 
 Return the `.qpf` to the verifier. The verifier should use its retained expected

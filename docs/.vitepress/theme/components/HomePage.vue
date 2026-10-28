@@ -63,13 +63,6 @@
                 <td>44.71 MiB</td>
                 <td>2,067,522</td>
               </tr>
-              <tr>
-                <th scope="row">2 distinct keys</th>
-                <td>60.200 s</td>
-                <td>38.967 s</td>
-                <td>87.04 MiB</td>
-                <td>4,133,092</td>
-              </tr>
             </tbody>
           </table>
         </div>
@@ -99,7 +92,7 @@
             <div>
               <dt>Private prover input</dt>
               <dd>
-                One 32-byte spend key for each distinct compressed-key hash—exactly one or two.
+                One 32-byte spend key matching the key hash shared by every claimed output.
                 Keys stay local and should enter through protected standard input.
               </dd>
             </div>
@@ -127,7 +120,7 @@
             <p>
               <strong>Current cost follows distinct keys.</strong> Each key adds an elliptic-curve,
               SHA-256, and RIPEMD-160 relation. More claims are comparatively cheap only when they
-              reuse one of the same one or two key hashes across P2WPKH/P2PKH kinds.
+              share one key hash across P2WPKH/P2PKH kinds.
             </p>
             <p>
               <strong>Use it at discrete decision points.</strong> A custody review, OTC
@@ -157,11 +150,6 @@
             <p class="quietproof-job-list__context">Deals & credit</p>
             <h3>Qualify a counterparty before negotiation</h3>
             <p>Check proposed funds or collateral before spending time on legal work, escrow, or settlement.</p>
-          </article>
-          <article>
-            <p class="quietproof-job-list__context">Off-chain continuity</p>
-            <h3>Show common key knowledge across wallets</h3>
-            <p>The two-key proof reveals the link to recipients without publishing an on-chain transaction.</p>
           </article>
           <article>
             <p class="quietproof-job-list__context">Collaborative protocols</p>
@@ -199,29 +187,6 @@
           </li>
         </ol>
         <a class="quietproof-inline-link" :href="withBase('/guide/how-it-works')">Follow the proof step by step <span aria-hidden="true">→</span></a>
-      </section>
-
-      <section class="quietproof-two-key" aria-labelledby="two-key-title">
-        <div>
-          <h2 id="two-key-title">One proof can connect two keys off-chain</h2>
-          <p>
-            QuietProof v1 has exact circuit shapes for one or two distinct compressed-key hashes. In the
-            two-key case, a selected verifier can learn that the same prover knows both keys without
-            learning either public key and without creating an on-chain connection.
-          </p>
-          <p>
-            This supports wallet continuity and reputation rollover. Recipients learn the link
-            and can share the proof. Native P2WPKH and compressed-key P2PKH are supported;
-            uncompressed P2PKH is unsupported. Public outpoints, key hashes and amounts stay
-            linkable. Earlier spends or key reuse may already reveal a public key; proving
-            cannot undo that exposure or provide anonymity.
-          </p>
-        </div>
-        <div class="quietproof-linkage" role="img" aria-label="Old and new wallet outputs linked for the verifier by QuietProof">
-          <div><span>Old wallet</span><code>bc1q ··· a91x</code></div>
-          <div class="quietproof-linkage__proof"><span>QuietProof</span><small>knows both keys</small></div>
-          <div><span>New wallet</span><code>bc1q ··· m42c</code></div>
-        </div>
       </section>
 
       <section class="quietproof-depth" aria-labelledby="depth-title">

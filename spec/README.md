@@ -84,5 +84,5 @@ Keep the Sage oracle alongside:
 1. C++ positive and adversarial witness mutation tests;
 2. deterministic circuit serialization and identity checks;
 3. sanitizer and static-analysis gates;
-4. real one-key and maximum two-key proofs; and
+4. real single-key proofs and second-key rejection; and
 5. independent cryptographic, circuit, protocol, and operational review.

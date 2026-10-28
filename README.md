@@ -9,9 +9,11 @@ runs offline with the request and protected key input by default; explicit walle
 mode can obtain one address key from Bitcoin Roots. Native verification
 uses Core RPC directly, without installing or invoking `bitcoin-cli`.
 
-QuietProof uses **PoKC (Proof of Key Control)** for one or two compressed-key
-hashes across P2WPKH, P2PKH, or mixed outputs. Uncompressed-key P2PKH is unsupported;
+QuietProof uses **PoKC (Proof of Key Control)** for one compressed-key
+hash across P2WPKH, P2PKH, or mixed outputs. Uncompressed-key P2PKH is unsupported;
 discovery cannot determine key encoding from a P2PKH script alone.
+Up to 16 outputs may share that key hash. Different keys require separate
+requests and proofs; existing two-key requests and proofs are rejected.
 Proofs do not newly reveal public keys, but disclose outpoints, amounts and key hashes.
 Earlier spends or key reuse may already have revealed a public key; proving cannot
 undo that exposure. This is not anonymous proof of funds.
@@ -128,10 +130,15 @@ target_link_libraries(my_application PRIVATE LongfellowZKQuietProof::rpc)
 
 `BitcoinCoreRpc` supplies discovery and fresh chain evidence;
 `CreateQuietProofChallenge` creates the same canonical requests as the CLI.
-Existing `PoKCProveKeys<1|2>` and `VerifyQuietProof` handle proving and complete
+Existing `PoKCProve` and `VerifyQuietProof` handle proving and complete
 policy/evidence verification. `PoKCVerifyProof` alone verifies only the
 zero-knowledge relation. Applications choose verifier policy independently of
 the prover and fail closed on non-authorization outcomes.
+
+The key-count templates have been removed. Use `PoKCProve(secret, statement,
+&envelope)` with a single `std::array<uint8_t, 32>` secret, or the existing
+pointer-and-length overload. `PoKCBuildCircuit` and `PoKCExpectedCircuitDigest`
+also take no key-count template argument.
 
 Core-only consumers keep the original no-component package and
 `LongfellowZKQuietProof::quietproof` without curl discovery/linkage.
@@ -157,7 +164,7 @@ ctest --test-dir build --output-on-failure -E '^pokc-test$'
 ctest --test-dir build --output-on-failure -R '^pokc-test$'
 ```
 
-The real one/two-key proof gate is CPU- and memory-intensive. Ordinary builds
+The real single-key proof gate is CPU- and memory-intensive. Ordinary builds
 explicitly skip live Core integration. Enable it with
 `QUIETPROOF_ENABLE_BITCOIN_REGTEST_TEST=ON` and explicit
 `QUIETPROOF_CORE28_DIR`/`QUIETPROOF_CORE30_DIR` executable directories; the
@@ -202,7 +209,6 @@ performance requirements.
 | Distinct keys | End-to-end prove API | End-to-end verify API | Raw proof | Full envelope | Serialized circuit |
 | ---: | ---: | ---: | ---: | ---: | ---: |
 | 1 | 29.892 s | 19.899 s | 46,879,852 B (44.71 MiB) | 46,880,097 B | 24,876,346 B (23.72 MiB) |
-| 2 | 60.200 s | 38.967 s | 91,263,372 B (87.04 MiB) | 91,263,681 B | 49,663,186 B (47.36 MiB) |
 
 These end-to-end measurements include native witness preparation, circuit
 construction, proving or verification, and proof serialization/parsing as
@@ -225,7 +231,6 @@ Circuit structure is deterministic. Current fixed metrics are:
 | Distinct keys | Public inputs | Total inputs | Private inputs | Quadratic terms | CRT block encoding |
 | ---: | ---: | ---: | ---: | ---: | ---: |
 | 1 | 21 | 3,031 | 3,010 | 2,067,522 | 2,070,533 |
-| 2 | 41 | 6,061 | 6,020 | 4,133,092 | 4,139,113 |
 
 Reproduce the real one-key samples with
 `ctest --test-dir build -R '^pokc-test$' --output-on-failure`; results are
@@ -261,7 +266,7 @@ The node's network and address script must match it before any key export. This 
 compressed-key hash across P2WPKH, P2PKH, or mixed outputs. Automatic address
 selection uses P2PKH when present in the request, otherwise P2WPKH. For mixed
 requests, `--address` can select either claimed kind with the same key hash.
-Multi-key requests use protected stdin. The returned
+The returned
 compressed key is checked against the request before proof generation.
 
 Supplying any RPC option (or `--address`) selects wallet mode. Plain `prove`

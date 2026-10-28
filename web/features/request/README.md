@@ -55,10 +55,10 @@ matrix. The preview owns one Blob URL; changes and unmount revoke it. The worker
 is terminated after each creation/inspection or cancellation.
 
 The workflow gate covers mainnet and signet with v1 P2WPKH, typed v2 P2PKH,
-and mixed P2WPKH/P2PKH requests with two distinct keys. It downloads and parses
+and mixed P2WPKH/P2PKH requests sharing one key hash. It downloads and parses
 48 fresh requests across the engine/viewport/text-scale matrix, and serially
 creates twelve real native proofs from downloaded requests (one per engine,
-network and script family). Only well-known disposable scalars 1 and 2 enter
+network and script family). Only the well-known disposable scalar 1 enters
 the native CLI's stdin. They never enter the browser or provider requests.
 `workflow-fixtures.mjs` imports Node crypto and is test-only. No live coins,
 node, RPC credentials or private wallet material are used.

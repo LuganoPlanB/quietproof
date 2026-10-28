@@ -1,6 +1,6 @@
 // Coverage accounting only; cryptographic verification remains in the worker.
 export const REQUIRED_ENGINES = Object.freeze(['chromium', 'webkit']);
-export const REQUIRED_KEYS = Object.freeze(['one-key', 'two-key']);
+export const REQUIRED_KEYS = Object.freeze(['one-key']);
 export const DIAGNOSTIC_ENGINES = Object.freeze(['firefox']);
 
 export function parseSelection(value, defaults, allowed, label) {
@@ -28,7 +28,7 @@ export function assessCoverage(report) {
     const keys = checks.map(check => check.key);
     if (checks.length !== REQUIRED_KEYS.length || new Set(keys).size !== keys.length ||
         REQUIRED_KEYS.some(key => !keys.includes(key)) || checks.some(check => check.status !== 'passed'))
-      failures.push(`Required ${name} one/two-key coverage is incomplete, duplicated or failed.`);
+      failures.push(`Required ${name} single-key coverage is incomplete, duplicated or failed.`);
   }
   return { passed: failures.length === 0, requiredEngines: [...REQUIRED_ENGINES],
     requiredKeys: [...REQUIRED_KEYS], unsupportedBrowsers: ['firefox'], failures };

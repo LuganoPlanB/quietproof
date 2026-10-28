@@ -387,8 +387,7 @@ def workflow(args, major, root):
                   output['txid'], output['vout'], 'parity', wrapper]
         run('C++ evidence parity', lookup)
         # Typed statements use exact real Core scripts, with one witness for
-        # shared hashes across kinds and two witnesses for distinct hashes.
-        second_secret = '00' * 31 + '02'
+        # shared hashes across kinds. Different hashes are rejected.
         x, y = multiply(2)
         second_pubkey = bytes([2 + (y & 1)]) + x.to_bytes(32, 'big')
         second_hash = hashlib.new('ripemd160', hashlib.sha256(second_pubkey).digest()).hexdigest()
@@ -426,9 +425,13 @@ def workflow(args, major, root):
                             ('txid', 'vout', 'amount_sats', 'script_type', 'program'))
 
         p2pkh, second = typed_outputs
+        rejected_request = root / f'{major}-second-key.qpr'
+        run('reject second key challenge', [args.cli, 'challenge', 'create',
+            '--network', 'regtest', '--verifier', 'example.org', '--purpose', 'proof-of-funds',
+            '--claim', claim(p2pkh), '--claim', claim(second), '--output', rejected_request], 65)
+        require(not rejected_request.exists(), 'second-key challenge was written')
         for label, coins, keys in [('p2pkh', [p2pkh], SECRET + '\n'),
-                ('mixed-same', [p2pkh, output], SECRET + '\n'),
-                ('mixed-two', [p2pkh, second], SECRET + '\n' + second_secret + '\n')]:
+                ('mixed-same', [p2pkh, output], SECRET + '\n')]:
             source, proof = root / f'{major}-{label}.qpr', root / f'{major}-{label}.qpf'
             command = [args.cli, 'challenge', 'create', '--network', 'regtest',
                        '--verifier', 'example.org', '--purpose', 'proof-of-funds',
@@ -466,7 +469,7 @@ def workflow(args, major, root):
                     run(f'mutate {field}', [args.driver, 'mutate', proof, field, changed])
                     run(f'reject {field}', verify(changed, untouched_typed), 67, result='invalid_proof')
                 require(not untouched_typed.exists(), 'substitution consumed nonce')
-        print(f'Core {major}: typed proofs: 3 generations (P2PKH, mixed same-key, mixed two-key)', flush=True)
+        print(f'Core {major}: typed proofs: 2 generations (P2PKH, mixed same-key)', flush=True)
         # The corresponding scalar cannot satisfy HASH160(uncompressed pubkey).
         uncompressed = b'\x04' + GENERATOR[0].to_bytes(32, 'big') + GENERATOR[1].to_bytes(32, 'big')
         unsupported = dict(p2pkh, program=hashlib.new('ripemd160', hashlib.sha256(uncompressed).digest()).hexdigest())

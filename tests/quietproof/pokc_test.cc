@@ -112,41 +112,6 @@ void TestStableLayoutAndDigest() {
     Require(digest_one[i] == digest_two[i], "PoKC circuit digest is not deterministic");
 }
 
-template <size_t Keys>
-std::unique_ptr<Circuit<Field>> BuildMultiCircuit(QuadCircuit<Field>& q) {
-  const CompileBackend backend(&q); const CompileLogic logic(&backend, p256k1_base);
-  PoKCMultiCircuitV1<CompileLogic, Field, EC, Keys> relation(logic, p256k1);
-  std::array<std::array<CompileLogic::EltW, 20>, Keys> programs;
-  for (auto& program : programs) for (auto& byte : program) byte = logic.eltw_input();
-  q.private_input(); std::array<Relation::Witness, Keys> witnesses; for (auto& witness : witnesses) witness.input(logic);
-  relation.assert_programs(programs, witnesses); return q.mkcircuit(1);
-}
-void TestMultiKeyLayouts() {
-  QuadCircuit<Field> q1(p256k1_base), q2(p256k1_base);
-  auto one=BuildMultiCircuit<1>(q1); auto two=BuildMultiCircuit<2>(q2);
-  Require(one->npub_in==21 && two->npub_in==41,"multi public layout");
-  Require(one->ninputs < two->ninputs,"multi ownership relations not composed");
-  Require(PoKCCircuitDigest(*one,p256k1_base,SECP_ID)!=PoKCCircuitDigest(*two,p256k1_base,SECP_ID),"key count absent from circuit identity");
-  Require(PoKCCrtBlockSupported(two->ninputs-two->npub_in+q2.nquad_terms_+1),"maximum circuit CRT guard");
-}
-void TestMaximumMultiKeyProofRoundTrip() {
-  std::array<uint8_t,32> one{}, n_minus_one = {0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xfe,0xba,0xae,0xdc,0xe6,0xaf,0x48,0xa0,0x3b,0xbf,0xd2,0x5e,0x8c,0xd0,0x36,0x41,0x40}; one[31]=1;
-  PoKCWitnessV1<Field,EC> first, second; Require(first.compute(p256k1,one.data(),one.size()) && second.compute(p256k1,n_minus_one.data(),n_minus_one.size()),"multi witness compute");
-  QuietProofStatementV1 s; s.network=QuietProofNetwork::kRegtest; s.verifier="multi-test"; s.purpose="proof-of-funds"; s.expires_at=static_cast<uint64_t>(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()))+3600; s.nonce[0]=1; s.bip322_message_hash[0]=1;
-  QuietProofClaimV1 a,b; a.txid[0]=1; a.amount_sats=1; a.program=first.program(); b.txid[0]=2; b.amount_sats=2; b.program=second.program(); s.claims={a,b};
-  s.statement_version = 2;
-  s.claims[0].script_kind = QuietProofScriptKind::kP2pkh;
-  QuietProofEnvelopeV1 envelope; Require(PoKCProveKeys<2>({one,n_minus_one},s,&envelope),"maximum multi-key prove"); std::vector<uint8_t> wire; Require(EncodeQuietProofEnvelope(envelope,&wire),"maximum multi-key encode"); QuietProofEnvelopeV1 parsed; Require(DecodeQuietProofEnvelope(wire,&parsed) && PoKCVerifyProof(parsed),"maximum multi-key verify");
-  auto trailing_proof=parsed; trailing_proof.proof.bytes.push_back(0); Require(!PoKCVerifyProof(trailing_proof),"proof trailing byte accepted");
-  auto mutated_program=parsed; mutated_program.statement.claims[0].program[0]^=1; Require(!PoKCVerifyProof(mutated_program),"mutated program accepted");
-  auto mutated_kind = parsed;
-  mutated_kind.statement.claims[0].script_kind = QuietProofScriptKind::kP2wpkh;
-  Require(!PoKCVerifyProof(mutated_kind), "two-key mixed script substitution accepted");
-  auto mutated_claims=s; std::swap(mutated_claims.claims[0],mutated_claims.claims[1]); Require(!PoKCProveKeys<2>({one,n_minus_one},mutated_claims,&envelope),"reordered claims accepted"); mutated_claims=s; mutated_claims.claims[1]=mutated_claims.claims[0]; Require(!PoKCProveKeys<2>({one,n_minus_one},mutated_claims,&envelope),"duplicate claim accepted"); Require(!PoKCProveKeys<2>({one},s,&envelope),"omitted relation accepted"); Require(!PoKCProveKeys<2>({one,n_minus_one,one},s,&envelope),"extra relation accepted"); Require(!PoKCProveKeys<2>({one,one},s,&envelope),"mutated key accepted");
-  auto too_many=s; QuietProofClaimV1 c=b; c.txid[0]=3; c.program[0]^=1; too_many.claims.push_back(c); std::vector<std::array<uint8_t,20>> too_many_programs; Require(!QuietProofDistinctPrograms(too_many,&too_many_programs),"three program grouping accepted");
-  auto shared=s; shared.claims[1].program=shared.claims[0].program; std::vector<std::array<uint8_t,20>> grouped; Require(QuietProofDistinctPrograms(shared,&grouped) && grouped.size()==1,"shared-key mapping rejected");
-}
-
 void TestTimestampProofRoundTrip() {
   std::array<uint8_t, 32> secret{};
   secret[31] = 1;
@@ -175,6 +140,16 @@ void TestTimestampProofRoundTrip() {
   QuietProofEnvelopeV1 decoded;
   Require(DecodeQuietProofEnvelope(wire, &decoded) && PoKCVerifyProof(decoded),
           "timestamp proof round trip");
+  auto second_key = envelope;
+  auto extra_claim = claim;
+  extra_claim.txid[0] = 2;
+  extra_claim.program[0] ^= 1;
+  second_key.statement.claims.push_back(extra_claim);
+  Require(!PoKCProve(secret, second_key.statement, &decoded),
+          "prover accepted second key");
+  Require(!PoKCProofSupported(second_key) && !PoKCVerifyProof(second_key),
+          "verifier accepted second key");
+  decoded = envelope;
   ++decoded.proof_created_at;
   Require(!PoKCVerifyProof(decoded), "tampered proof timestamp accepted");
   decoded = envelope;
@@ -224,7 +199,7 @@ void TestTypedProofRoundTrip(bool mixed) {
   QuietProofEnvelopeV1 envelope;
   Require(PoKCProve(secret.data(), secret.size(), statement, &envelope), "typed prove");
   Require(envelope.envelope_version == 2 &&
-              envelope.proof.circuit_digest == PoKCExpectedCircuitDigest<1>(),
+              envelope.proof.circuit_digest == PoKCExpectedCircuitDigest(),
           "typed proof changed the ownership circuit identity");
   std::vector<uint8_t> wire;
   QuietProofEnvelopeV1 decoded;
@@ -329,8 +304,6 @@ int main(int argc, char** argv) {
       return 0;
     }
     proofs::TestStableLayoutAndDigest();
-    proofs::TestMultiKeyLayouts();
-    proofs::TestMaximumMultiKeyProofRoundTrip();
     proofs::TestWitnessInputValidation();
     std::array<uint8_t, 32> one{}; one[31] = 1;
     proofs::TestProofRoundTrip(one);

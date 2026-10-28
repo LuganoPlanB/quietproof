@@ -197,8 +197,7 @@ the pinned Longfellow toolchain's older `wasm32-wasi` triple cannot find the
 version 34 standard library headers. No SDK source modifications are needed.
 
 The reactor has 16 MiB initial linear memory, a 2 GiB maximum and a 1 MiB stack.
-The maximum was raised after real two-key verification exceeded the former
-1 GiB bootstrap ceiling. See [browser feasibility](./wasm-feasibility) for
+See [browser feasibility](./wasm-feasibility) for
 measured support, memory definitions and required-engine limitations.
 The SDK toolchain enables wasm32 SIMD and disables C++ exceptions and RTTI.
 `scripts/inspect_wasm.mjs` compiles the artifact and checks its complete import
@@ -345,7 +344,7 @@ repeated instances, initialization and termination. It also checks exact native 
 inspection lifetime and numeric/malformed input rejection. Native golden sources
 and regeneration are documented in `tests/wasm/fixtures/README.md`. This is
 one-key correctness qualification in Chromium. The separate feasibility gate
-requires real one/two-key checks in Chromium and WebKit. Firefox is explicitly
+requires real single-key checks in Chromium and WebKit. Firefox is explicitly
 unsupported and unqualified for the initial release. Cancellation and all supported resource budgets
 require the separate real-proof feasibility gate. Compilation
 alone does not establish browser proof support.

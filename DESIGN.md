@@ -24,7 +24,7 @@ The site uses the theme’s “Civic Digital Commons” direction—white-first 
 
 - The documentation uses VitePress navigation, local search, sidebars, outlines, and code blocks.
 - The home page has a custom narrative layout rather than the default feature-card grid.
-- The opening sequence is: core promise, operating profile, practical applications, challenge flow, two-key opportunity, and a clear path into technical documentation.
+- The opening sequence is: core promise, operating profile, practical applications, challenge flow, and a clear path into technical documentation.
 - Use the upstream `planb-*` shell, panel, action, and content classes where their semantics fit. Add local `quietproof-*` classes only for domain-specific diagrams and narrative layouts.
 - Desktop layouts may pair an operating explanation with technical data. Mobile layouts return to natural document order without CSS reordering and keep wide tables locally scrollable.
 
@@ -40,7 +40,7 @@ A four-stage ordered sequence—challenge, proof, verification, application deci
 
 ### Use-case index
 
-Group applications by the job being done: custody and audit, qualification before a deal, off-chain continuity, and collaborative protocols. Avoid a wall of identical cards; use strong section groupings and varied supporting examples.
+Group applications by the job being done: custody and audit, qualification before a deal and collaborative protocols. Avoid a wall of identical cards; use strong section groupings and varied supporting examples.
 
 ### Technical depth marker
 

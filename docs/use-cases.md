@@ -47,27 +47,9 @@ QuietProof does not lock the collateral. It only makes the pre-contract capabili
 
 A marketplace may ask a seller to prove control of a disclosed bond UTXO, or ask a buyer to demonstrate funding capability, before starting costly legal, KYC, escrow, or fulfillment work.
 
-## Off-chain continuity and peer credit
+## Separate proofs in application workflows
 
-### Off-chain wallet linking
-
-The two-key proof can demonstrate to a chosen verifier:
-
-> The same prover knows the key for wallet A and wallet B.
-
-The verifier learns this link and can share it. The proof reveals neither key and creates no blockchain transaction.
-
-### Reputation rollover
-
-A peer-credit network could associate repayment history with a Bitcoin-controlled pseudonym. When the participant rotates wallets, a two-key QuietProof can support an application-level transfer from the old pseudonym to the new one.
-
-The application learns the pseudonym link. It still decides whether to trust the history or identify the presenter as the same person or organization.
-
-### Guarantor and lending-circle preflight
-
-QuietProof can check that a participant can satisfy a key-control prerequisite before a guarantor system, credit cooperative, lending circle, or marketplace constructs its real authorization arrangement.
-
-The current two-key semantics show that one prover knows both keys. Workflows involving two independent people need separate proofs or a higher-level protocol; they must not describe one two-key proof as evidence from two independent parties.
+Applications checking funds under different keys can request and verify a separate proof for each key. The application must define how those requests and acceptance decisions relate. Key knowledge alone does not establish a common person or organization.
 
 ## Collaborative Bitcoin protocols
 
@@ -102,11 +84,11 @@ Those are roadmap directions, not current QuietProof claims. Each would require 
 QuietProof may fit when:
 
 - The relevant outputs are native P2WPKH or compressed-key P2PKH.
-- There are at most two distinct key hashes in the proof.
+- All outputs share one key hash.
 - The verifier already knows which outputs and values it wants to check.
 - Avoiding public-key disclosure before spend has practical value.
 - The application can issue fresh challenges and verify independent Bitcoin data.
 
-It is not a good fit for a large modern HD wallet in which every UTXO uses a fresh key. The current proof work and size scale with the number of distinct keys, and v1 intentionally caps that number at two.
+It is not a good fit for a large modern HD wallet in which every UTXO uses a fresh key. Each proof supports one key; different keys require separate proofs.
 
 [Read the current limits in detail →](/limitations)

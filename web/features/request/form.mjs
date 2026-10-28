@@ -13,7 +13,7 @@ export function selectionSummary(claims) {
     outpoints.add(id); programs.add(claim.program); total += amount;
   }
   if (claims.length > 16) throw new Error('Select at most 16 outputs.');
-  if (programs.size > 2) throw new Error('Select at most two distinct key fingerprints.');
+  if (programs.size > 1) throw new Error('Select outputs sharing one key fingerprint.');
   if (total > 2100000000000000n) throw new Error('Total exceeds the Bitcoin supply.');
   return { totalSats: total.toString(), keys: programs.size, count: claims.length };
 }

@@ -1,4 +1,4 @@
-// Node-only fixtures. Public disposable scalars 1 and 2 are used by native test
+// Node-only fixtures. Public disposable scalar 1 is used by native test
 // proving only. Browser inputs contain public addresses, outputs and scripts.
 import { createECDH, createHash } from 'node:crypto';
 import { fixtures } from '../provider/fixtures.mjs';
@@ -13,7 +13,7 @@ const base58 = bytes => {
 export const workflows = ['mainnet', 'signet'].flatMap(network =>
   [['p2wpkh'], ['p2pkh'], ['p2wpkh', 'p2pkh']].map(kinds => {
     const claims = kinds.map((scriptKind, i) => {
-      const scalar = Buffer.alloc(32); scalar[31] = i + 1;
+      const scalar = Buffer.alloc(32); scalar[31] = 1;
       const key = createECDH('secp256k1'); key.setPrivateKey(scalar);
       const program = hash('ripemd160', hash('sha256', key.getPublicKey(null, 'compressed')));
       const payload = Buffer.concat([Buffer.from([network === 'mainnet' ? 0 : 111]), program]);
@@ -23,8 +23,8 @@ export const workflows = ['mainnet', 'signet'].flatMap(network =>
         address: scriptKind === 'p2wpkh' ? fixtures[network].p2wpkh : p2pkh,
         scriptPubKey: scriptKind === 'p2wpkh' ? `0014${program.toString('hex')}` : `76a914${program.toString('hex')}88ac` };
     });
-    return { id: `${network}-${kinds.length === 2 ? 'mixed-two-key' : kinds[0]}`, network, claims,
-      version: kinds.includes('p2pkh') ? 2 : 1, publicDisposableScalars: claims.map((_, i) => i + 1) };
+    return { id: `${network}-${kinds.length === 2 ? 'mixed-same-key' : kinds[0]}`, network, claims,
+      version: kinds.includes('p2pkh') ? 2 : 1, publicDisposableScalars: [1] };
   }));
 
 export function providerResponse(workflow, url) {

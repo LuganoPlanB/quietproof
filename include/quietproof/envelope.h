@@ -23,8 +23,8 @@
 #include "quietproof/statement.h"
 
 namespace proofs {
-// The maximum supported two-key relation measures about 88 MiB. Keep a fixed
-// 128 MiB parsing ceiling: it admits the bounded v1 circuit family with
+// The single-key proof measures about 45 MiB. Keep the existing fixed
+// 128 MiB parsing ceiling: it admits the supported circuit with
 // headroom while retaining a finite allocation limit at the wire boundary.
 constexpr size_t kQuietProofMaxProofBytes = size_t{128} * 1024 * 1024;
 constexpr size_t kQuietProofEnvelopeOverheadBytes = 5 + 4 + 32 + 4 + 4 + 4 + 4;

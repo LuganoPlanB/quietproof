@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
   for (int mode = 0; mode < 3; ++mode) {
     std::vector<QuietProofClaimV1> claims(2);
     for (int i = 0; i < 2; ++i) {
-      claims[i].txid.fill(2 - i); claims[i].program.fill(mode == 0 ? 3 : i + 3);
+      claims[i].txid.fill(2 - i); claims[i].program.fill(3);
       claims[i].vout = UINT32_MAX; claims[i].amount_sats = 50000 + i;
       if (mode == 1 || (mode == 2 && i)) claims[i].script_kind = QuietProofScriptKind::kP2pkh;
     }
@@ -74,6 +74,7 @@ int main(int argc, char** argv) {
     parsed[0].script_kind = static_cast<QuietProofScriptKind>(2); CHECK(!create()); parsed = claims;
     while (parsed.size() < 16) { auto claim = claims[0]; claim.vout = parsed.size(); parsed.push_back(claim); }
     CHECK(create()); auto extra = claims[0]; extra.vout = 17; parsed.push_back(extra); CHECK(!create());
+    parsed = claims; parsed[1].program.fill(8); CHECK(!create());
     parsed = claims; auto third = claims[0]; third.vout = 1; third.program.fill(9);
     parsed[1].program.fill(8); parsed.push_back(third); CHECK(!create());
     parsed = claims;

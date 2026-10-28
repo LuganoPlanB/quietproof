@@ -67,8 +67,8 @@ repeat warnings. A separate accepting application must enforce its own policy.
 
 ## Supported scripts and key boundary
 
-QuietProof accepts up to 16 public output claims but only one or two distinct
-compressed-key hashes across native P2WPKH and P2PKH outputs. Uncompressed-key
+QuietProof accepts up to 16 public output claims but only one distinct
+compressed-key hash across native P2WPKH and P2PKH outputs. Uncompressed-key
 P2PKH, P2SH, P2WSH, P2TR and arbitrary scripts are unsupported. Discovery recognizes
 a P2PKH script but cannot determine its hidden key encoding; proving must match
 the compressed serialization. It is not an efficient aggregate proof for an HD wallet in which each UTXO has a different key.
@@ -86,7 +86,7 @@ The browser reactor is separately qualified for desktop Chromium and WebKit
 on the [named reference host](/performance#browser-resource-boundary). Firefox,
 physical mobile/low-RAM devices and actual screen-reader use are unqualified.
 The browser proof-file limit is 134221889 bytes (128 MiB plus envelope); observed
-WASM linear allocation reaches about 1.82 GB with a 2 GiB maximum, in addition
+WASM linear allocation reaches about 0.95 GB with a 2 GiB maximum, in addition
 to file/JS/browser memory. This is not process RSS or a total-RAM guarantee.
 Run one operation at a time and preserve failure/incomplete states.
 
