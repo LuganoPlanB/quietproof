@@ -128,10 +128,14 @@ test("GitHub Pages deployment is reproducible and base-path aware", () => {
   assert.match(qualification, /npm ci/);
   assert.match(qualification, /scripts\/qualify_static\.py/);
   assert.match(qualification, /scripts\/install_wasi\.py/);
-  assert.match(workflow, /uses: \.\/\.github\/workflows\/test.yml/);
-  assert.match(workflow, /needs: qualify/);
-  assert.match(workflow, /base: \$\{\{ steps\.pages\.outputs\.base_path \}\}\//);
-  assert.match(workflow, /path: quietproof\/docs\/\.vitepress\/dist/);
+  assert.doesNotMatch(workflow, /uses: \.\/\.github\/workflows\/test.yml/);
+  assert.match(workflow, /workflow_run:/);
+  assert.match(workflow, /workflows: \[Tests\]/);
+  assert.match(workflow, /github\.event\.workflow_run\.event == 'push'/);
+  assert.match(workflow, /run-id: \$\{\{ steps\.source\.outputs\.run_id \}\}/);
+  assert.match(workflow, /scripts\/check_pages_artifact\.py/);
+  assert.match(workflow, /EXPECTED_BASE: \$\{\{ steps\.pages\.outputs\.base_path \}\}\//);
+  assert.match(workflow, /path: checked-site/);
   assert.match(workflow, /pages: write/);
   assert.match(workflow, /id-token: write/);
 });
