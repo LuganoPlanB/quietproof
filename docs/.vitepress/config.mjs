@@ -112,6 +112,7 @@ export default defineConfig({
         items: [
           { text: "Architecture", link: "/technical/architecture" },
           { text: "PoKC circuit", link: "/technical/pokc" },
+          { text: "P2SH 2-of-3 circuit", link: "/technical/p2sh-multisig" },
           { text: "Normative v1 protocol", link: "/technical/protocol" },
           { text: "Sage reference model", link: "/technical/sage" },
           { text: "Security claim matrix", link: "/security" },

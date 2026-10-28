@@ -21,6 +21,20 @@ Recipients can trace these coins and associate them with a known prover identity
 Discovery sends the address to the selected node. This is not proof of exclusive
 ownership, legal title, solvency or locked collateral.
 
+## Independent P2SH 2-of-3 circuit
+
+The core library also supports independent key-control proofs for a canonical
+105-byte P2SH 2-of-3 redeem script. Each signer uses only its own scalar and the
+common script; an auditor verifies two proofs against its expected script hash
+and requires distinct positions. The unified circuit constrains point/scalar
+validity, one-hot selection, key equality, pairwise distinctness and complete
+script HASH160. These static proofs establish signing capability without
+revealing keys or the script; they do not establish freshness or custodian identity.
+
+See the [relation, C++ API, tests and benchmarks](docs/technical/p2sh-multisig.md).
+This library extension does not change the existing native formats, CLI, Core
+RPC adapter, browser tool or WASM ABI.
+
 ## Browser request and verification
 
 The static website creates public `.qpr` requests and verifies externally
