@@ -1,0 +1,154 @@
+name: Release Linux binaries
+
+on:
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - scripts/build_musl_release.py
+      - scripts/build-pins.json
+      - CMakeLists.txt
+      - cmake/**
+      - src/**
+      - include/**
+      - tests/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-linux-${{ github.event.pull_request.number || 'main' }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    # workflow_run also fires for PR tests: only trusted main pushes publish.
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.semver.outputs.nextStrict || steps.bootstrap.outputs.version }}
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select source and latest reachable stable tag
+        id: source
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          python3 - <<'PY'
+          import os, re, subprocess
+          sha = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          tags = subprocess.check_output(['git', 'tag', '--merged', sha, '--sort=-version:refname'], text=True).splitlines()
+          tag = next((t for t in tags if re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', t)), '')
+          if os.environ['EVENT_NAME'] == 'pull_request':
+              tag = ''  # PRs build a preview; only main gets a release version.
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'sha={sha}\ntag={tag}\n')
+          PY
+      - name: Bootstrap or preview version
+        id: bootstrap
+        if: steps.source.outputs.tag == ''
+        run: echo 'version=0.1.0' >> "$GITHUB_OUTPUT"
+      - name: Calculate semantic release version
+        id: semver
+        if: steps.source.outputs.tag != ''
+        uses: ietf-tools/semver-action@c90370b2958652d71c06a3484129a4d423a6d8a8 # v1.11.0
+        with:
+          token: ${{ github.token }}
+          branch: ${{ steps.source.outputs.sha }}
+          fromTag: ${{ steps.source.outputs.tag }}
+          noNewCommitBehavior: current
+          noVersionBumpBehavior: patch
+
+  qualify-manual:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/test.yml
+
+  musl:
+    needs: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+          path: quietproof
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: dyne/longfellow-zk
+          ref: d2b0fc515f8663e38c79a28e8900ce8438e0106e
+          path: longfellow-zk
+          persist-credentials: false
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y cmake ninja-build binutils python3
+      - name: Set up Dyne musl x86_64 toolchain
+        id: musl
+        uses: dyne/musl-action@d26fe56f7fe134a54e729d781ec687e847db34d3 # main at review
+        with:
+          target_arch: x86_64
+      - name: Build, test and package static binary
+        env:
+          CC: ${{ steps.musl.outputs.CC }}
+          CXX: ${{ steps.musl.outputs.CXX }}
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+        run: >-
+          python3 quietproof/scripts/build_musl_release.py --sdk-source longfellow-zk
+          --work "$RUNNER_TEMP/musl-release" --output dist --version "$RELEASE_VERSION" --jobs 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quietproof-linux-x86_64-musl
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: [version, musl, qualify-manual]
+    if: >-
+      always() && github.event_name != 'pull_request' &&
+      needs.version.result == 'success' && needs.musl.result == 'success' &&
+      (needs.qualify-manual.result == 'success' ||
+       (github.event_name == 'workflow_run' && needs.qualify-manual.result == 'skipped'))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: quietproof-linux-x86_64-musl
+          path: dist
+      - name: Tag tested commit and publish assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+          RELEASE_SHA: ${{ needs.version.outputs.sha }}
+        run: |
+          set -Eeuo pipefail
+          tag="v$RELEASE_VERSION"
+          if git show-ref --verify --quiet "refs/tags/$tag"; then
+            test "$(git rev-parse "refs/tags/$tag^{commit}")" = "$RELEASE_SHA"
+          else
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$tag" -f "sha=$RELEASE_SHA"
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" dist/* --verify-tag --title "QuietProof $tag" --generate-notes
+          fi

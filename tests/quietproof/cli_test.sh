@@ -18,6 +18,9 @@ fail() {
 }
 
 [[ -x "${quietproof_bin}" ]] || fail "QuietProof binary is not executable"
+version_output="$("${quietproof_bin}" --version)"
+[[ "$version_output" =~ ^QuietProof\ (0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ||
+  fail "version output is not a semantic release version"
 test_dir="$(mktemp -d)"
 readonly request="${test_dir}/request.qpr"
 readonly testnet4_request="${test_dir}/testnet4.qpr"
