@@ -147,6 +147,44 @@ test('missing imports, unexpected imports and unsupported SIMD are rejected', as
   });
 });
 
+test('an otherwise compatible reactor advertising a stale ABI version is rejected', async () => {
+  await inBrowser(async () => {
+    const { instantiateReactor } = await import('/web/wasm/runtime.mjs');
+    const bytes = new Uint8Array(await (await fetch('/quietproof.wasm')).arrayBuffer());
+    let cursor = 8, target = -1, imported = 0, patched = false;
+    function uleb() { let n = 0, shift = 0, b; do { b = bytes[cursor++]; n += (b & 127) * 2 ** shift; shift += 7; } while (b & 128); return n; }
+    while (cursor < bytes.length) {
+      const section = bytes[cursor++], size = uleb(), end = cursor + size;
+      if (section === 2) imported = uleb();
+      if (section === 7) {
+        const count = uleb();
+        for (let i = 0; i < count; i++) {
+          const length = uleb(), name = new TextDecoder().decode(bytes.subarray(cursor, cursor + length)); cursor += length;
+          const kind = bytes[cursor++], index = uleb();
+          if (name === 'quietproof_wasm_abi_version' && kind === 0) target = index;
+        }
+      }
+      if (section === 10) {
+        const count = uleb();
+        for (let i = 0; i < count; i++) {
+          const length = uleb(), bodyEnd = cursor + length;
+          if (i === target - imported) {
+            if (length !== 4 || bytes[cursor] !== 0 || bytes[cursor + 1] !== 65 || bytes[cursor + 2] !== 2 || bytes[cursor + 3] !== 11)
+              throw new Error('Unexpected ABI fixture body');
+            bytes[cursor + 2] = 1; patched = true;
+          }
+          cursor = bodyEnd;
+        }
+      }
+      cursor = end;
+    }
+    if (!patched || !WebAssembly.validate(bytes)) throw new Error('Invalid stale ABI fixture');
+    try { await instantiateReactor(bytes); }
+    catch (error) { if (error.name === 'CapabilityError' && error.message.includes('ABI version')) return true; throw error; }
+    throw new Error('Stale ABI was accepted');
+  });
+});
+
 test('adapter bounds, quota chunking and partial entropy failure clearing', async () => {
   await inBrowser(async () => {
     const { createWasiImports } = await import('/web/wasm/runtime.mjs');

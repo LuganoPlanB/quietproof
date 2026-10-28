@@ -5,17 +5,25 @@ description: Current proof family, measurement method, resource boundary, and su
 
 # QuietProof v1 performance and portability
 
-PoKC v1 has two fixed native circuit shapes: one or two distinct P2WPKH
-witness programs.  A statement may contain up to 16 public claims, but claims
-sharing a program reuse its relation; more than two distinct programs are
+PoKC has two fixed ownership circuit shapes: one or two distinct compressed-key
+hashes across P2WPKH, P2PKH or mixed claims. Typed statement v2 does not change
+the ownership circuits. A statement may contain up to 16 public claims, but
+claims sharing a fingerprint reuse its relation; more than two fingerprints are
 rejected before circuit allocation.  Four relations exceed Longfellow's CRT
 block-encoding guard and are deliberately unsupported.
 
 ## Reproducing native metrics
 
-Run `make pokc-test` twice on an otherwise idle machine.  Each run writes
+Build the native `pokc-test` target, then run the following twice on an otherwise
+idle machine. Each run writes
 `tests/results/native_pokc_metrics.csv` with one row per real
 prove/verify round:
+
+```sh
+cmake --build build-native-on --target pokc-test --parallel 2
+ctest --test-dir build-native-on --output-on-failure --parallel 1 \
+  --timeout 1800 -R '^pokc-test$'
+```
 
 ```
 target,circuit,build_ms,prove_ms,verify_ms,proof_bytes,public_inputs,total_inputs,quad_terms,crt_block_enc
@@ -23,18 +31,19 @@ target,circuit,build_ms,prove_ms,verify_ms,proof_bytes,public_inputs,total_input
 
 The values are descriptive, not timing thresholds.  Record the commit SHA,
 compiler/version and flags, CPU/OS, elapsed wall time and peak resident memory
-next to a release candidate.  The deterministic columns (`proof_bytes`, input
-and term counts, CRT block encoding) must agree across the two runs; the
-timing columns are expected to vary.  The circuit digest is independently
+next to a release candidate. Circuit/input/term counts and CRT block encoding
+must agree across runs. Randomized proof commitments can vary serialized proof
+length slightly; timings are also expected to vary. The circuit digest is independently
 checked by `pokc_test`, and changing a circuit shape changes the digest.
 
 ## Current support boundary
 
-The native release target is 64-bit C++17 on a Linux/x86_64 host using the
-repository's hardened default flags (`-O3 -fstack-protector-all
--D_FORTIFY_SOURCE=2 -fno-strict-overflow`).  The checked envelope ceiling is
-128 MiB, selected to bound allocation while admitting the supported proof
-family. Native 32-bit builds are unqualified. Browser WASM has the separate
+The native API requires 64-bit C++20. Record the actual configured compiler,
+flags and platform; older C++17 timing observations in the README belong to
+their recorded historical commit and explicit flags, not current CMake defaults.
+The proof-file ceiling is 134221889 bytes (128 MiB payload plus envelope),
+selected to bound allocation while admitting the supported proof family.
+Native 32-bit builds are unqualified. Browser WASM has the separate
 qualification boundary below; a generic WASM build alone does not establish
 support. Re-run the compatibility and metric checks before
 accepting any parameter, compiler, or circuit-digest change.
@@ -162,7 +171,7 @@ with at least one hour remaining validity. Never extend timestamps in real
 proof bytes. The feasibility runner serializes all heavy verification work:
 
 ```sh
-npm run docs:build
+QUIETPROOF_WASM=/path/to/quietproof.wasm npm run docs:build
 QUIETPROOF_WASM=/path/to/quietproof.wasm \
 QUIETPROOF_WASM_FIXTURES=/path/to/current/public-feasibility-fixtures \
 QUIETPROOF_FEASIBILITY_SITE=docs/.vitepress/dist \

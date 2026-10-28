@@ -1,9 +1,38 @@
 ---
 title: Operations and production controls
-description: Native Core RPC configuration, discovery costs, verifier policy, recovery and release gates.
+description: Browser/static operating boundaries and native Core RPC configuration, policy, recovery and release gates.
 ---
 
 # QuietProof operations
+
+## Choose the verification profile
+
+| Profile | Operating boundary |
+| --- | --- |
+| [Static browser request and verifier](guide/browser-tool.md) | Mainnet/signet; external CLI/wallet proving; independent retained `.qpr` or explicit context. Crypto/policy checks can run without explorer access. Optional public explorer reports are trusted/non-atomic and do not authorize acceptance or authenticate a snapshot. |
+| Native CLI/library with Core | Explicitly chosen trusted validated node, independently selected local policy and durable atomic nonce store. Native RPC is the default. This profile can produce strict native outcomes; it does not make browser explorer results equivalent. |
+
+For site operators, [the static build/preview guide](wasm-build.md#build-and-preview-the-complete-static-artifact)
+pins the SDK/toolchain/theme, packages matching hashed assets and source/license
+notices, and describes local preview and qualification. A bare production
+`npm run docs:build` now requires `QUIETPROOF_WASM`; the packaging driver checks
+reactor/source provenance. The deployed directory needs no Node runtime, RPC
+credential or private key. The Plan B theme owner has confirmed permission for
+this QuietProof deliverable; publication requires separate authorization.
+Local tests do not establish actual hosted CI,
+deployed-origin CORS or header protection.
+
+The [static release handoff](static-release.md) records publication prerequisites,
+the existing Pages trigger/artifact path and rollback. Publication remains
+unauthorized; the handoff retains the owner's scoped theme confirmation.
+
+Browser input, device-clock, opt-in history and resource limitations are in the
+[public browser guide](guide/browser-tool.md) and [hosting security](browser-security.md).
+Local repeat warnings are not durable global replay prevention. Keep a
+separate accepting service/policy when required; none is supplied by the
+static application. The remaining sections describe the native Core profile.
+
+## Native command workflow
 
 Discover Bitcoin outputs, create a challenge, prove key control, verify against
 Bitcoin Core. The [isolated regtest guide](guide/getting-started.md) uses a public,
@@ -227,10 +256,10 @@ outpoints after acceptance when continued availability matters.
 
 Use `find_package(LongfellowZKQuietProof CONFIG REQUIRED COMPONENTS rpc)` and
 link `LongfellowZKQuietProof::rpc`. The
-[installed-source example commands](guide/getting-started.md#build-and-run-the-installed-c-example)
-compile against the installation, exercise the same client and keep proving
-independent of RPC. It has one-key support and fixed local demonstration
-policy; applications can use existing `PoKCProveKeys<1|2>`, the shared
+installed-package consumers under `tests/cmake/` exercise core/RPC link closure.
+The [native tutorial](guide/getting-started.md#build) builds the CLI with the
+same client and keeps plain proving independent of RPC. Applications can use
+existing `PoKCProveKeys<1|2>`, the shared
 `CreateQuietProofChallenge` builder and `VerifyQuietProof` with their own
 policy/provider. A bare `PoKCVerifyProof` verifies the relation only.
 One RPC instance is sequential/non-thread-safe; use separate instances across
@@ -325,10 +354,14 @@ LONGFELLOW_ZK_INCLUDE_DIR=/path/to/longfellow-prefix/include/longfellow-zk \
 Keep deterministic protocol/vector, naming and spec gates. The independent
 Sage 10.6 reference is optional (`QUIETPROOF_ENABLE_POKC_SAGE_TEST=ON`, requiring
 Sage or Docker); the deterministic Sage vectors remain in the normal suite.
-The optional CI ASan/UBSan installed-package gate can be enabled through the
-CI workflow's manual input, or reproduced with Clang and
-`scripts/ci-installed-package.sh`; it includes expensive real proofs. Record
-actual runtime/memory, pinned revisions/toolchains and residual assumptions.
+The current `test.yml` workflow runs native RPC ON/OFF, WASM and serial required
+browser/static gates; it has no sanitizer input or installed-package shell
+driver. A separately configured sanitizer/static-analysis run needs its own
+retained evidence and must not be inferred from ordinary CI. See the
+[static qualification command](wasm-build.md#build-and-preview-the-complete-static-artifact)
+for the full browser/source/toolchain artifact gate. Record actual runtime/
+memory, pinned revisions/toolchains and residual assumptions. Prepare local
+artifacts only until deployment is explicitly authorized.
 
 ### Explicit wallet-backed proving
 

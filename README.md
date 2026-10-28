@@ -19,6 +19,25 @@ Recipients can trace these coins and associate them with a known prover identity
 Discovery sends the address to the selected node. This is not proof of exclusive
 ownership, legal title, solvency or locked collateral.
 
+## Browser request and verification
+
+The static website creates public `.qpr` requests and verifies externally
+generated `.qpf` files on mainnet/signet. Follow the
+[browser handoff guide](docs/guide/browser-tool.md): retain an independent
+expected request, prove in the native CLI or a compatible external wallet, then
+read cryptography, policy and explorer results separately. Private keys never
+enter the browser. Public explorer observations are trusted and non-atomic;
+the static tool supplies no authoritative acceptance or global nonce service.
+
+Chromium/WebKit desktop qualification, substantial memory requirements, clock/
+history/privacy limits and unsupported Firefox/mobile claims are documented in
+the guide. [Build and preview the complete static artifact](docs/wasm-build.md#build-and-preview-the-complete-static-artifact)
+with pinned WASI/source inputs, hashed assets, source/license notices and
+provenance. Production requires only static hosting; Node is a build/preview
+dependency. Theme distribution permission is unresolved and must be settled
+before publication. The native Core-backed workflow below has a different
+chain-evidence and durable nonce boundary.
+
 ## Build
 
 Use a C++20 compiler, CMake 3.20+, the installed
@@ -121,8 +140,11 @@ Core-only consumers keep the original no-component package and
 
 The `Tests` GitHub Actions workflow runs on every pull request and pushes to
 `main`: the full native CTest suite with RPC enabled (including real proof
-tests), package/CLI compatibility tests with RPC disabled, plus documentation
-tests and a site build. Live Bitcoin-node integration
+tests), package/CLI compatibility tests with RPC disabled, WASM/fixture and
+serial Chromium/WebKit browser suites, documentation and reproducible root/
+subpath static artifacts. Pages consumes the qualified artifact. Local
+qualification does not establish hosted-runner success or deployed headers/CORS.
+Live Bitcoin-node integration
 and the optional Sage reference runtime remain opt-in; deterministic Sage vectors
 run in CI.
 

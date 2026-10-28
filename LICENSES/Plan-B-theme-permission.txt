@@ -1,0 +1,14 @@
+Plan B theme authorization record for QuietProof
+
+Source: https://github.com/LuganoPlanB/vite-theme
+Pinned revision: a7fde3404a5e2b32bf57b4bcb99337479c5c75b2
+
+On 2026-10-28, the project owner confirmed ownership of the Plan B theme
+and permission to use their theme in this QuietProof deliverable.
+
+This records that scoped owner authorization. It does not assign an SPDX
+license identifier to the theme or grant rights to third-party components.
+Existing third-party copyright notices and licenses remain applicable.
+
+This owner confirmation is separate from authorization to publish or deploy
+from this workspace; publication has not been authorized.

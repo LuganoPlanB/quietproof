@@ -7,8 +7,9 @@ description: Browser trust boundaries, input controls, CSP and static hosting li
 
 The browser tool trusts the delivered site, JavaScript, WASM, browser and device.
 Use a trusted HTTPS origin. A compromised deployment can replace the verifier
-and its displayed results: WASM import/ABI validation detects incompatible or
-corrupt modules, **not a malicious replacement with the same interface**. Compare
+and its displayed results: the loader verifies the SHA256-named WASM bytes and
+checks imports/ABI, but **a malicious deployment can replace the loader and
+its expected digest too**. Compare
 build provenance and artifact digests through an independent trusted channel
 when that threat matters. There is no authoritative challenge backend.
 
@@ -107,15 +108,21 @@ node --test web/wasm/asset.test.mjs web/features/request/form.test.mjs \
   web/features/request/download.test.mjs web/features/verify/input.test.mjs \
   web/features/verify/results.test.mjs web/features/history/history.test.mjs \
   web/features/provider/{contract,discovery,verification}.test.mjs
-npm run docs:build
+# First build the complete artifact per /wasm-build, with sources/notices:
+python3 scripts/build_static.py --sdk-source ../longfellow-zk-dyne \
+  --cross-work /path/to/qualified-wasm-build --base /
 npm run docs:preview -- --host 127.0.0.1 --port 4176 --strictPort
 # In another terminal; requires installed Chromium and WebKit:
 QUIETPROOF_SITE_ORIGIN=http://127.0.0.1:4176 \
   node --test --test-concurrency=1 web/security.browser.test.mjs
 ```
 
-For a subpath artifact, build with `DOCS_BASE=/quietproof/`, preview it, and set
+For a subpath artifact, package with `--base /quietproof/`, start the preview
+with `DOCS_BASE=/quietproof/`, and set
 `QUIETPROOF_SECURITY_BASE=/quietproof` in the browser command. Optional
 `QUIETPROOF_WEBKIT_EXECUTABLE` selects the qualified local WebKit launcher.
 Firefox is unsupported and unqualified. Resource/accessibility qualification
 and full adversarial round trips are separate gates from these input checks.
+See [complete packaging and local-review flags](./wasm-build#build-and-preview-the-complete-static-artifact)
+for provenance requirements and the
+[owner-confirmed theme permission](static-release.md#theme-permission).

@@ -5,6 +5,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      docs_base:
+        type: string
+        default: /
 
 permissions:
   contents: read
@@ -14,75 +19,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  native:
-    name: Native tests (RPC ${{ matrix.rpc }})
+  qualification:
+    name: Native ON/OFF, WASM and static browser qualification
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        rpc: ['ON', 'OFF']
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v7
         with:
           path: quietproof
+          fetch-depth: 0
           persist-credentials: false
-      - name: Check out pinned LongfellowZK SDK
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: dyne/longfellow-zk
           ref: d2b0fc515f8663e38c79a28e8900ce8438e0106e
           path: longfellow-zk
-          persist-credentials: false
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y g++ cmake ninja-build python3 libcurl4-openssl-dev
-      - name: Build and install SDK
-        run: |
-          cmake -S longfellow-zk -B sdk-build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
-            -DLONGFELLOW_ZK_BUILD_TESTING=OFF \
-            -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/longfellow-prefix"
-          cmake --build sdk-build --parallel 2
-          cmake --install sdk-build
-      - name: Configure Quietproof
-        env:
-          RPC_MODE: ${{ matrix.rpc }}
-        run: |
-          cmake -S quietproof -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
-            -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/longfellow-prefix" \
-            -DQUIETPROOF_BUILD_RPC="$RPC_MODE"
-      - name: Build all tests
-        if: matrix.rpc == 'ON'
-        run: cmake --build build --parallel 2
-      - name: Build offline CLI
-        if: matrix.rpc == 'OFF'
-        run: cmake --build build --target quietproof-cli --parallel 2
-      - name: Run full suite
-        if: matrix.rpc == 'ON'
-        # Sequential execution bounds peak memory for the real proof tests.
-        # Live Core integration and the optional Sage runtime require separate setup.
-        run: >-
-          ctest --test-dir build --output-on-failure --no-tests=error
-          --parallel 1 --timeout 1800
-          -E '^quietproof-regtest-rpc-test$'
-      - name: Run offline compatibility tests
-        if: matrix.rpc == 'OFF'
-        run: >-
-          ctest --test-dir build --output-on-failure --no-tests=error
-          --parallel 1 --timeout 600
-          -R '^quietproof-(package-test|cli-test|cli-rpc-test|prove-feedback-test)$'
-
-  documentation:
-    name: Documentation tests
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          path: quietproof
           persist-credentials: false
       - uses: actions/checkout@v7
         with:
@@ -92,12 +43,65 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 24.22.1
           cache: npm
           cache-dependency-path: quietproof/package-lock.json
-      - run: npm ci
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y g++ cmake ninja-build python3 libcurl4-openssl-dev
+      - name: Install checksum-pinned WASI SDK
+        run: python3 quietproof/scripts/install_wasi.py --destination "$RUNNER_TEMP/wasi-sdk"
+      - name: Build and install pinned native SDK
+        run: |
+          cmake -S longfellow-zk -B sdk-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
+            -DLONGFELLOW_ZK_BUILD_TESTING=OFF \
+            -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/longfellow-prefix"
+          cmake --build sdk-build --parallel 2
+          cmake --install sdk-build
+      - name: Configure native RPC ON and OFF
+        run: |
+          for mode in ON OFF; do
+            cmake -S quietproof -B "native-$mode" -G Ninja \
+              -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
+              -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/longfellow-prefix" \
+              -DQUIETPROOF_BUILD_RPC="$mode"
+          done
+      - name: Build isolated WASI reactor
+        run: >-
+          python3 quietproof/scripts/build_wasm.py --sdk-source longfellow-zk
+          --work-dir "$RUNNER_TEMP/wasm" --wasi-sdk "$RUNNER_TEMP/wasi-sdk" --jobs 2
+      - name: Install locked website dependencies and required browsers
         working-directory: quietproof
-      - run: npm run test:site
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium webkit
+      - name: Qualify native and packaged static artifact
         working-directory: quietproof
-      - run: npm run docs:build
-        working-directory: quietproof
+        env:
+          DOCS_BASE: ${{ inputs.docs_base || '/' }}
+        run: >-
+          python3 scripts/qualify_static.py --sdk-source ../longfellow-zk
+          --cross-work "$RUNNER_TEMP/wasm" --native-on ../native-ON --native-off ../native-OFF
+          --evidence "$RUNNER_TEMP/qualification" --base "$DOCS_BASE"
+      - name: Cross-build separation contracts
+        run: >-
+          python3 quietproof/tests/cmake/wasm_build_test.py --cross-work "$RUNNER_TEMP/wasm"
+          --work "$RUNNER_TEMP/build-contracts" --native-prefix "$RUNNER_TEMP/longfellow-prefix"
+          --wasi-sdk "$RUNNER_TEMP/wasi-sdk"
+      - name: Upload qualified static artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: quietproof-static
+          path: quietproof/docs/.vitepress/dist
+          if-no-files-found: error
+      - name: Retain complete qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quietproof-qualification
+          path: |
+            ${{ runner.temp }}/qualification
+            ${{ runner.temp }}/build-contracts/*.log
+          if-no-files-found: warn

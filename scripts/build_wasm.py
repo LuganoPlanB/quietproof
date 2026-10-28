@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """Cross-build the pinned SDK and Quietproof in separate WASI-only roots."""
 import argparse
+import hashlib
+import json
 import os
 from pathlib import Path
+import re
 import shutil
+import shlex
 import subprocess
 
-SDK_COMMIT = 'd2b0fc515f8663e38c79a28e8900ce8438e0106e'
+PINS = json.loads(Path(__file__).with_name('build-pins.json').read_text())
+SDK_COMMIT = PINS['longfellowCommit']
 
 
 def main():
@@ -31,11 +36,25 @@ def main():
         parser.error('SDK tracked sources must be clean')
     if not (wasi / 'bin/clang++').is_file():
         parser.error(f'WASI clang++ missing below {wasi}')
+    if (wasi / 'VERSION').read_text().splitlines()[0] != PINS['wasiVersion']:
+        parser.error(f'WASI SDK must be version {PINS["wasiVersion"]}')
+    # CMake retains the detected compiler when WASI_SDK_PATH changes. Never
+    # attribute a cached compiler from a different installation to this pin.
+    for name in ['sdk-build', 'quietproof-build']:
+        for path in (work / name / 'CMakeFiles').glob('*/CMakeCXXCompiler.cmake'):
+            match = re.search(r'set\(CMAKE_CXX_COMPILER "([^"]+)"\)', path.read_text())
+            if match and Path(match[1]).resolve() != (wasi / 'bin/clang++').resolve():
+                parser.error('existing cross build uses another compiler installation; use a fresh --work-dir')
     work.mkdir(parents=True, exist_ok=True)
     toolchain = source / 'cmake/toolchains/wasi.cmake'
     prefix = work / 'sdk-prefix'
     common = ['-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', '-DBUILD_TESTING=OFF',
-              f'-DCMAKE_TOOLCHAIN_FILE={toolchain}', f'-DWASI_SDK_PATH={wasi}']
+              f'-DCMAKE_TOOLCHAIN_FILE={toolchain}', f'-DWASI_SDK_PATH={wasi}',
+              '-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG ' + ' '.join(shlex.quote(flag) for flag in [
+                  f'-ffile-prefix-map={source}=/src/quietproof',
+                  f'-ffile-prefix-map={sdk}=/src/longfellow-zk',
+                  f'-ffile-prefix-map={work}=/build',
+                  f'-ffile-prefix-map={wasi}=/wasi-sdk'])]
     if shutil.which('ccache'):
         common += ['-DCMAKE_CXX_COMPILER_LAUNCHER=ccache']
 
@@ -54,6 +73,21 @@ def main():
     run('cmake', '--build', str(work / 'quietproof-build'), '--parallel', str(args.jobs))
     run('node', str(source / 'scripts/inspect_wasm.mjs'),
         str(work / 'quietproof-build/quietproof.wasm'))
+    digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+    provenance = {
+        'pins': PINS, 'wasiVersionFile': (wasi / 'VERSION').read_text(),
+        'compilerVersion': subprocess.check_output([str(wasi / 'bin/clang++'), '--version'], text=True).splitlines()[0],
+        'toolchainFiles': {name: digest(wasi / name) for name in
+                           ['bin/clang', 'bin/wasm-ld', 'share/cmake/wasi-sdk-p1.cmake']},
+        'verifiedArchive': (json.loads((wasi / 'quietproof-install.json').read_text())
+                            if (wasi / 'quietproof-install.json').is_file() else None),
+        'reactorSha256': digest(work / 'quietproof-build/quietproof.wasm'),
+        'sourceFiles': {str(p.relative_to(source)): digest(p) for p in sorted(
+            [source / 'CMakeLists.txt', source / 'cmake/toolchains/wasi.cmake',
+             source / 'scripts/build_wasm.py', source / 'scripts/build-pins.json'] +
+            list((source / 'include').rglob('*.h')) + list((source / 'src/wasm').glob('*.cc')))},
+    }
+    (work / 'build-provenance.json').write_text(json.dumps(provenance, sort_keys=True, indent=2) + '\n')
 
 
 if __name__ == '__main__':

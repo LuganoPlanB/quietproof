@@ -39,13 +39,13 @@ cancellation and no worker or subsequent fetch starts. No proof byte copy is
 returned from the worker. Historical and bridge fields remain inspectable;
 the initial acceptance workflow rejects them.
 
-After staging the reactor per the [build guide](../../../docs/wasm-build.md),
+After building/selecting the reactor per the [build guide](../../../docs/wasm-build.md),
 build the site before starting an owned preview:
 
 ```sh
 node --test web/features/verify/input.test.mjs
 node --test web/features/verify/results.test.mjs
-npm run docs:build
+QUIETPROOF_WASM=/path/to/qualified-build/quietproof-build/quietproof.wasm npm run docs:build
 npm run docs:preview -- --host 127.0.0.1 --port 4175
 # In another terminal:
 node --test --test-concurrency=1 web/features/verify/input.browser.test.mjs

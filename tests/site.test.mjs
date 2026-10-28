@@ -27,6 +27,7 @@ test("the approachable path and complete reference path are present", () => {
     "docs/limitations.md",
     "docs/glossary.md",
     "docs/guide/index.md",
+    "docs/guide/browser-tool.md",
     "docs/guide/how-it-works.md",
     "docs/guide/auditor-workflow.md",
     "docs/guide/getting-started.md",
@@ -100,6 +101,7 @@ test("site navigation exposes operations, security, performance, circuit, and pr
 
   for (const route of [
     "/operations",
+    "/guide/browser-tool",
     "/security",
     "/performance",
     "/technical/pokc",
@@ -116,6 +118,7 @@ test("GitHub Pages deployment is reproducible and base-path aware", () => {
   const config = read("docs/.vitepress/config.mjs");
   const home = read("docs/.vitepress/theme/components/HomePage.vue");
   const workflow = read(".github/workflows/deploy-pages.yml");
+  const qualification = read(".github/workflows/test.yml");
 
   assert.match(config, /const siteBase = process\.env\.DOCS_BASE \|\| "\/"/);
   assert.match(config, /base: siteBase/);
@@ -123,12 +126,14 @@ test("GitHub Pages deployment is reproducible and base-path aware", () => {
   assert.match(home, /import \{ withBase \} from "vitepress"/);
   assert.doesNotMatch(home, /(?<!:)href="\//);
 
-  assert.match(workflow, /repository: LuganoPlanB\/vite-theme/);
-  assert.match(workflow, /ref: a7fde3404a5e2b32bf57b4bcb99337479c5c75b2/);
-  assert.match(workflow, /npm ci/);
-  assert.match(workflow, /npm run test:site/);
-  assert.match(workflow, /npm run docs:build/);
-  assert.match(workflow, /DOCS_BASE: "\$\{\{ steps\.pages\.outputs\.base_path \}\}\/"/);
+  assert.match(qualification, /repository: LuganoPlanB\/vite-theme/);
+  assert.match(qualification, /ref: a7fde3404a5e2b32bf57b4bcb99337479c5c75b2/);
+  assert.match(qualification, /npm ci/);
+  assert.match(qualification, /scripts\/qualify_static\.py/);
+  assert.match(qualification, /scripts\/install_wasi\.py/);
+  assert.match(workflow, /uses: \.\/\.github\/workflows\/test.yml/);
+  assert.match(workflow, /needs: qualify/);
+  assert.match(workflow, /base: \$\{\{ steps\.pages\.outputs\.base_path \}\}\//);
   assert.match(workflow, /path: quietproof\/docs\/\.vitepress\/dist/);
   assert.match(workflow, /pages: write/);
   assert.match(workflow, /id-token: write/);

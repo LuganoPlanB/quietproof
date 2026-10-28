@@ -1,0 +1,8 @@
+{
+  "longfellowCommit": "d2b0fc515f8663e38c79a28e8900ce8438e0106e",
+  "themeCommit": "a7fde3404a5e2b32bf57b4bcb99337479c5c75b2",
+  "wasiVersion": "34.0",
+  "wasiArchive": "wasi-sdk-34.0-x86_64-linux.tar.gz",
+  "wasiUrl": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz",
+  "wasiSha256": "b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4"
+}

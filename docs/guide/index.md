@@ -7,6 +7,13 @@ description: Choose a QuietProof guide based on what you are trying to do.
 
 Use these guides to move from the concept to a testable workflow.
 
+## Use the browser tool
+
+[Browser request and verifier](/guide/browser-tool) walks through a public
+request, external CLI/wallet proving, independent expected policy and separate
+cryptography/explorer results. Private keys stay outside the browser. Mainnet
+and signet are supported; the static tool supplies no acceptance backend.
+
 ::: warning
 This is free and open source software provided without warranty under
 the terms of the GNU GPL v3 license. Professional support,

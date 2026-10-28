@@ -44,6 +44,12 @@ The zero-knowledge proof checks the key-to-program relation. A chain provider se
 
 The bundled CLI provider checks a stable current Bitcoin Core tip. A null `gettxout` response is inconclusive, not proof that an output was spent. Historical statements require a separately implemented and authenticated historical provider through the library API.
 
+The [browser tool](/guide/browser-tool) instead uses explicitly requested public
+explorer observations, after independent policy and cryptography pass. It
+trusts the pinned provider, has no atomic observation snapshot, and never
+establishes the native verifier's strict current/historical chain validity.
+Funding-block metadata is not a current chain snapshot.
+
 ## Replay protection is an operational responsibility
 
 The transcript binds the verifier, purpose, network, nonce, expiry, circuit identity, and proof parameters. Deployments must still:
@@ -53,6 +59,11 @@ The transcript binds the verifier, purpose, network, nonce, expiry, circuit iden
 - never reuse a nonce, including after interrupted workflows;
 - consume nonces atomically in durable storage; and
 - provide an equivalently atomic shared store in distributed deployments.
+
+The static browser supplies no such authority or shared store. Its device
+clock is untrusted and opt-in local history is editable, bounded and scoped to
+one origin/profile/device. Clearing storage or using another device can erase
+repeat warnings. A separate accepting application must enforce its own policy.
 
 ## Supported scripts and key boundary
 
@@ -70,7 +81,14 @@ and amounts remain public and linkable. This is not anonymous proof of funds.
 
 ## Platform boundary
 
-The current release target is native 64-bit C++20 on Linux/x86-64 with the repository’s hardened flags. A 128 MiB envelope ceiling bounds allocation. A generic wasm target elsewhere in the dependency does not make wasm a supported QuietProof release target.
+The native API requires 64-bit C++20; record the configured compiler and flags.
+The browser reactor is separately qualified for desktop Chromium and WebKit
+on the [named reference host](/performance#browser-resource-boundary). Firefox,
+physical mobile/low-RAM devices and actual screen-reader use are unqualified.
+The browser proof-file limit is 134221889 bytes (128 MiB plus envelope); observed
+WASM linear allocation reaches about 1.82 GB with a 2 GiB maximum, in addition
+to file/JS/browser memory. This is not process RSS or a total-RAM guarantee.
+Run one operation at a time and preserve failure/incomplete states.
 
 ## Review boundary
 

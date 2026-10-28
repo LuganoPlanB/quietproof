@@ -5,6 +5,11 @@ description: Discover Bitcoin outputs, create a challenge, prove offline, and ve
 
 # Build and try QuietProof
 
+This page is the **native Core-backed regtest tutorial**. For the static
+mainnet/signet request tool, external proving and browser verification, start
+with the [browser guide](./browser-tool). Its explorer observations do not
+provide the native verifier's strict chain-state result.
+
 Discover Bitcoin outputs, create a challenge, prove key control, verify against
 Bitcoin Core. Supply a native P2WPKH or compressed-key P2PKH address; Core supplies the public claims.
 The prover needs the request and its keys. The verifier chooses the policy and

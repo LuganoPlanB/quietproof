@@ -5,18 +5,168 @@ The reactor uses the same pinned Longfellow SDK as the native build:
 performs real policy-bound proof verification followed by separate explorer
 assessment. It does not export a prover. WASI SDK 34.0 is the qualified toolchain.
 
-From the Quietproof repository, with CMake 3.20+, Ninja, Python 3 and Node:
+For the public workflow, start with the [browser guide](./guide/browser-tool).
+This page is for building and operating its static artifact.
+
+## Build the isolated reactor
+
+The qualified build uses Linux x86_64, Python 3.12+, Git, CMake 3.20+, Ninja and
+Node 24.22.1/npm. A native C++20 toolchain is additionally needed for the CLI
+and public proof fixtures. Keep the shared theme in the sibling `../vite-theme`
+location expected by `package.json`.
+
+From the QuietProof repository, prepare **new** dependency checkouts if they
+are not already present. Do not overwrite another working checkout:
 
 ```sh
-python3 scripts/build_wasm.py --sdk-source ../longfellow-zk-dyne \
-  --work-dir ../.gestalt/quietproof-wasi
+git clone https://github.com/dyne/longfellow-zk.git ../longfellow-zk-dyne
+git -C ../longfellow-zk-dyne checkout --detach d2b0fc515f8663e38c79a28e8900ce8438e0106e
+git clone https://github.com/LuganoPlanB/vite-theme.git ../vite-theme
+git -C ../vite-theme checkout --detach a7fde3404a5e2b32bf57b4bcb99337479c5c75b2
 ```
 
-`--wasi-sdk` or `WASI_SDK_PATH` selects a toolchain installation (default
-`/opt/wasi-sdk`). The driver rejects a changed SDK revision or dirty tracked SDK
-sources. It builds and installs the SDK into its own WASI prefix, then builds
-`quietproof-build/quietproof.wasm`. Use a fresh work directory to reproduce a
-clean build; no native dependency prefix is used. Available ccache is used.
+For existing checkouts, verify those HEADs and clean tracked sources instead.
+The builders reject changed dependency revisions or tracked modifications.
+The project owner confirmed ownership of the Plan B theme and permission for
+its use in this QuietProof deliverable on 2026-10-28; see the
+[scoped authorization record](static-release.md#theme-permission). The theme's
+package metadata has no license identifier. Existing third-party notices and
+licenses remain applicable. Publication requires separate authorization.
+
+Choose a new private build directory, then install the qualified WASI SDK:
+
+```sh
+QP_BUILD=$(mktemp -d "${TMPDIR:-/tmp}/quietproof-browser-build.XXXXXX")
+python3 scripts/install_wasi.py --destination "$QP_BUILD/wasi-sdk"
+python3 scripts/build_wasm.py --sdk-source ../longfellow-zk-dyne \
+  --wasi-sdk "$QP_BUILD/wasi-sdk" --work-dir "$QP_BUILD/wasm" --jobs 2
+```
+
+`scripts/build-pins.json` pins WASI SDK 34.0's Linux x86_64 archive to SHA256
+`b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4`.
+The installer checks the full download before extraction, refuses an existing
+destination and records the pin. `--archive FILE` can use an already downloaded
+copy with the same required digest. No system installation is changed.
+
+The driver builds and installs Longfellow into a separate WASI prefix, builds
+`$QP_BUILD/wasm/quietproof-build/quietproof.wasm`, checks its imports/exports and
+writes `build-provenance.json`. It normalizes source/build/toolchain paths for
+reproducibility. Available ccache is used. `--wasi-sdk` or `WASI_SDK_PATH` can
+select an existing installation (default `/opt/wasi-sdk`); version alone does
+not establish the archive digest. Release packaging requires the installer pin
+record. Use a fresh work directory when switching compiler installations:
+CMake can retain its old compiler, so the driver rejects a mismatched cache.
+No native dependency prefix is used for the reactor.
+
+## Build and preview the complete static artifact
+
+From the same repository and shell, with a clean reviewed checkout:
+
+```sh
+npm ci
+npm run test:site
+python3 scripts/build_static.py --sdk-source ../longfellow-zk-dyne \
+  --cross-work "$QP_BUILD/wasm" --base /
+npm run docs:preview -- --host 127.0.0.1 --port 4178 --strictPort
+```
+
+Open `http://127.0.0.1:4178/guide/browser-tool`, `/tool` and `/verify`. Stop the
+owned preview with Ctrl-C before rebuilding, then restart it. For a subpath,
+use `--base /quietproof/`, preview with `DOCS_BASE=/quietproof/` and open
+`http://127.0.0.1:4178/quietproof/tool`. Keep the trailing slash. Supported base
+paths contain simple alphanumeric, underscore or hyphen segments.
+
+The output is `docs/.vitepress/dist`: HTML/CSS/JS, SHA256-named WASM, fonts,
+`asset-manifest.json`, `build-provenance.json`, `SOURCE-NOTICE.txt`, dependency
+licenses and corresponding source archives/manifests. Serve this entire
+directory from a static HTTP(S) host with clean-URL `.html` routing. Production
+needs no Node runtime, RPC, wallet, prover or secret. Node is a build/local
+preview dependency. Publishing/deploying is a separate authorized operation;
+this command only prepares local files.
+
+The packaging driver verifies the pinned clean SDK/theme and matched reactor
+source digest. It rejects dirty tracked application sources by default. For
+an explicitly local review build, add `--allow-dirty`; add each new, untracked
+deliverable with `--source-addition relative/path` so its actual bytes are also
+in the source archive. Such output is labeled `dirtyReviewBuild: true`, not a
+clean release. Never add private files or local coordination plans.
+
+For source editing without distribution packaging, the production renderer
+also works directly, but **requires** the selected reactor:
+
+```sh
+QUIETPROOF_WASM="$QP_BUILD/wasm/quietproof-build/quietproof.wasm" \
+  DOCS_BASE=/ npm run docs:build
+```
+
+That direct command does not add the packaging driver's source/license and
+asset manifests. Use `build_static.py` again before artifact qualification or
+distribution. A bare production `npm run docs:build` fails rather than silently
+shipping an absent/stale reactor. Source development can use
+`QUIETPROOF_WASM=... npm run docs:dev -- --host 127.0.0.1`; production CSP checks
+apply to the built preview, not the development server.
+
+The WASM filename contains its full SHA256; the loader checks those bytes before
+worker initialization and rejects stale substitutions. It also checks ABI and
+capabilities independently. Serve `.wasm` as `application/wasm` and modules as
+JavaScript; bounded byte fetching also handles generic WASM MIME. Replace a
+deployment's matching HTML/JS/WASM together and retain the prior complete
+artifact for rollback. Hashes detect stale bytes, not a malicious deployment
+that replaces the loader itself. See [hosting/CSP limits](./browser-security).
+
+CI runs `.github/workflows/test.yml` with two compiler jobs and serial heavy
+proof/browser tests, then retains the static artifact and qualification logs.
+The Pages workflow consumes that qualified artifact. Local qualification does
+not prove hosted-runner success or production-origin CORS/headers. To reproduce
+the full CI gate after configuring native RPC ON/OFF builds:
+
+```sh
+python3 scripts/qualify_static.py --sdk-source ../longfellow-zk-dyne \
+  --cross-work "$QP_BUILD/wasm" --native-on build-native-on \
+  --native-off build-native-off --evidence "$QP_BUILD/qualification" --base /
+```
+
+The evidence directory must be new. Install both required Playwright engines
+first with `npx playwright install chromium webkit` (host libraries must also
+be available). Full qualification is expensive: real native/browser proving
+and recovery checks are serial. The one-hour direct-reactor/provider fixtures
+run before the longer 24-hour UI matrix. Preserve old fixtures before any
+regeneration. Retain original failure logs, generation times, source/artifact/
+environment digests and named executed-test counts; a filtered smoke is not
+full qualification.
+
+## Public fixture roundtrip
+
+This focused handoff uses synthetic explorer responses and **public disposable
+scalars 1/2** held only by the external native test process. It never sends a
+key to the browser, needs no live node/provider/coins, and makes no real funding
+claim. **Never fund these public fixture keys.** Build the native CLI using
+[the native guide](./guide/getting-started#build), install Chromium/WebKit and
+start the packaged preview above. In another terminal, from the repository:
+
+```sh
+QP_NATIVE_CLI=/absolute/path/to/native-build/quietproof
+QP_ROUNDTRIP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/quietproof-roundtrip.XXXXXX")
+QUIETPROOF_SITE_ORIGIN=http://127.0.0.1:4178 \
+QUIETPROOF_NATIVE_CLI="$QP_NATIVE_CLI" \
+QUIETPROOF_ROUNDTRIP_ARTIFACTS="$QP_ROUNDTRIP_DIR" \
+  node --test --test-concurrency=1 \
+    --test-name-pattern='^(chromium|webkit): browser request/native prove/browser verify mainnet-p2wpkh$' \
+    web/adversarial/roundtrips.browser.test.mjs
+```
+
+Expect exactly **two named positive tests**, one per required engine. They
+download a real browser `.qpr`, run `inspect`/`prove` in the external CLI, and
+import/verify the real `.qpf` with the independently retained request. The setup
+also creates a separate 90-second expiring fixture; selected positive requests
+explicitly use 86400 seconds for qualification, without changing UI defaults.
+No clock or proof timestamp is rewritten. Files, hashes, commands, generation
+times and screenshots are retained under the new directory. This is a smoke
+check, not the full 26-test/24-positive matrix described in the source file
+`web/adversarial/README.md`. An existing matching WebKit launcher can be selected
+with `QUIETPROOF_WEBKIT_EXECUTABLE`; it does not expand browser support.
+
+## Reactor and ABI reference
 
 Native builds still default to CLI, RPC and tests enabled. A library-only build
 can set `QUIETPROOF_BUILD_CLI=OFF`, `QUIETPROOF_BUILD_RPC=OFF`, and
@@ -204,5 +354,6 @@ ctest --test-dir build-native-on --output-on-failure --no-tests=error \
 ```
 
 Repeat the compatibility selection above in an RPC OFF build. The documentation gates are
-`npm run test:site` and `npm run docs:build`. Native dependency prefixes are
+`npm run test:site` and a reactor-selected `QUIETPROOF_WASM=... npm run docs:build`
+or the complete packaging command above. Native dependency prefixes are
 environment-specific; this workspace uses its existing static curl prefix.

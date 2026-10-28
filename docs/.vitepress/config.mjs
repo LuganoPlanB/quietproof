@@ -3,12 +3,16 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { searchForWorkspaceRoot } from "vite";
 import { secureHtml } from './security.mjs';
+import { wasmAsset } from './wasm.mjs';
 
 const projectRoot = fileURLToPath(new URL("../..", import.meta.url));
 const siteBase = process.env.DOCS_BASE || "/";
 
 export default defineConfig({
   base: siteBase,
+  // Local-search numeric IDs depend on insertion order. Serial indexing keeps
+  // the search index, dependent JS filenames and CSP hashes reproducible.
+  buildConcurrency: 1,
   lang: "en",
   title: "QuietProof",
   titleTemplate: ":title · QuietProof",
@@ -63,6 +67,7 @@ export default defineConfig({
     },
   },
   vite: {
+    plugins: [wasmAsset(projectRoot, siteBase)],
     server: {
       fs: {
         allow: [searchForWorkspaceRoot(projectRoot), resolve(projectRoot, "../vite-theme")],
@@ -93,6 +98,7 @@ export default defineConfig({
         text: "Practical guides",
         items: [
           { text: "Guide overview", link: "/guide/" },
+          { text: "Browser request and verifier", link: "/guide/browser-tool" },
           { text: "How a proof works", link: "/guide/how-it-works" },
           { text: "Auditor workflow", link: "/guide/auditor-workflow" },
           { text: "Build and try it", link: "/guide/getting-started" },

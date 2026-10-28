@@ -41,7 +41,7 @@ Focused checks, from the repository root:
 
 ```sh
 node --test web/features/history/history.test.mjs
-npm run docs:build
+QUIETPROOF_WASM=/path/to/qualified-build/quietproof-build/quietproof.wasm npm run docs:build
 npm run docs:preview -- --host 127.0.0.1 --port 4175
 # In another terminal, with a current native CLI and installed Chromium/WebKit:
 QUIETPROOF_NATIVE_CLI=/path/to/quietproof \

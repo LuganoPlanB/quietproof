@@ -40,7 +40,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
           return url.endsWith('/block-height/0') ? route.fulfill({ body: fixtures.mainnet.genesis })
             : route.fulfill({ json: url.endsWith('/utxo') ? fixture.utxos : fixture.tx });
         });
-        await page.route('**/wasm/quietproof.wasm', async route => {
+        await page.route(/\/(?:wasm\/quietproof|assets\/quietproof\.[a-f0-9]{64})\.wasm$/, async route => {
           wasmFetches++;
           if (holdAsset) await new Promise(r => { releaseAsset = r; });
           await route.continue().catch(() => {});

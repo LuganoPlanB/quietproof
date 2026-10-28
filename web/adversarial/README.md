@@ -59,7 +59,7 @@ low-memory injection and accessible-state qualification have their own gates.
 
 ```sh
 node --test web/adversarial/fixtures.test.mjs
-npm run docs:build
+QUIETPROOF_WASM=/path/to/qualified-build/quietproof-build/quietproof.wasm npm run docs:build
 npm run docs:preview -- --host 127.0.0.1 --port 4178 --strictPort
 # In another terminal, with the current native CLI and installed browsers:
 QUIETPROOF_SITE_ORIGIN=http://127.0.0.1:4178 \
