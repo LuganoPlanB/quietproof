@@ -15,7 +15,49 @@ assert(wasmName, 'SHA256-named reactor required');
 const wasm = await readFile(resolve(root, wasmName));
 assert.equal(createHash('sha256').update(wasm).digest('hex'), manifest[wasmName]);
 
+async function openDocumentation(page, url) {
+  // Layout needs rendered content and fonts, not completion of every image.
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
+  await page.locator('.vp-doc h1').waitFor();
+  // WebKit can defer fonts.ready until window.load even when status is loaded.
+  await page.waitForFunction(() => document.fonts.status === 'loaded');
+}
+
 for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
+  test(`${name}: documentation readiness does not depend on an unfinished image`, { timeout: 120000 }, async () => {
+    const browser = await engine.launch({ headless: true,
+      ...(name === 'webkit' && process.env.QUIETPROOF_WEBKIT_EXECUTABLE ? { executablePath: process.env.QUIETPROOF_WEBKIT_EXECUTABLE } : {}) });
+    let releaseImage;
+    const imageReleased = new Promise(resolve => { releaseImage = resolve; });
+    try {
+      const page = await browser.newPage();
+      page.setDefaultNavigationTimeout(10000);
+      let loaded = false;
+      page.on('load', () => { loaded = true; });
+      await page.route(origin + '/readiness-probe.svg', async route => {
+        await imageReleased;
+        await route.fulfill({ contentType: 'image/svg+xml',
+          body: '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>' });
+      });
+      await page.route(origin + '/wasm-build', async route => {
+        const response = await route.fetch();
+        const body = (await response.text()).replace('</body>',
+          `<img src="${origin}/readiness-probe.svg" alt="" width="1" height="1"></body>`);
+        await route.fulfill({ response, body });
+      });
+      await openDocumentation(page, origin + '/wasm-build');
+      assert.equal(await page.locator('.vp-doc h1').isVisible(), true);
+      assert.equal(await page.evaluate(() => document.fonts.status), 'loaded');
+      assert.equal(loaded, false, 'readiness must be reached while the image still blocks load');
+      releaseImage();
+      await page.waitForLoadState('load');
+      assert.equal(loaded, true);
+    } finally {
+      releaseImage();
+      await browser.close();
+    }
+  });
+
   test(`${name}: packaged base, local search, MIME fallback and stale reactor refusal`, { timeout: 120000 }, async () => {
     const browser = await engine.launch({ headless: true,
       ...(name === 'webkit' && process.env.QUIETPROOF_WEBKIT_EXECUTABLE ? { executablePath: process.env.QUIETPROOF_WEBKIT_EXECUTABLE } : {}) });
@@ -30,7 +72,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
         return url.endsWith('/block-height/0') ? route.fulfill({ body: fixtures.mainnet.genesis })
           : route.fulfill({ json: url.endsWith('/utxo') ? fixture.utxos : fixture.tx });
       });
-      await page.goto(origin + '/tool');
+      await page.goto(origin + '/tool', { waitUntil: 'domcontentloaded' });
       await page.getByRole('button', { name: 'Look up outputs', exact: true }).waitFor();
       await page.getByLabel('Bitcoin addresses').fill(fixtures.mainnet.p2wpkh);
       await page.getByRole('button', { name: 'Look up outputs', exact: true }).click();
@@ -59,8 +101,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
       for (const width of [390, 1440]) for (const scale of [1, 2]) {
         await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
         for (const path of ['/guide/browser-tool', '/wasm-build']) {
-          await page.goto(origin + path);
-          await page.locator('.vp-doc h1').waitFor();
+          await openDocumentation(page, origin + path);
           await page.addStyleTag({ content: `html, .vp-doc { font-size: ${16 * scale}px !important; }` });
           const layout = await page.locator('.vp-doc').evaluate(doc => {
             const selectors = 'p, li, th, td, h2, h3, pre code';
