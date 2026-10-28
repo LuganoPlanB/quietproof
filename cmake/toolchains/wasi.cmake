@@ -4,6 +4,8 @@ set(WASI_SDK_PATH "$ENV{WASI_SDK_PATH}" CACHE PATH "WASI SDK root")
 if(NOT WASI_SDK_PATH)
   set(WASI_SDK_PATH "/opt/wasi-sdk" CACHE PATH "WASI SDK root" FORCE)
 endif()
+# Compiler/feature probes use fresh caches and must retain the selected SDK.
+list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES WASI_SDK_PATH)
 include("${WASI_SDK_PATH}/share/cmake/wasi-sdk-p1.cmake")
 set(CMAKE_SYSROOT "${WASI_SDK_PATH}/share/wasi-sysroot")
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
