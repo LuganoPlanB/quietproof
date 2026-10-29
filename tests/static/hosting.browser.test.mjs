@@ -23,6 +23,29 @@ async function openDocumentation(page, url) {
   await page.waitForFunction(() => document.fonts.status === 'loaded');
 }
 
+async function withHostingPage(name, engine, artifact, check) {
+  const browser = await engine.launch({ headless: true,
+    ...(name === 'webkit' && process.env.QUIETPROOF_WEBKIT_EXECUTABLE ? { executablePath: process.env.QUIETPROOF_WEBKIT_EXECUTABLE } : {}) });
+  let page;
+  const pending = new Set();
+  try {
+    page = await browser.newPage();
+    page.on('request', request => pending.add(request));
+    page.on('requestfinished', request => pending.delete(request));
+    page.on('requestfailed', request => pending.delete(request));
+    if (process.env.QUIETPROOF_HOSTING_ARTIFACTS)
+      await page.context().tracing.start({ screenshots: true, snapshots: true, sources: true });
+    await check(page);
+  } catch (error) {
+    console.error(JSON.stringify({ engine: name, url: page?.url(), pendingRequests: [...pending].map(request => request.url()) }));
+    if (page && process.env.QUIETPROOF_HOSTING_ARTIFACTS) {
+      await mkdir(process.env.QUIETPROOF_HOSTING_ARTIFACTS, { recursive: true });
+      await page.context().tracing.stop({ path: resolve(process.env.QUIETPROOF_HOSTING_ARTIFACTS, `${name}-${artifact}.zip`) });
+    }
+    throw error;
+  } finally { await browser.close(); }
+}
+
 for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
   test(`${name}: documentation readiness does not depend on an unfinished image`, { timeout: 120000 }, async () => {
     const browser = await engine.launch({ headless: true,
@@ -59,17 +82,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
   });
 
   test(`${name}: packaged base, local search, MIME fallback and stale reactor refusal`, { timeout: 120000 }, async () => {
-    const browser = await engine.launch({ headless: true,
-      ...(name === 'webkit' && process.env.QUIETPROOF_WEBKIT_EXECUTABLE ? { executablePath: process.env.QUIETPROOF_WEBKIT_EXECUTABLE } : {}) });
-    let page;
-    const pending = new Set();
-    try {
-      page = await browser.newPage();
-      page.on('request', request => pending.add(request.url()));
-      page.on('requestfinished', request => pending.delete(request.url()));
-      page.on('requestfailed', request => pending.delete(request.url()));
-      if (process.env.QUIETPROOF_HOSTING_ARTIFACTS)
-        await page.context().tracing.start({ screenshots: true, snapshots: true, sources: true });
+    await withHostingPage(name, engine, 'tool', async page => {
       const errors = []; page.on('pageerror', error => errors.push(error.message));
       let mode = 'generic';
       await page.route('**/' + wasmName, route => route.fulfill({ contentType: 'application/octet-stream',
@@ -103,16 +116,27 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
       await search.click();
       await page.locator('#localsearch-input').fill('verifier');
       await page.locator('.VPLocalSearchBox a[href]').first().waitFor();
-      // Enlarging documentation text must enlarge its line boxes too. Keep the
-      // CSS viewport fixed: this checks text scaling, independently of zoom/DPR.
-      for (const width of [390, 1440]) for (const scale of [1, 2]) {
-        await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
-        for (const path of ['/guide/browser-tool', '/wasm-build']) {
-          await openDocumentation(page, origin + path);
-          await page.addStyleTag({ content: `html, .vp-doc { font-size: ${16 * scale}px !important; }` });
+      assert.deepEqual(errors, []);
+    });
+  });
+
+  for (const path of ['/guide/browser-tool', '/wasm-build']) {
+    test(`${name}: ${path} layout at mobile/desktop and 100%/200% text`, { timeout: 120000 }, async () => {
+      await withHostingPage(name, engine, path.replaceAll('/', '_'), async page => {
+        const errors = []; page.on('pageerror', error => errors.push(error.message));
+        await openDocumentation(page, origin + path);
+        const textSize = await page.addStyleTag({ content: '/* text-size probe */' });
+        // Reuse the loaded document: changing viewport or text size requires no
+        // navigation, and layout checks need no WASM/provider request mocks.
+        for (const width of [390, 1440]) for (const scale of [1, 2]) {
+          await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+          await textSize.evaluate((style, pixels) => {
+            style.textContent = `html, .vp-doc { font-size: ${pixels}px !important; }`;
+          }, 16 * scale);
           const layout = await page.locator('.vp-doc').evaluate(doc => {
             const selectors = 'p, li, th, td, h2, h3, pre code';
             return {
+              fontSize: getComputedStyle(doc).fontSize,
               overflow: document.documentElement.scrollWidth > innerWidth,
               cramped: [...doc.querySelectorAll(selectors)].filter(element => {
                 const style = getComputedStyle(element);
@@ -120,19 +144,12 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
               }).map(element => ({ tag: element.tagName, text: element.textContent.slice(0, 80) })),
             };
           });
+          assert.equal(layout.fontSize, `${16 * scale}px`, `${path} text scaling applied`);
           assert.equal(layout.overflow, false, `${path} at ${width}px/${scale * 100}%`);
           assert.deepEqual(layout.cramped, [], `${path} line spacing at ${width}px/${scale * 100}%`);
         }
-      }
-      assert.deepEqual(errors, []);
-      await page.close();
-    } catch (error) {
-      console.error(JSON.stringify({ engine: name, url: page?.url(), pendingRequests: [...pending] }));
-      if (page && process.env.QUIETPROOF_HOSTING_ARTIFACTS) {
-        await mkdir(process.env.QUIETPROOF_HOSTING_ARTIFACTS, { recursive: true });
-        await page.context().tracing.stop({ path: resolve(process.env.QUIETPROOF_HOSTING_ARTIFACTS, `${name}-hosting.zip`) });
-      }
-      throw error;
-    } finally { await browser.close(); }
-  });
+        assert.deepEqual(errors, []);
+      });
+    });
+  }
 }
