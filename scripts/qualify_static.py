@@ -88,6 +88,7 @@ def main():
         'QUIETPROOF_WORKFLOW_ARTIFACTS', 'QUIETPROOF_ROUNDTRIP_ARTIFACTS',
         'QUIETPROOF_WEBKIT_EXECUTABLE', 'QUIETPROOF_SITE_ORIGIN', 'QUIETPROOF_SECURITY_BASE',
         'QUIETPROOF_ARTIFACT_DIR', 'QUIETPROOF_FEASIBILITY_REPORT', 'QUIETPROOF_FEASIBILITY_SITE',
+        'QUIETPROOF_HOSTING_ARTIFACTS',
     }
 
     def run(name, command, timeout=7200):
@@ -162,7 +163,8 @@ def main():
         manifest['servers'].append(record)
         save()
         environment.update(QUIETPROOF_SITE_ORIGIN=origin + base.rstrip('/'),
-                           QUIETPROOF_SECURITY_BASE='', QUIETPROOF_ARTIFACT_DIR=str(output))
+                           QUIETPROOF_SECURITY_BASE='', QUIETPROOF_ARTIFACT_DIR=str(output),
+                           QUIETPROOF_HOSTING_ARTIFACTS=str(args.evidence / 'hosting' / ('root' if base == '/' else 'subpath')))
         try:
             run('hosting-' + ('root' if base == '/' else 'subpath'),
                 ['node', '--test', '--test-concurrency=1', 'tests/static/hosting.browser.test.mjs'])
