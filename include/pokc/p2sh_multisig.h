@@ -9,7 +9,7 @@
 
 namespace proofs {
 // A separate format: QPM1, circuit digest[32], HASH160[20], position[1],
-// proof length[4 LE], proof bytes. Rate=4, queries=128, circuit version=1
+// proof length[4 BE], proof bytes. Rate=4, queries=128, circuit version=1
 // are fixed by this format and domain-separated from P2WPKH PoKC v1.
 struct P2shMultisigProof {
   P2shHash hash{};

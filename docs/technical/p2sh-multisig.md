@@ -118,8 +118,10 @@ Proofs use a separate fixed-parameter `QPM1` format:
 
 ```text
 "QPM1"[4] || circuit_digest[32] || h[20] || i[1]
-          || proof_length[4 little-endian] || proof[proof_length]
+          || proof_length[4 big-endian] || proof[proof_length]
 ```
+
+For example, a payload length of 258 is encoded as `00 00 01 02`.
 
 The format fixes version 1, rate 4 and 128 queries. Circuit identity uses tagged
 hash `QuietProof/P2SH-2of3/circuit/v1` over the SDK circuit digest, including its
