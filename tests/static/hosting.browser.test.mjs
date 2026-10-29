@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { chromium, webkit } from 'playwright';
@@ -61,8 +61,15 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
   test(`${name}: packaged base, local search, MIME fallback and stale reactor refusal`, { timeout: 120000 }, async () => {
     const browser = await engine.launch({ headless: true,
       ...(name === 'webkit' && process.env.QUIETPROOF_WEBKIT_EXECUTABLE ? { executablePath: process.env.QUIETPROOF_WEBKIT_EXECUTABLE } : {}) });
+    let page;
+    const pending = new Set();
     try {
-      const page = await browser.newPage();
+      page = await browser.newPage();
+      page.on('request', request => pending.add(request.url()));
+      page.on('requestfinished', request => pending.delete(request.url()));
+      page.on('requestfailed', request => pending.delete(request.url()));
+      if (process.env.QUIETPROOF_HOSTING_ARTIFACTS)
+        await page.context().tracing.start({ screenshots: true, snapshots: true, sources: true });
       const errors = []; page.on('pageerror', error => errors.push(error.message));
       let mode = 'generic';
       await page.route('**/' + wasmName, route => route.fulfill({ contentType: 'application/octet-stream',
@@ -119,6 +126,13 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
       }
       assert.deepEqual(errors, []);
       await page.close();
+    } catch (error) {
+      console.error(JSON.stringify({ engine: name, url: page?.url(), pendingRequests: [...pending] }));
+      if (page && process.env.QUIETPROOF_HOSTING_ARTIFACTS) {
+        await mkdir(process.env.QUIETPROOF_HOSTING_ARTIFACTS, { recursive: true });
+        await page.context().tracing.stop({ path: resolve(process.env.QUIETPROOF_HOSTING_ARTIFACTS, `${name}-hosting.zip`) });
+      }
+      throw error;
     } finally { await browser.close(); }
   });
 }
