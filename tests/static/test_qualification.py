@@ -93,6 +93,7 @@ class QualificationTests(unittest.TestCase):
         self.assertEqual(native[native.index('-LE') + 1], 'proof-heavy')
         build = commands[0]
         self.assertIn('--target', build)
+        self.assertIn('p2sh-multisig-test', build)
         self.assertFalse({'pokc-test', 'quietproof-browser-verifier-test', 'quietproof-browser-fixtures'} & set(build))
         wasm = next(c for c in commands if 'tests/wasm/browser.test.mjs' in c)
         self.assertIn('--test-skip-pattern=^(real proof stages|browser time and phase failures)', wasm)

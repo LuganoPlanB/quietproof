@@ -191,7 +191,7 @@ def main():
                              'compressed-key-sha256-test', 'key-ownership-test', 'ripemd160-test',
                              'quietproof-protocol-test', 'quietproof-challenge-test',
                              'quietproof-browser-codec-test', 'quietproof-integration-test',
-                             'pokc-sage-test', 'quietproof-progress-test']
+                             'pokc-sage-test', 'quietproof-progress-test', 'p2sh-multisig-test']
         run('native-on-build', native_build)
         run('native-off-build', ['cmake', '--build', offline, '--target', 'quietproof-cli', '--parallel', '2'])
         native_tests = ['ctest', '--test-dir', native, '--output-on-failure', '--no-tests=error',

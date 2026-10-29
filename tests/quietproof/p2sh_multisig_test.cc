@@ -1,5 +1,6 @@
 // Copyright (C) 2026 Plan-B Foundation
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <fstream>
@@ -190,6 +191,21 @@ void CircuitTests() {
   Require(EncodeP2shProof(proof, &wire), "structural envelope fixture");
   Require(!P2shVerify(proof), "nonproof accepted");
   P2shMultisigProof parsed;
+  // Structural wire fixture only: these bytes are not a cryptographic proof.
+  // Check a fixed, asymmetric length vector independently of codec helpers.
+  auto wire_fixture = proof;
+  wire_fixture.bytes.assign(258, 0x5a);
+  std::vector<uint8_t> fixture_wire;
+  Require(EncodeP2shProof(wire_fixture, &fixture_wire), "encode length vector");
+  constexpr size_t length_offset = kP2shHeaderBytes - 4;
+  const std::array<uint8_t, 4> expected_length{0x00, 0x00, 0x01, 0x02};
+  Require(std::equal(expected_length.begin(), expected_length.end(),
+                     fixture_wire.begin() + length_offset), "QPM1 length is not big-endian");
+  Require(DecodeP2shProof(fixture_wire, &parsed) && parsed.bytes == wire_fixture.bytes,
+          "decode big-endian length vector");
+  std::reverse(fixture_wire.begin() + length_offset,
+               fixture_wire.begin() + kP2shHeaderBytes);
+  Require(!DecodeP2shProof(fixture_wire, &parsed), "little-endian length accepted");
   for (size_t length : {size_t{0}, size_t{4}, size_t{35}, size_t{60}, wire.size()-1}) {
     auto truncated = wire; truncated.resize(length);
     Require(!DecodeP2shProof(truncated, &parsed), "truncated envelope accepted");
@@ -270,7 +286,8 @@ void ProofTests() {
   QuietProofClaimV1 claim; claim.txid[0] = 1; claim.amount_sats = 1; claim.program = native.program();
   s.claims = {claim}; QuietProofEnvelopeV1 v1;
   auto start = std::chrono::steady_clock::now();
-  Require(PoKCProveKeys<1>({f.secrets[0]}, s, &v1), "original PoKC baseline prove");
+  Require(PoKCProve(f.secrets[0].data(), f.secrets[0].size(), s, &v1),
+          "original PoKC baseline prove");
   const auto prove = Seconds(start); start = std::chrono::steady_clock::now();
   Require(PoKCVerifyProof(v1), "original PoKC baseline verify");
   const auto verify = Seconds(start);
