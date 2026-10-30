@@ -7,6 +7,7 @@
 #include "node_settings.h"
 #include "node_probe.h"
 #include "wallet_session.h"
+#include "proof_session.h"
 #include "private_input.h"
 
 #include <array>
@@ -36,6 +37,33 @@ struct ShellState {
   bool submit_wallet = false;
   bool cancel_wallet = false;
   bool wallet_busy = false;
+  bool wallet_cancel_pending = false;
+  std::optional<ProofEvent> proof_progress;
+  std::chrono::steady_clock::time_point proof_started{};
+  std::shared_ptr<const VerifiedProof> completed_proof;
+  std::optional<ValidationJob> validation_job;
+  bool save_dialog = false, save_busy = false, save_file = false, cancel_save = false;
+  uint64_t save_attempt = 1;
+  std::array<char,4096> save_path{};
+  std::optional<OutputIdentity> save_confirm;
+  std::string save_status, save_notice;
+  void InvalidateSaveDestination() {
+    ++save_attempt; save_confirm.reset(); save_status.clear();
+    if (save_busy) cancel_wallet = true;
+  }
+  void AcceptSaveResult(const SaveResult& result) {
+    save_busy = false;
+    const bool current = completed_proof && result.revision == node_probe.revision && result.attempt == save_attempt;
+    const auto path = RequestDisplayText(result.destination.string());
+    if (current) {
+      save_status = result.message+" Destination: "+path;
+      scroll = {}; editing_path = false; focus = 307;
+      save_confirm = result.status == SaveStatus::NeedsOverwrite ? result.existing : std::nullopt;
+      if (save_confirm) focus = 308;
+      if (result.committed) save_dialog = false;
+    } else if (result.committed) save_notice = "Previous request's verified proof was saved before cancellation to "+path;
+    if (result.cleanup_failed) save_notice = "Temporary output cleanup needs attention in "+RequestDisplayText(result.destination.parent_path().string());
+  }
   bool wallet_prompt = false;
   bool private_input_guard = false;
   int wallet_focus = 0;
@@ -44,10 +72,19 @@ struct ShellState {
   std::optional<WalletSessionJob> wallet_job;
   std::string wallet_status;
   std::string wallet_warning;
+  // Validation/proving is emitted only after password consumption and relock.
+  // Keep guarding input until the UI has drained that final private frame.
+  bool WalletPrivatePhase() const {
+    return wallet_busy && (!proof_progress || proof_progress->stage < ProofStage::Validation);
+  }
   void CancelWalletInput() {
     private_input_guard = private_input_guard || wallet_prompt || wallet_busy || wallet_input->Size() != 0;
     wallet_input->Clear(); wallet_prompt = false; submit_wallet = false;
     cancel_wallet = true; wallet_job.reset();
+    completed_proof.reset();
+    validation_job.reset(); InvalidateSaveDestination(); save_dialog = false; save_path.fill(0);
+    wallet_cancel_pending = wallet_busy;
+    if (!wallet_busy) proof_progress.reset();
     wallet_status.clear();
   }
   std::optional<std::string> node_selection;
@@ -59,7 +96,7 @@ struct ShellState {
   void OpenRequest(const std::filesystem::path& path);
   std::string preference_status;
   nk_scroll scroll{};
-  std::array<struct nk_rect, 306> controls{};
+  std::array<struct nk_rect, 310> controls{};
 };
 void HandleShellKey(ShellState& state, const SDL_KeyboardEvent& key);
 void DrawShell(nk_context* context, ShellState& state, int width, int height,

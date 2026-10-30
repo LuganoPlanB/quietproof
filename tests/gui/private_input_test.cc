@@ -22,6 +22,16 @@ bool Zero(const void* pointer, size_t size) {
 SDL_Event Key(SDL_Keycode key, SDL_Keymod modifier = KMOD_NONE) {
   SDL_Event e{}; e.type = SDL_KEYDOWN; e.key.keysym.sym = key; e.key.keysym.mod = modifier; return e;
 }
+std::shared_ptr<const VerifiedProof> PublicFixture() {
+  proofs::QuietProofStatementV1 s; s.verifier="state.example"; s.purpose="proof-of-control";
+  s.nonce[0]=1; s.bip322_message_hash[0]=2; s.not_before=100; s.expires_at=200;
+  proofs::QuietProofClaimV1 c; c.txid[0]=1; c.amount_sats=1; c.program[0]=1; s.claims.push_back(c);
+  std::vector<uint8_t> bytes; Check(proofs::EncodeQuietProofStatement(s,&bytes),"state fixture canonical request");
+  proofs::QuietProofEnvelopeV1 e; e.statement=s; e.envelope_version=2; e.proof_created_at=150;
+  e.proof.bytes={1}; e.proof.circuit_digest[0]=1;
+  auto value=ProofValidation::Run(std::make_shared<const LoadedRequest>(LoadedRequest{{},bytes,s}),e,[]{return false;},[](const auto&){return true;});
+  Check(bool(value.proof),"state fixture sealed through binding/encoding checks"); return value.proof;
+}
 }
 int main() {
   try {
@@ -84,13 +94,25 @@ int main() {
       const std::string warning = "Wallet previous-identity: relock failed; check its timed fallback.";
       state.wallet_warning = warning;
       state.wallet_prompt = true;
+      state.completed_proof = PublicFixture();
       state.wallet_input->Append({synthetic.data(),12});
       if (context_change) state.InvalidateNodeProbe();
       else state.CancelWalletInput(); // Also used before explicit wallet selection changes.
       Check(state.wallet_status.empty(),"old wallet success cleared on session/context invalidation");
+      Check(!state.completed_proof,"completed proof cleared on session/context invalidation");
       Check(state.wallet_warning == warning,"cleanup warning keeps captured wallet identity");
       Check(!state.wallet_prompt && !state.wallet_job && state.wallet_input->Size()==0 && state.cancel_wallet,
             "invalidated wallet input/job cleared and cancellation requested");
+    }
+    {
+      ShellState state; state.wallet_busy = true;
+      Check(state.WalletPrivatePhase(),"input guarded during wallet preflight");
+      state.proof_progress = ProofEvent{1,ProofStage::Unlock};
+      Check(state.WalletPrivatePhase(),"input guarded while password may be in use");
+      state.proof_progress = ProofEvent{1,ProofStage::Prove};
+      Check(!state.WalletPrivatePhase(),"ordinary keyboard editing resumes after consumed-password boundary");
+      state.InvalidateNodeProbe();
+      Check(state.wallet_cancel_pending && !state.wallet_job && !state.completed_proof,"edits cancel old proof without retaining its output");
     }
     ErasePrivateMemory(synthetic.data(),synthetic.size());
     SDL_Quit();

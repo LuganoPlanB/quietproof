@@ -249,7 +249,7 @@ bool WalletReady(const ShellState& state) {
   return state.request.loaded && RequestWindowAt(state.request.loaded->statement,state.now) == RequestWindow::Valid &&
     state.node_probe.result && state.node_probe.result->selected_wallet &&
     state.node_probe.result->complete && state.node_probe.result->probe.syncing == false &&
-    !state.node_busy && !state.wallet_busy;
+    !state.node_busy && !state.wallet_busy && !state.save_busy && !state.completed_proof;
 }
 void DrawWalletDialog(nk_context* context, ShellState& state, int width, int height,
                       nk_user_font* body, nk_user_font* heading) {
@@ -342,7 +342,7 @@ void HandleShellKey(ShellState& state, const SDL_KeyboardEvent& key) {
         if (state.wallet_busy) order.push_back(305);
         if (state.request.loaded) order.push_back(272);
         order.push_back(10);
-        order.push_back(11);
+        if (!state.wallet_busy) order.push_back(11);
       }
     } else if (state.view == View::Node) {
       order = {1,2,3,4};
@@ -362,7 +362,11 @@ void HandleShellKey(ShellState& state, const SDL_KeyboardEvent& key) {
         order.push_back(276);
       }
       order.push_back(10);
-      if (!state.node_busy && !state.wallet_busy) order.push_back(11);
+      if (!state.node_busy && !state.wallet_busy && !state.save_busy) order.push_back(11);
+    } else if (state.view == View::Result && state.completed_proof) {
+      order = {1,2,3,4};
+      if (state.save_dialog) { order.push_back(306); order.push_back(307); order.push_back(308); }
+      else order.push_back(11);
     }
     auto iterator = std::find(order.begin(), order.end(), state.focus);
     int index = iterator == order.end() ? ((key.keysym.mod & KMOD_SHIFT) ? 0 : -1) :
@@ -452,16 +456,21 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
           if (WalletReady(state)) {
             nk_layout_row_dynamic(context,action_height,1);
             if (Button(context,state,304,"Prove: approve wallet access")) state.prove_wallet = true;
-            Paragraph(context,"Approval permits only this request's matching key. Proof generation follows in a later release.",content_width);
+            Paragraph(context,"Approval permits this request's matching key and local proof generation. Nothing is uploaded.",content_width);
           }
           if (state.wallet_busy) {
-            Paragraph(context,"Checking wallet access on the worker. You can cancel; an in-flight RPC finishes before cleanup.",content_width);
-            nk_layout_row_dynamic(context,action_height,1);
-            if (Button(context,state,305,"Cancel wallet access")) {
-              state.CancelWalletInput(); state.wallet_status = "Wallet access canceled. Password cleared.";
-            }
+            const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now()-state.proof_started).count();
+            std::string progress = state.wallet_cancel_pending ? "Finishing canceled work" :
+                state.proof_progress ? ProofStageName(state.proof_progress->stage) : "Starting proof work";
+            if (state.proof_progress && state.proof_progress->phase != ProofPhase::None)
+              progress += std::string(": ")+ProofPhaseName(state.proof_progress->phase);
+            progress += " ("+std::to_string(seconds)+" seconds elapsed).";
+            Paragraph(context,progress.c_str(),content_width);
+            Paragraph(context,"Cancel or close finishes the current native proof call or bounded RPC, then discards the result. Wallet cleanup still runs.",content_width);
           }
           if (!state.wallet_status.empty()) Paragraph(context,state.wallet_status.c_str(),content_width);
+          if (state.completed_proof) Paragraph(context,"Verified proof available in Result. Editing the request, node settings or wallet clears this result.",content_width);
           if (!state.chooser.open && state.request.loaded) DrawRequestReview(context,state,content_width,action_height);
           if (!state.chooser.open && !state.request.loaded) Paragraph(context,state.request.error != RequestError::None ? state.request.Message() :
               "Choose a request file or enter its path. Files are checked locally before wallet access.",content_width);
@@ -507,7 +516,29 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
             }
           }
         } else if (state.view == View::Node) DrawNodeSettings(context,state,content_width,action_height);
-        else Paragraph(context,descriptions[index],content_width);
+        else {
+          if (!state.save_notice.empty()) Paragraph(context,state.save_notice.c_str(),content_width);
+          if (state.completed_proof) {
+            if (!state.save_status.empty()) Paragraph(context,state.save_status.c_str(),content_width);
+            Paragraph(context,"Cryptographic proof verified against the exact reviewed request. Current chain state has not been checked.",content_width);
+            ReviewField(context,"Verifier (request-provided)",RequestDisplayText(state.completed_proof->Request().statement.verifier),content_width);
+            ReviewField(context,"Proof bytes",std::to_string(state.completed_proof->Bytes().size()),content_width);
+            if (state.save_dialog) {
+              Paragraph(context,"Save As: enter the full destination filename. No file is uploaded.",content_width);
+              nk_layout_row_dynamic(context,action_height,1);
+              state.controls[306] = nk_widget_bounds(context);
+              if (state.focus == 306 && !state.editing_path) nk_edit_focus(context,NK_EDIT_ALWAYS_INSERT_MODE);
+              if (state.focus != 306) nk_edit_unfocus(context);
+              const auto previous = state.save_path;
+              const auto edit = nk_edit_string_zero_terminated(context,NK_EDIT_FIELD,state.save_path.data(),state.save_path.size(),nk_filter_default);
+              state.editing_path = (edit & NK_EDIT_ACTIVE) != 0;
+              if (edit & NK_EDIT_ACTIVATED) state.focus = 306;
+              if (previous != state.save_path) state.InvalidateSaveDestination();
+              ReviewField(context,"Destination",RequestDisplayText(state.save_path.data()),content_width);
+              if (state.save_confirm) Paragraph(context,"This destination exists. Replace file explicitly confirms overwriting that file. Editing the destination cancels this confirmation.",content_width);
+            }
+          } else Paragraph(context,descriptions[index],content_width);
+        }
         nk_layout_row_dynamic(context,body->height+12,1);
         nk_label_colored(context,"LOCAL  /  PRIVATE",NK_TEXT_LEFT,p.soft_text);
         nk_layout_row_dynamic(context,action_height,1);
@@ -547,17 +578,28 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
                                 state.node_busy ? "Testing connection. Wallet secrets are not accessed." :
                                   state.node_probe.result ? "Connection report above. Proving remains unavailable." :
                                   "Connection untested or settings changed. Test again.",
-                                "No completed proof. Save is unavailable."};
+                                state.save_busy ? "Saving verified proof. Cancel finishes the current output step." : state.completed_proof ? "Cryptographically verified. Chain state unchecked." : "No verified proof. Save is unavailable."};
       nk_label_wrap(context,statuses[static_cast<int>(state.view)]);
     }
-    nk_layout_row_dynamic(context,action_height,1);
+    nk_layout_row_dynamic(context,action_height,state.view == View::Result && state.completed_proof && state.save_dialog && !state.save_busy ? 2 : 1);
     if (state.view == View::Settings) {
       if (Button(context,state,11,"Done",true)) ChangeView(state,View::Request);
     } else if (state.view == View::Request) {
-      if (Button(context,state,11,"Open request",true)) {
+      if (state.wallet_busy) {
+        if (Button(context,state,305,"Cancel proof",true)) {
+          state.CancelWalletInput(); state.wallet_status = "Cancel requested. Finishing the current step; no proof will be kept.";
+        }
+      } else if (Button(context,state,11,"Open request",true)) {
         state.OpenRequest(std::filesystem::path(state.request_path.data()));
       }
-    } else if (state.view == View::Node && !state.node_busy && !state.wallet_busy) {
+    } else if (state.view == View::Result && state.completed_proof) {
+      if (state.save_busy) {
+        if (Button(context,state,308,"Cancel save",true)) state.cancel_save = true;
+      } else if (state.save_dialog) {
+        if (Button(context,state,307,state.save_confirm ? "Replace file" : "Save file",true)) state.save_file = true;
+        if (Button(context,state,308,"Cancel")) { state.save_dialog = false; state.InvalidateSaveDestination(); state.focus = 11; }
+      } else if (Button(context,state,11,"Save As",true)) { state.save_dialog = true; state.focus = 306; state.reveal_focus = true; state.editing_path = false; state.scroll = {}; }
+    } else if (state.view == View::Node && !state.node_busy && !state.wallet_busy && !state.save_busy) {
       if (Button(context,state,11,"Test connection",true)) {
         state.test_node = true;
         state.node_advanced = false;

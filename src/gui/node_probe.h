@@ -2,6 +2,7 @@
 
 #include "node_settings.h"
 #include "request.h"
+#include "proof_output.h"
 
 #include <atomic>
 #include <mutex>
@@ -10,7 +11,18 @@
 namespace quietproof::gui {
 struct WalletSessionJob;
 struct WalletSessionResult;
+struct ProofJob;
 class PrivateInput;
+enum class ProofStage { Preflight, Unlock, Validation, Prove, Completion, Verify };
+enum class ProofPhase { None, Circuit, Inputs, Commitment, Generation, Serialization };
+struct ProofEvent {
+  uint64_t revision = 0;
+  ProofStage stage = ProofStage::Preflight;
+  ProofPhase phase = ProofPhase::None;
+  std::chrono::milliseconds elapsed{};
+};
+const char* ProofStageName(ProofStage);
+const char* ProofPhaseName(ProofPhase);
 struct NodeProbeJob {
   uint64_t revision;
   NodeConfiguration configuration;
@@ -50,8 +62,13 @@ class NodeProbeWorker {
   ~NodeProbeWorker();
   bool Start(NodeProbeJob);
   bool StartWallet(WalletSessionJob, std::unique_ptr<PrivateInput>);
+  bool StartProof(ProofJob, std::unique_ptr<PrivateInput>);
+  bool StartValidation(ValidationJob, ProofVerifier test_verifier = {});
+  bool StartSave(SaveJob, SaveHooks hooks = {});
+  std::unique_ptr<SaveResult> PollSave();
   void CancelWallet() { canceled_.store(true); }
   std::unique_ptr<WalletSessionResult> PollWallet();
+  std::optional<ProofEvent> PollProgress();
   bool Running() const { return running_.load(); }
   std::optional<NodeProbeResult> Poll();
  private:
@@ -60,6 +77,9 @@ class NodeProbeWorker {
   std::mutex mutex_;
   std::optional<NodeProbeResult> result_;
   std::unique_ptr<WalletSessionResult> wallet_result_;
+  std::unique_ptr<SaveResult> save_result_;
+  // Coalesce progress: one fixed-size event maximum, never a growing queue.
+  std::optional<ProofEvent> progress_;
   std::atomic<bool> canceled_{false};
 };
 }  // namespace quietproof::gui

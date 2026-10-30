@@ -81,11 +81,16 @@ struct TestEvent {
   bool control_modifier = false;
   int control = 0;
   bool quit = false;
+  std::filesystem::path public_proof;
+  std::string destination;
+  bool await_proof = false, await_save = false;
+  std::filesystem::path capture;
+  int resize_width = 0, resize_height = 0;
 };
 std::vector<TestEvent> ReadTestEvents(const std::filesystem::path& path) {
   if (path.empty()) return {};
   std::error_code error;
-  if (std::filesystem::file_size(path,error) > 4096 || error)
+  if (std::filesystem::file_size(path,error) > 32768 || error)
     throw std::runtime_error("Invalid rendering event script");
   std::ifstream input(path);
   if (!input) throw std::runtime_error("Cannot read rendering event script");
@@ -107,12 +112,23 @@ std::vector<TestEvent> ReadTestEvents(const std::filesystem::path& path) {
     else if (line=="delete") event.key=SDLK_DELETE;
     else if (line=="private-synthetic") event.private_synthetic=true;
     else if (line=="quit") event.quit=true;
+    else if (line=="await-proof") event.await_proof=true;
+    else if (line=="await-save") event.await_save=true;
+    else if (line.starts_with("proof-fixture ")) event.public_proof=line.substr(14);
+    else if (line.starts_with("destination ")) event.destination=line.substr(12);
+    else if (line.starts_with("capture ")) event.capture=line.substr(8);
+    else if (line.starts_with("resize ")) {
+      std::istringstream words(line.substr(7)); std::string extra;
+      if (!(words>>event.resize_width>>event.resize_height) || (words>>extra) ||
+          event.resize_width<400 || event.resize_height<640 || event.resize_width>8192 || event.resize_height>8192)
+        throw std::runtime_error("Invalid rendering resize");
+    }
     else if (line=="copy" || line=="cut" || line=="paste" || line=="undo" || line=="redo") {
       event.control_modifier=true;
       event.key=line=="copy" ? SDLK_c : line=="cut" ? SDLK_x : line=="paste" ? SDLK_v : line=="undo" ? SDLK_z : SDLK_y;
     } else if (line.starts_with("control ")) {
       std::istringstream words(line.substr(8)); std::string extra;
-      if (!(words>>event.control) || event.control<1 || event.control>305 || (words>>extra))
+      if (!(words>>event.control) || event.control<1 || event.control>309 || (words>>extra))
         throw std::runtime_error("Invalid rendering control");
     }
     else if (line.starts_with("text ")) {
@@ -128,7 +144,7 @@ std::vector<TestEvent> ReadTestEvents(const std::filesystem::path& path) {
           event.x<0 || event.y<0 || event.x>8192 || event.y>8192)
         throw std::runtime_error("Unknown rendering event");
     }
-    if (events.size()==256) throw std::runtime_error("Too many rendering events");
+    if (events.size()==1024) throw std::runtime_error("Too many rendering events");
     events.push_back(event);
   }
   return events;
@@ -239,6 +255,7 @@ int Run(const Options& options) {
   SDL_StartTextInput();
   bool running = true;
   bool closing_wallet = false;
+  bool closing_save = false;
   bool private_prompt_before_close = false;
   bool private_mask_before_close = false;
   int private_focus_before_close = 0;
@@ -246,11 +263,46 @@ int Run(const Options& options) {
   bool wallet_status_before_close = false;
   bool wallet_checked_before_close = false;
   bool wallet_warning_before_close = false;
+  bool proof_cancel_before_close = false;
+  bool proof_generated_before_close = false;
+  bool save_retained_before_close = false, save_confirm_before_close = false, save_status_before_close = false;
   int frames = 0;
   const int smoke_frames=3+static_cast<int>(test_events.size())*2;
+  int test_wait_frames = 0;
+  std::optional<std::chrono::steady_clock::time_point> test_wait_started;
+  std::filesystem::path test_capture;
+  int capture_index = 0;
   while (running) {
-    if (frames>0 && static_cast<size_t>((frames-1)/2)<test_events.size())
-      InjectTestEvent(test_events[(frames-1)/2],(frames-1)%2==0,SDL_GetWindowID(window.get()),state);
+    const int event_frame=frames-test_wait_frames;
+    if (event_frame>0 && static_cast<size_t>((event_frame-1)/2)<test_events.size()) {
+      const auto& test=test_events[(event_frame-1)/2]; const bool down=(event_frame-1)%2==0;
+      if (test.await_proof || test.await_save) {
+        const bool ready=test.await_proof ? bool(state.completed_proof) : !state.save_busy && !state.save_status.empty();
+        if (!ready) {
+          if (!test_wait_started) test_wait_started=std::chrono::steady_clock::now();
+          if (std::chrono::steady_clock::now()-*test_wait_started>std::chrono::seconds(120)) throw std::runtime_error("Rendering worker precondition timed out");
+          ++test_wait_frames;
+        } else test_wait_started.reset();
+      } else if (!test.capture.empty() || test.resize_width) {
+        if (!options.smoke_test) throw std::runtime_error("Rendering capture/resize requires smoke mode");
+        if (down && !test.capture.empty()) test_capture=test.capture;
+        if (down && test.resize_width) { SDL_SetWindowSize(window.get(),test.resize_width*options.pixel_scale,test.resize_height*options.pixel_scale); state.scroll={}; }
+      } else if (!test.public_proof.empty()) {
+        if (down) {
+          if (!options.smoke_test || !state.request.loaded || node_worker.Running()) throw std::runtime_error("Public fixture validation precondition unavailable");
+          state.CancelWalletInput(); state.cancel_wallet=false;
+          state.validation_job=ValidationJob{state.node_probe.revision,state.request.loaded,test.public_proof};
+          state.proof_started=std::chrono::steady_clock::now();
+          state.wallet_busy=node_worker.StartValidation(*state.validation_job);
+          if (!state.wallet_busy) throw std::runtime_error("Public fixture worker unavailable");
+        }
+      } else if (!test.destination.empty()) {
+        if (down) {
+          if (!options.smoke_test || !state.save_dialog || test.destination.size()>=state.save_path.size()) throw std::runtime_error("Rendering destination precondition unavailable");
+          SDL_strlcpy(state.save_path.data(),test.destination.c_str(),state.save_path.size()); state.InvalidateSaveDestination();
+        }
+      } else InjectTestEvent(test,down,SDL_GetWindowID(window.get()),state);
+    }
     nk_input_begin(nuklear.context);
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -260,21 +312,40 @@ int Run(const Options& options) {
         private_focus_before_close = state.wallet_focus;
         private_scroll_before_close = state.wallet_scroll.y;
         wallet_status_before_close = !state.wallet_status.empty();
-        wallet_checked_before_close = state.wallet_status.starts_with("Request-matching key checked and erased.");
+        wallet_checked_before_close = !state.wallet_cancel_pending && state.proof_progress.has_value() &&
+            state.proof_progress->stage >= ProofStage::Prove;
         wallet_warning_before_close = !state.wallet_warning.empty();
-        state.CancelWalletInput(); node_worker.CancelWallet();
-        if (state.wallet_busy) {
+        proof_cancel_before_close = state.wallet_cancel_pending;
+        proof_generated_before_close = bool(state.completed_proof);
+        save_retained_before_close = bool(state.completed_proof);
+        save_confirm_before_close = bool(state.save_confirm);
+        save_status_before_close = !state.save_status.empty();
+        if (!state.save_busy) state.CancelWalletInput();
+        else state.wallet_input->Clear();
+        node_worker.CancelWallet();
+        if (state.save_busy) {
+          closing_save = true; state.view = View::Result; state.scroll = {};
+          state.save_status = "Closing: finishing the current write or atomic publication.";
+          if (options.smoke_test) std::cout << "GUI save close: waiting for current output step" << std::endl;
+        } else if (state.wallet_busy) {
           closing_wallet = true;
-          state.wallet_status = "Closing after the current bounded RPC and wallet cleanup.";
+          state.view = View::Request; state.scroll = {};
+          state.wallet_status = "Closing: finishing the current proof step and wallet cleanup. No result will be kept.";
           if (options.smoke_test) std::cout << "GUI wallet close: waiting for bounded cleanup" << std::endl;
         } else running = false;
       }
-      const bool private_mode = state.wallet_prompt || state.wallet_busy || state.private_input_guard;
+      if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE && state.wallet_busy) {
+        state.CancelWalletInput();
+        state.wallet_status = "Cancel requested. Finishing the current step; no proof will be kept.";
+        ErasePrivateEvent(event); continue;
+      }
+      const bool private_mode = state.wallet_prompt || state.WalletPrivatePhase() || state.private_input_guard;
       if (private_mode && (event.type == SDL_TEXTINPUT || event.type == SDL_TEXTEDITING ||
           event.type == SDL_TEXTEDITING_EXT || event.type == SDL_KEYDOWN || event.type == SDL_KEYUP)) {
         const auto action = HandlePrivateEvent(*state.wallet_input,event,state.wallet_prompt && state.wallet_focus == 0);
         if (action == PrivateAction::Cancel) {
-          state.CancelWalletInput(); state.wallet_status = "Wallet access canceled. Password cleared.";
+          state.CancelWalletInput(); state.wallet_status = state.wallet_busy ?
+              "Cancel requested. Finishing the current step; no proof will be kept." : "Wallet access canceled. Password cleared.";
         } else if (state.wallet_prompt) {
           if (action == PrivateAction::Next) state.wallet_focus = (state.wallet_focus+1)%3;
           if (action == PrivateAction::Previous) state.wallet_focus = (state.wallet_focus+2)%3;
@@ -330,13 +401,25 @@ int Run(const Options& options) {
         RequestWindowAt(state.request.loaded->statement,state.now) != RequestWindow::Valid)) {
       state.CancelWalletInput(); state.wallet_status = "Request is no longer valid. Wallet password cleared.";
     }
-    state.node_busy = node_worker.Running() && !state.wallet_busy;
+    state.node_busy = node_worker.Running() && !state.wallet_busy && !state.save_busy;
     if (auto result = node_worker.Poll()) state.node_probe.Accept(std::move(*result));
+    if (auto progress = node_worker.PollProgress()) {
+      if ((state.wallet_job || state.validation_job) && progress->revision == state.node_probe.revision) {
+        state.proof_progress = *progress;
+        if (progress->stage == ProofStage::Prove || progress->stage == ProofStage::Verify)
+          state.wallet_status = "Wallet secrets have been cleared from input. Work continues on the proof worker.";
+        if (options.smoke_test) std::cout << "GUI proof stage: " << static_cast<int>(progress->stage)
+            << " phase=" << static_cast<int>(progress->phase) << std::endl;
+      }
+    }
     if (auto result = node_worker.PollWallet()) {
+      if (state.wallet_status.starts_with("Cancel requested."))
+        state.wallet_status = "Canceled. Current work and wallet cleanup have finished; no proof was kept.";
       state.wallet_busy = false;
+      state.wallet_cancel_pending = false;
       const bool cleanup_warning = result->cleanup == WalletCleanup::Failed ||
           (result->unlock_attempted && !result->unlock_confirmed && result->cleanup == WalletCleanup::Relocked);
-      const bool current = state.wallet_job && result->revision == state.node_probe.revision;
+      const bool current = (state.wallet_job || state.validation_job) && result->revision == state.node_probe.revision;
       if (closing_wallet) {
         if (cleanup_warning) {
           closing_wallet = false; state.view = View::Request; state.scroll = {};
@@ -351,24 +434,49 @@ int Run(const Options& options) {
           state.wallet_input->Clear(); state.wallet_focus = 0; state.wallet_scroll = {};
           state.wallet_prompt = true; state.private_input_guard = true;
         } else {
-          if (current && result->status == WalletSessionStatus::Acquired)
-            state.wallet_status = "Request-matching key checked and erased. Proof generation is not available in this build.";
+          if (current && result->status == WalletSessionStatus::Proved && result->verified) {
+            state.completed_proof = std::move(result->verified);
+            state.view = View::Result; state.scroll = {}; state.focus = 11;
+            const auto path = state.request.loaded->path.parent_path()/(state.request.loaded->path.stem().string()+".qpf");
+            SDL_strlcpy(state.save_path.data(),path.string().c_str(),state.save_path.size());
+          }
+          state.validation_job.reset();
           state.wallet_job.reset();
         }
       }
     }
+    if (auto result = node_worker.PollSave()) {
+      state.AcceptSaveResult(*result);
+      if (closing_save) running = false;
+    }
     if (!running) break;
     DrawShell(nuklear.context,state,width,height,&body[font_index]->handle,&heading[font_index]->handle);
     if (state.cancel_wallet) { node_worker.CancelWallet(); state.cancel_wallet = false; }
+    if (state.cancel_save) { node_worker.CancelWallet(); state.cancel_save = false; state.save_status = "Cancel requested. Finishing the current write or atomic publication."; }
+    if (state.save_file) {
+      state.save_file = false;
+      if (!node_worker.Running() && state.completed_proof) {
+        std::error_code error;
+        const auto destination = std::filesystem::absolute(std::filesystem::path(state.save_path.data()),error);
+        if (error || state.save_path[0] == 0) state.save_status = "Choose a destination filename";
+        else {
+          state.save_busy = node_worker.StartSave(SaveJob{state.node_probe.revision,state.save_attempt,state.completed_proof,destination,state.save_confirm});
+          state.save_confirm.reset();
+          state.save_status = state.save_busy ? "Writing complete verified proof; cancellation is checked before atomic publication." : "Save worker unavailable. Proof retained; retry explicitly.";
+        }
+      }
+    }
     if (state.prove_wallet) {
       state.prove_wallet = false;
       std::string error;
-      if (!node_worker.Running() && state.request.loaded && state.node_probe.result && state.node_probe.result->selected_wallet) {
+      if (!node_worker.Running() && !state.completed_proof && state.request.loaded && state.node_probe.result && state.node_probe.result->selected_wallet) {
         if (auto config = ConfigureNode(state.node_settings,state.request.loaded->statement.network,&error)) {
           state.wallet_job = WalletSessionJob{state.node_probe.revision,std::move(*config),state.request.loaded,
               state.node_probe.result->selected_wallet,true};
           state.wallet_input->Clear();
-          state.wallet_busy = node_worker.StartWallet(*state.wallet_job,std::make_unique<PrivateInput>());
+          state.completed_proof.reset(); state.proof_progress.reset(); state.wallet_cancel_pending = false;
+          state.proof_started = std::chrono::steady_clock::now();
+          state.wallet_busy = node_worker.StartProof(ProofJob{*state.wallet_job},std::make_unique<PrivateInput>());
           state.private_input_guard = true;
           state.wallet_status = "Rechecking the reviewed request and selected RPC wallet.";
           if (!state.wallet_busy) { state.wallet_job.reset(); state.wallet_status = "Wallet worker unavailable. Start a new attempt explicitly."; }
@@ -379,19 +487,22 @@ int Run(const Options& options) {
       state.submit_wallet = false;
       auto password = std::move(state.wallet_input);
       state.wallet_input = std::make_unique<PrivateInput>();
-      if (state.wallet_job && state.wallet_job->revision == state.node_probe.revision)
-        state.wallet_busy = node_worker.StartWallet(*state.wallet_job,std::move(password));
+      if (state.wallet_job && state.wallet_job->revision == state.node_probe.revision) {
+        state.proof_progress.reset(); state.wallet_cancel_pending = false;
+        state.proof_started = std::chrono::steady_clock::now();
+        state.wallet_busy = node_worker.StartProof(ProofJob{*state.wallet_job},std::move(password));
+      }
       state.private_input_guard = true;
-      state.wallet_status = "Accessing the selected wallet. Cancel waits for the current bounded RPC and cleanup.";
+      state.wallet_status = "Accessing the selected wallet, then generating this request's proof.";
       if (!state.wallet_busy) { state.wallet_job.reset(); state.wallet_status = "Wallet worker unavailable. Password cleared; start a new attempt explicitly."; }
     }
     if (state.private_input_guard) {
       DrainPrivateTextEvents();
       ErasePrivateMemory(nuklear.context->input.keyboard.text,sizeof(nuklear.context->input.keyboard.text));
       nuklear.context->input.keyboard.text_len = 0;
-      state.private_input_guard = state.wallet_prompt || state.wallet_busy;
+      state.private_input_guard = state.wallet_prompt || state.WalletPrivatePhase();
     }
-    if (state.test_node && !state.wallet_busy) {
+    if (state.test_node && !state.wallet_busy && !state.save_busy) {
       state.test_node = false;
       const auto network = state.request.loaded ? state.request.loaded->statement.network : state.node_network;
       std::string error;
@@ -418,9 +529,19 @@ int Run(const Options& options) {
     SDL_SetRenderDrawColor(renderer.get(), canvas.r, canvas.g, canvas.b, 255);
     if (SDL_RenderClear(renderer.get()) != 0) SdlError("Clear renderer");
     nk_sdl_render(NK_ANTI_ALIASING_ON);
-    if (++frames == smoke_frames && !options.screenshot.empty()) Capture(renderer.get(), options.screenshot);
+    if (!test_capture.empty()) {
+      Capture(renderer.get(),test_capture); test_capture.clear(); ++capture_index;
+      std::cout << "GUI capture: " << capture_index << " retained=" << bool(state.completed_proof)
+                << " confirm=" << bool(state.save_confirm) << " dialog=" << state.save_dialog
+                << " busy=" << state.save_busy << " status=" << !state.save_status.empty() << std::endl;
+      for (const int id : {11,307,308}) {
+        const auto r=state.controls[id];
+        if(r.w>0) std::cout << "GUI capture control: " << capture_index << ' ' << id << ' ' << r.x << ' ' << r.y << ' ' << r.w << ' ' << r.h << std::endl;
+      }
+    }
+    if (++frames == smoke_frames+test_wait_frames && !options.screenshot.empty()) Capture(renderer.get(), options.screenshot);
     SDL_RenderPresent(renderer.get());
-    if (options.smoke_test && frames == smoke_frames) {
+    if (options.smoke_test && frames == smoke_frames+test_wait_frames) {
       SDL_Event quit{};
       quit.type = SDL_QUIT;
       if (SDL_PushEvent(&quit) < 0) SdlError("Queue close event");
@@ -441,6 +562,11 @@ int Run(const Options& options) {
               << " scroll=" << private_scroll_before_close << '\n';
     std::cout << "GUI wallet context: transient=" << wallet_status_before_close
               << " checked=" << wallet_checked_before_close << " warning=" << wallet_warning_before_close << '\n';
+    std::cout << "GUI proof: canceled=" << proof_cancel_before_close
+              << " generated=" << proof_generated_before_close << '\n';
+    std::cout << "GUI save: retained=" << save_retained_before_close << " attempt=" << state.save_attempt
+              << " dialog=" << state.save_dialog << " confirm=" << save_confirm_before_close
+              << " busy=" << state.save_busy << " status=" << save_status_before_close << '\n';
     const auto node_network = state.request.loaded ? state.request.loaded->statement.network : state.node_network;
     std::cout << "GUI node: network=" << proofs::QuietProofNetworkName(node_network)
               << " configured=" << bool(ConfigureNode(state.node_settings,node_network,nullptr))
