@@ -15,7 +15,10 @@ GUI defaults OFF. Its SDL/Nuklear dependencies do not enter exported library
 targets, CLI-only or WASI configurations. GUI ON with RPC OFF is rejected.
 The application opens existing v1/v2 request files for local review and tests
 local RPC connectivity and wallet capabilities. Explicit Prove approval can
-validate matching RPC key access; proof generation is not yet available.
+acquire a matching RPC key and generate a proof on the sequential worker.
+Generated proofs are locally verified against the exact reviewed request before
+Result offers Save As. This cryptographic check does not query current-chain
+claims or consume the verifier's replay nonce.
 
 Node shows the loaded request's network explicitly. Without a request, Change
 test network selects a network for connection testing only. Defaults use numeric
@@ -68,8 +71,40 @@ explicit Prove intent. A selected empty wallet name is an explicit identity,
 even with several loaded wallets. It uses Roots `exportaddresskey`; descriptor
 wallets are never assumed to support Core `dumpprivkey`. After Test connection,
 return to Request and choose **Prove: approve wallet access**. No manual key
-entry/import is exposed. In this milestone a validated key is promptly erased
-on the worker; the UI does not retain it or present a completed proof.
+entry/import is exposed. The same worker consumes the validated key using the
+native C++ PoKC prover, then erases the owned key before publishing any result.
+Only the immutable request and public proof cross to the UI; no key is retained
+for retry. After erasing the owned key, the worker compares the full canonical
+statement with the reviewed request bytes, verifies through native PoKCVerifyProof
+and encodes the existing .qpf format. Failed binding, verification, encoding,
+expiry or cancellation cannot produce a completed result. Verified public bytes
+stay in memory for Save As and save retry; request/node/wallet edits clear them.
+
+Result distinguishes cryptographic verification from current chain state, which
+the GUI has not checked. Choose Save As and enter the full destination filename;
+the destination is displayed explicitly and is never stored in preferences.
+Existing destinations require a separate Replace file action, with Cancel focused
+by default. Confirmation binds the exact path and observed regular-file identity;
+editing the destination clears it. Symlinks, directories and special files are
+refused. No file or proof is uploaded automatically.
+
+Output shares the same sequential worker, so verification, RPC and saving cannot
+overlap. Saving uses a randomly named, exclusive 0600 temporary in the chosen
+directory, writes complete verified bytes, fsyncs/closes the file, then publishes
+atomically. A new file uses a no-replacement hard link; confirmed replacement
+uses rename after rechecking path/identity. Prepublication errors/cancellation
+preserve existing output and remove the temporary, while the verified proof
+remains available for retry without any key or unlock. Permission loss or device
+failure can prevent temporary cleanup; that condition is reported explicitly.
+POSIX has no atomic compare-and-replace against unrelated external writers, so
+avoid concurrent changes to the chosen destination during confirmation/save.
+
+Atomic publication is the cancellation boundary. Once committed, a late cancel
+leaves the complete proof file intact. A result from an invalidated context
+cannot replace the new proof and reports a captured previous-save notice instead.
+Failure to confirm the final directory fsync is reported as storage-durability
+uncertainty for a complete published proof, without deleting that proof. Closing
+waits responsively for current I/O/publication and joins the worker.
 
 Only a locked eligible wallet requests a wallet password; cookie authentication
 remains separate. Submission repeats preflight. Already-unlocked and unencrypted
@@ -86,7 +121,14 @@ Request/settings/wallet changes invalidate the captured session; stale results
 cannot reopen a prompt or retain a key. Cleanup warnings retain the old wallet's
 identity even after a selection change. The single worker handles both connection
 tests and wallet sessions, so those jobs cannot overlap. Closing while wallet
-access is active keeps SDL responsive until the bounded call and relock settle.
+access or proof generation is active keeps SDL responsive until current work
+and relock settle. The native prover has observation-only phase callbacks and no
+safe cancellation primitive: cancellation or closing finishes its entire current
+native call, then discards canceled output. Real phases and elapsed seconds are
+shown without percentages. The progress channel coalesces to one bounded event.
+Request, node-setting and wallet edits clear readiness/completed output and
+cancel captured work. Late progress and results cannot replace a new context.
+Repeated jobs are refused while work is running or a generated proof is retained.
 If cleanup fails during closing, the window stays open with the warning; closing
 again exits. On other exits the worker is canceled and joined, never detached.
 

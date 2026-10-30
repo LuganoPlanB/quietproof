@@ -8,7 +8,7 @@ target_compile_options(quietproof-gui-request PRIVATE
   $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>)
 
 find_package(Threads REQUIRED)
-add_library(quietproof-gui-node STATIC node_settings.cc node_probe.cc preferences.cc wallet_session.cc private_input.cc)
+add_library(quietproof-gui-node STATIC node_settings.cc node_probe.cc preferences.cc wallet_session.cc private_input.cc proof_session.cc proof_output.cc output_worker.cc)
 target_compile_features(quietproof-gui-node PUBLIC cxx_std_20)
 target_link_libraries(quietproof-gui-node PUBLIC LongfellowZKQuietProof::rpc Threads::Threads quietproof-gui-request SDL2::SDL2)
 target_include_directories(quietproof-gui-node PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -50,6 +50,29 @@ if(BUILD_TESTING)
   add_test(NAME quietproof-gui-request-test COMMAND quietproof-gui-request-test
     ${CMAKE_CURRENT_BINARY_DIR}/request-fixtures)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  add_executable(quietproof-gui-proof-session-test ${PROJECT_SOURCE_DIR}/tests/gui/proof_session_test.cc)
+  target_link_libraries(quietproof-gui-proof-session-test PRIVATE quietproof-gui-node)
+  add_test(NAME quietproof-gui-proof-session-test
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/gui/proof_session_fixture.py
+      $<TARGET_FILE:quietproof-gui-proof-session-test> ${CMAKE_CURRENT_BINARY_DIR}/proof-session-artifacts)
+  set_tests_properties(quietproof-gui-proof-session-test PROPERTIES TIMEOUT 600)
+  set_tests_properties(quietproof-gui-proof-session-test PROPERTIES FIXTURES_SETUP gui-proof-files)
+  add_executable(quietproof-gui-proof-output-test ${PROJECT_SOURCE_DIR}/tests/gui/proof_output_test.cc)
+  target_link_libraries(quietproof-gui-proof-output-test PRIVATE quietproof-gui-node)
+  add_test(NAME quietproof-gui-proof-output-test
+    COMMAND quietproof-gui-proof-output-test ${CMAKE_CURRENT_BINARY_DIR}/proof-session-artifacts/native.qpf
+      ${CMAKE_CURRENT_BINARY_DIR}/proof-output-artifacts)
+  set_tests_properties(quietproof-gui-proof-output-test PROPERTIES TIMEOUT 120 FIXTURES_REQUIRED gui-proof-files)
+  add_test(NAME quietproof-gui-proof-save-ui-test
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/gui/proof_save_ui_test.py
+      $<TARGET_FILE:quietproof-prover-gui> $<TARGET_FILE:quietproof-gui-proof-output-test> $<TARGET_FILE:quietproof-cli>
+      ${CMAKE_CURRENT_BINARY_DIR}/proof-session-artifacts/native.qpf ${CMAKE_CURRENT_BINARY_DIR}/proof-save-ui-artifacts)
+  set_tests_properties(quietproof-gui-proof-save-ui-test PROPERTIES TIMEOUT 600 FIXTURES_REQUIRED gui-proof-files)
+  add_test(NAME quietproof-gui-proof-ui-test
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/gui/proof_ui_test.py
+      $<TARGET_FILE:quietproof-prover-gui> $<TARGET_FILE:quietproof-gui-wallet-session-test>
+      ${CMAKE_CURRENT_BINARY_DIR}/proof-ui-artifacts)
+  set_tests_properties(quietproof-gui-proof-ui-test PROPERTIES TIMEOUT 120)
   add_executable(quietproof-gui-private-input-test ${PROJECT_SOURCE_DIR}/tests/gui/private_input_test.cc)
   target_link_libraries(quietproof-gui-private-input-test PRIVATE quietproof-gui-node)
   add_test(NAME quietproof-gui-private-input-test COMMAND quietproof-gui-private-input-test)
@@ -64,7 +87,7 @@ if(BUILD_TESTING)
     COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/gui/private_input_ui_test.py
       $<TARGET_FILE:quietproof-prover-gui> $<TARGET_FILE:quietproof-gui-wallet-session-test>
       ${CMAKE_CURRENT_BINARY_DIR}/private-input-artifacts)
-  set_tests_properties(quietproof-gui-private-input-ui-test PROPERTIES TIMEOUT 90)
+  set_tests_properties(quietproof-gui-private-input-ui-test PROPERTIES TIMEOUT 600)
   add_executable(quietproof-gui-node-probe-test ${PROJECT_SOURCE_DIR}/tests/gui/node_probe_test.cc)
   target_link_libraries(quietproof-gui-node-probe-test PRIVATE quietproof-gui-node)
   add_test(NAME quietproof-gui-node-probe-test

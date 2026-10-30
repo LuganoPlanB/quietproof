@@ -2,6 +2,8 @@
 
 #include "node_probe.h"
 #include "request_review.h"
+#include "quietproof/envelope.h"
+#include "proof_output.h"
 
 #include <functional>
 #include <span>
@@ -26,7 +28,7 @@ struct WalletSessionJob {
   std::optional<std::string> wallet;
   bool prove_approved = false;
 };
-enum class WalletSessionStatus { Failed, Canceled, PasswordRequired, Acquired };
+enum class WalletSessionStatus { Failed, Canceled, PasswordRequired, Acquired, Proved };
 enum class WalletCleanup { NotNeeded, Relocked, Failed };
 struct WalletSessionResult {
   uint64_t revision = 0;
@@ -38,6 +40,9 @@ struct WalletSessionResult {
   proofs::BitcoinRpcError error;
   proofs::BitcoinRpcError cleanup_error;
   std::unique_ptr<WalletKey> key;
+  // Public proof only. The owning worker erases the key before publication.
+  std::unique_ptr<proofs::QuietProofEnvelopeV1> proof;
+  std::shared_ptr<const VerifiedProof> verified;
   std::string Message() const;
 };
 // Worker-thread operation. Checks immutable request/time/network/script and the
@@ -52,5 +57,6 @@ struct WalletSessionResult {
 WalletSessionResult RunWalletSession(const WalletSessionJob&,
     std::span<const char> password, const std::function<bool()>& canceled,
     const std::function<int64_t()>& clock,
-    const std::function<void()>& password_used = {});
+    const std::function<void()>& password_used = {},
+    const std::function<void(ProofStage)>& stage = {});
 }  // namespace quietproof::gui

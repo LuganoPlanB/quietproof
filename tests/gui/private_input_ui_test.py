@@ -51,7 +51,9 @@ def main():
                 command = [str(executable),'--smoke-test','--theme',theme,'--font-scale',scale,
                            '--width',str(size[0]),'--height',str(size[1]),'--request',str(request),'--test-events',str(script)]
                 if capture: command += ['--screenshot',str(artifacts/(name+'.bmp'))]
-                result = subprocess.run(command,env=environment,capture_output=True,text=True,timeout=15)
+                # Close can arrive during native proving. It keeps SDL alive
+                # until that noninterruptible call settles and drops output.
+                result = subprocess.run(command,env=environment,capture_output=True,text=True,timeout=240)
                 marker = ''.join(chr(65+i) for i in range(12))
                 cookie_marker = ''.join(chr(97+i) for i in range(12))
                 diagnostic = result.stdout+result.stderr

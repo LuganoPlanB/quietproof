@@ -24,11 +24,13 @@ std::string WalletSessionResult::Message() const {
   if (status == WalletSessionStatus::PasswordRequired)
     return "The selected wallet is locked. Enter its wallet password for one short unlock; RPC cookie authentication is separate.";
   if (status == WalletSessionStatus::Acquired) return "Request-matching key acquired; wallet cleanup completed.";
+  if (status == WalletSessionStatus::Proved) return "Proof cryptographically verified against the exact reviewed request. Current chain state has not been checked.";
   return error.message;
 }
 WalletSessionResult RunWalletSession(const WalletSessionJob& job,
     std::span<const char> password, const std::function<bool()>& canceled,
-    const std::function<int64_t()>& clock, const std::function<void()>& password_used) {
+    const std::function<int64_t()>& clock, const std::function<void()>& password_used,
+    const std::function<void(ProofStage)>& stage) {
   WalletSessionResult result;
   result.revision = job.revision;
   result.wallet = job.wallet;
@@ -78,6 +80,7 @@ WalletSessionResult RunWalletSession(const WalletSessionJob& job,
   } cleanup{rpc,job.wallet,cleanup_needed,result};
   try {
     do {
+      if (stage) stage(ProofStage::Preflight);
       if (!job.prove_approved || !job.wallet || !job.request ||
           job.request->statement.network != configuration.network) {
         fail(Code::kConfiguration,"Explicit Prove approval, a request and matching selected wallet/network are required"); break;
@@ -98,6 +101,8 @@ WalletSessionResult RunWalletSession(const WalletSessionJob& job,
       if (!rpc.WalletState(*job.wallet,&state,&result.error) || !current()) break;
       if (state == proofs::BitcoinRpcWalletState::kLocked) {
         if (password.empty()) { result.status = WalletSessionStatus::PasswordRequired; break; }
+        if (stage) stage(ProofStage::Unlock);
+        if (!current()) break;
         // Mark before dispatch: a lost reply does not establish unlock failure.
         cleanup_needed = true;
         result.unlock_attempted = true;
@@ -128,6 +133,7 @@ WalletSessionResult RunWalletSession(const WalletSessionJob& job,
       // Relock promptly, before key validation or later proof work.
       cleanup.Run();
       if (result.cleanup == WalletCleanup::Failed || !current()) break;
+      if (stage) stage(ProofStage::Validation);
       proofs::PoKCWitnessV1<proofs::Fp256k1Base,proofs::P256k1> witness;
       struct EraseWitness {
         decltype(witness)& value;
@@ -147,7 +153,7 @@ WalletSessionResult RunWalletSession(const WalletSessionJob& job,
 bool NodeProbeWorker::StartWallet(WalletSessionJob job, std::unique_ptr<PrivateInput> password) {
   if (running_.load() || !password) return false;
   if (thread_.joinable()) thread_.join();
-  { std::lock_guard lock(mutex_); result_.reset(); wallet_result_.reset(); }
+  { std::lock_guard lock(mutex_); result_.reset(); wallet_result_.reset(); save_result_.reset(); progress_.reset(); }
   canceled_.store(false);
   running_.store(true);
   try {
@@ -162,8 +168,7 @@ bool NodeProbeWorker::StartWallet(WalletSessionJob job, std::unique_ptr<PrivateI
         result->error = {Code::kConnection,0,{},"Wallet access failed; private diagnostics suppressed"};
       }
       password->Clear();
-      // L4 validates acquisition only. L5 will consume the key inside this same
-      // worker; no key bytes cross into the UI/event queue in this milestone.
+      // Acquisition-only diagnostic path, also used by wallet contract tests.
       result->key.reset();
       { std::lock_guard lock(mutex_); wallet_result_ = std::move(result); }
       running_.store(false);
@@ -173,6 +178,9 @@ bool NodeProbeWorker::StartWallet(WalletSessionJob job, std::unique_ptr<PrivateI
 }
 std::unique_ptr<WalletSessionResult> NodeProbeWorker::PollWallet() {
   std::lock_guard lock(mutex_);
+  if (wallet_result_ && canceled_.load() && (wallet_result_->proof || wallet_result_->verified)) {
+    wallet_result_->proof.reset(); wallet_result_->verified.reset(); wallet_result_->status = WalletSessionStatus::Canceled;
+  }
   return std::move(wallet_result_);
 }
 }  // namespace quietproof::gui
