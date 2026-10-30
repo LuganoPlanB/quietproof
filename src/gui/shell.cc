@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <string_view>
 #include <vector>
 
@@ -9,6 +10,8 @@ namespace quietproof::gui {
 namespace {
 void ChangeView(ShellState& state, View view) {
   state.view = view;
+  state.editing_path = false;
+  if (view != View::Request) state.chooser.Cancel();
   state.scroll = {};
 }
 bool Button(nk_context* context, ShellState& state, int id, const char* label, bool selected = false) {
@@ -55,7 +58,106 @@ void Heading(nk_context* context, const char* text, nk_user_font* font, nk_user_
   nk_label(context, text, NK_TEXT_LEFT);
   nk_style_set_font(context, body);
 }
+
+void ReviewText(nk_context* context, const std::string& text, float width) {
+  // Lay out literal UTF-8 one measured line at a time. Long hashes/URLs cannot
+  // overflow their row or consume a following control's space.
+  const auto* font = context->style.font;
+  const float available = std::max(40.0f,width-20);
+  for (size_t begin=0; begin<text.size();) {
+    size_t end=begin, last_space=begin;
+    while (end<text.size()) {
+      nk_rune rune = 0;
+      const int bytes = nk_utf_decode(text.data()+end,&rune,static_cast<int>(text.size()-end));
+      if (bytes <= 0) break;
+      const size_t next=end+static_cast<size_t>(bytes);
+      if (end>begin && font->width(font->userdata,font->height,text.data()+begin,
+          static_cast<int>(next-begin)) > available) break;
+      end=next;
+      if (rune==' ') last_space=end;
+    }
+    if (end==begin) break;
+    if (end<text.size() && last_space>begin) end=last_space;
+    nk_layout_row_dynamic(context,font->height+6,1);
+    nk_text(context,text.data()+begin,static_cast<int>(end-begin),NK_TEXT_LEFT);
+    begin=end;
+  }
+}
+void ReviewField(nk_context* context, const char* label, const std::string& text, float width) {
+  ReviewText(context,label,width);
+  ReviewText(context,text,width);
+}
+
+void DrawRequestReview(nk_context* context, ShellState& state, float width, float action_height) {
+  const auto& statement = state.request.loaded->statement;
+  const auto review = InspectRequest(statement);
+  ReviewText(context,"Network: "+review.network,width);
+  nk_layout_row_dynamic(context,action_height,1);
+  const auto toggle = state.claims_expanded ? "Back to summary" :
+      "Show "+std::to_string(review.claim_count)+" claim(s)";
+  if (Button(context,state,272,toggle.c_str(),state.claims_expanded)) {
+    state.claims_expanded = !state.claims_expanded;
+    state.scroll = {};
+  }
+  if (state.claims_expanded) {
+    ReviewField(context,"Total claimed amount",RequestAmount(review.total_sats),width);
+    for (size_t i=0; i<review.claims.size(); ++i) {
+      const auto& claim = review.claims[i];
+      ReviewText(context,"Claim "+std::to_string(i+1)+" / "+claim.script_kind,width);
+      ReviewText(context,RequestAmount(claim.amount_sats),width);
+      ReviewField(context,"Outpoint (transaction ID : output)",claim.txid+":"+std::to_string(claim.vout),width);
+      ReviewField(context,"Public key hash (HASH160)",claim.key_hash,width);
+      ReviewField(context,"Output script (hex)",claim.script_hex,width);
+    }
+  } else {
+    ReviewField(context,"Verifier (request-provided)",RequestDisplayText(review.verifier),width);
+    Paragraph(context,"Identity unverified. URLs are text only.",width);
+    ReviewField(context,"Purpose",review.purpose,width);
+    ReviewField(context,"Expires at",RequestUtcTime(review.expires_at),width);
+    ReviewText(context,RequestWindowMessage(RequestWindowAt(statement,state.now)),width);
+    ReviewField(context,"Request created / not before",RequestUtcTime(review.not_before),width);
+    ReviewField(context,"Proof created at","None (request only)",width);
+    ReviewField(context,"Request format",review.format,width);
+    ReviewField(context,"Statement version",std::to_string(review.statement_version),width);
+    ReviewField(context,"Claim count",std::to_string(review.claim_count),width);
+    std::string kinds;
+    for (const auto& kind : review.script_kinds) {
+      if (!kinds.empty()) kinds += ", ";
+      kinds += kind;
+    }
+    ReviewField(context,"Script kinds (claim order)",kinds,width);
+    if (review.has_snapshot) {
+      ReviewField(context,"Requested snapshot height",std::to_string(review.snapshot_height),width);
+      ReviewField(context,"Requested snapshot block",review.snapshot,width);
+      Paragraph(context,"Snapshot requested. Chain status has not been checked.",width);
+    } else Paragraph(context,"No snapshot requested. Current chain status has not been checked.",width);
+    if (statement.has_bridge_binding) {
+      ReviewField(context,"Bridge destination network",proofs::QuietProofNetworkName(statement.bridge.destination_network),width);
+      ReviewField(context,"Bridge asset (request-provided)",RequestDisplayText(statement.bridge.asset_id),width);
+      // Binding bytes are already validated by the native request decoder.
+      constexpr char digits[]="0123456789abcdef";
+      auto hex = [&](const auto& bytes) {
+        std::string out;
+        for (auto byte : bytes) { out += digits[byte>>4]; out += digits[byte&15]; }
+        return out;
+      };
+      ReviewField(context,"Destination commitment",hex(statement.bridge.destination_commitment),width);
+      ReviewField(context,"Bridge lock ID",hex(statement.bridge.lock_id),width);
+    }
+  }
+}
 }  // namespace
+
+void ShellState::OpenRequest(const std::filesystem::path& path) {
+  request.Open(path);
+  const auto text = path.string();
+  request_path.fill(0);
+  std::memcpy(request_path.data(), text.data(), std::min(text.size(), request_path.size() - 1));
+  chooser.Cancel();
+  claims_expanded = false;
+  view = View::Request;
+  scroll = {};
+}
 
 const char* ViewName(View view) {
   switch (view) {
@@ -69,13 +171,32 @@ const char* ViewName(View view) {
 
 void HandleShellKey(ShellState& state, const SDL_KeyboardEvent& key) {
   if (key.type != SDL_KEYDOWN || key.repeat) return;
+  if (key.keysym.sym == SDLK_ESCAPE && state.chooser.open) {
+    state.chooser.Cancel();
+    state.focus = 13;
+    state.scroll = {};
+    return;
+  }
+  if (state.editing_path && key.keysym.sym != SDLK_TAB && key.keysym.sym != SDLK_ESCAPE) return;
   if (key.keysym.sym == SDLK_ESCAPE && state.view == View::Settings) {
     ChangeView(state, View::Request);
     state.focus = 2;
   }
   if (key.keysym.sym == SDLK_TAB) {
-    const std::vector<int> order = state.view == View::Settings ?
+    std::vector<int> order = state.view == View::Settings ?
       std::vector<int>{1,2,3,4,5,6,7,8,9,11} : std::vector<int>{1,2,3,4,10};
+    if (state.view == View::Request) {
+      order = {1,2,3,4,12,13};
+      if (state.chooser.open) {
+        order.push_back(14);
+        order.push_back(15);
+        for (size_t i = 0; i < state.chooser.entries.size(); ++i) order.push_back(16 + static_cast<int>(i));
+      } else {
+        if (state.request.loaded) order.push_back(272);
+        order.push_back(10);
+        order.push_back(11);
+      }
+    }
     auto iterator = std::find(order.begin(), order.end(), state.focus);
     int index = iterator == order.end() ? ((key.keysym.mod & KMOD_SHIFT) ? 0 : -1) :
       static_cast<int>(iterator - order.begin());
@@ -157,12 +278,57 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
           "Use a local Bitcoin node and an RPC wallet. Connection status and wallet readiness will appear here.",
           "A completed proof can be saved to a file and shared with your verifier. Nothing is uploaded automatically."};
         const auto index=static_cast<int>(state.view);
-        Heading(context,titles[index],heading,body);
-        Paragraph(context,descriptions[index],content_width);
+        Heading(context,state.view == View::Request && state.chooser.open ? "Choose a file" : titles[index],heading,body);
+        if (state.view == View::Request) {
+          if (!state.chooser.open && state.request.loaded) DrawRequestReview(context,state,content_width,action_height);
+          if (!state.chooser.open && !state.request.loaded) Paragraph(context,state.request.error != RequestError::None ? state.request.Message() :
+              "Choose a request file or enter its path. Files are checked locally before wallet access.",content_width);
+          nk_layout_row_dynamic(context,body->height+8,1);
+          nk_label(context,"Request file path",NK_TEXT_LEFT);
+          nk_layout_row_dynamic(context,action_height,1);
+          state.controls[12] = nk_widget_bounds(context);
+          if (state.focus == 12 && !state.editing_path) nk_edit_focus(context,NK_EDIT_ALWAYS_INSERT_MODE);
+          if (state.focus != 12) nk_edit_unfocus(context);
+          const auto edit = nk_edit_string_zero_terminated(context,static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER,
+              state.request_path.data(),static_cast<int>(state.request_path.size()),nk_filter_default);
+          state.editing_path = (edit & NK_EDIT_ACTIVE) != 0;
+          if (edit & NK_EDIT_ACTIVATED) state.focus = 12;
+          if (edit & NK_EDIT_COMMITED) state.OpenRequest(std::filesystem::path(state.request_path.data()));
+          nk_layout_row_dynamic(context,action_height,1);
+          if (Button(context,state,13,"Browse files")) {
+            state.chooser.Browse(std::filesystem::path(state.request_path.data()));
+            state.scroll = {};
+          }
+          if (state.chooser.open) {
+            nk_layout_row_dynamic(context,action_height,2);
+            if (Button(context,state,14,"Parent folder")) {
+              state.chooser.Browse(state.chooser.directory.parent_path());
+              state.scroll = {};
+            }
+            if (Button(context,state,15,"Cancel")) {
+              state.chooser.Cancel(); state.scroll = {}; state.focus = 13;
+            }
+            Paragraph(context,state.chooser.directory.string().c_str(),content_width);
+            if (!state.chooser.error.empty()) Paragraph(context,state.chooser.error.c_str(),content_width);
+            // Copy a selected path before refreshing the bounded directory list.
+            std::optional<FileEntry> selection;
+            for (size_t i=0; i<state.chooser.entries.size(); ++i) {
+              const auto& entry = state.chooser.entries[i];
+              auto label = (entry.directory ? "[Folder] " : "") + entry.path.filename().string();
+              nk_layout_row_dynamic(context,action_height,1);
+              if (Button(context,state,16+static_cast<int>(i),label.c_str())) selection = entry;
+            }
+            if (selection) {
+              if (selection->directory) state.chooser.Browse(selection->path);
+              else state.OpenRequest(selection->path);
+              state.scroll = {};
+            }
+          }
+        } else Paragraph(context,descriptions[index],content_width);
         nk_layout_row_dynamic(context,body->height+12,1);
         nk_label_colored(context,"LOCAL  /  PRIVATE",NK_TEXT_LEFT,p.soft_text);
         nk_layout_row_dynamic(context,action_height,1);
-        if (Button(context,state,10,state.details ? "Hide guide" : "How it works")) state.details=!state.details;
+        if (!state.chooser.open && Button(context,state,10,state.details ? "Hide guide" : "How it works")) state.details=!state.details;
         if (state.details) {
           const char* guide[] = {
             "1. Review the request. Check its network, verifier, purpose and expiry. Only approve a statement you understand.",
@@ -176,7 +342,7 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
       // Use actual laid-out bounds so keyboard navigation also works after
       // manual scrolling and at every supported text size.
       int scroll_delta = 0;
-      if (state.reveal_focus && state.focus >= 5 && state.focus <= 10) {
+      if (state.reveal_focus && state.focus >= 5 && state.focus != 11) {
         const auto target = state.controls[state.focus];
         if (target.w > 0) {
           if (target.y < viewport.y) scroll_delta = static_cast<int>(target.y - viewport.y - 4);
@@ -191,7 +357,8 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
     if (state.view == View::Settings) {
       nk_label_wrap(context,state.preference_status.empty() ? "Theme and text size only. No wallet access." : state.preference_status.c_str());
     } else {
-      const char* statuses[] = {"No request loaded. Review is unavailable.",
+      const char* statuses[] = {state.request.error != RequestError::None ? "Request rejected. Recovery details above." :
+                                state.request.loaded ? RequestWindowMessage(RequestWindowAt(state.request.loaded->statement,state.now)) : "No request loaded. Proving is unavailable.",
                                 "No node configured. Connection test is unavailable.",
                                 "No completed proof. Save is unavailable."};
       nk_label_wrap(context,statuses[static_cast<int>(state.view)]);
@@ -199,6 +366,10 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
     nk_layout_row_dynamic(context,action_height,1);
     if (state.view == View::Settings) {
       if (Button(context,state,11,"Done",true)) ChangeView(state,View::Request);
+    } else if (state.view == View::Request) {
+      if (Button(context,state,11,"Open request",true)) {
+        state.OpenRequest(std::filesystem::path(state.request_path.data()));
+      }
     } else {
       const char* labels[] = {"Review request","Test connection","Save proof"};
       // A disabled affordance has no activation target until its prerequisite exists.

@@ -9,5 +9,7 @@
 #define NK_INCLUDE_FONT_BAKING
 #define NK_INCLUDE_DEFAULT_FONT
 #define NK_KEYSTATE_BASED_INPUT
+// Keep a whole bounded path from a burst of SDL text events in one frame.
+#define NK_INPUT_MAX 4096
 #include "vendor/nuklear.h"
 #include "vendor/nuklear_sdl_renderer.h"

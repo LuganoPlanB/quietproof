@@ -13,7 +13,30 @@ ctest --test-dir build-gui -R '^quietproof-gui-' --output-on-failure
 
 GUI defaults OFF. Its SDL/Nuklear dependencies do not enter exported library
 targets, CLI-only or WASI configurations. GUI ON with RPC OFF is rejected.
-The current shell does not connect to wallets or generate proofs.
+The application opens existing v1/v2 request files for local review. It does
+not yet connect to wallets or generate proofs.
+
+Use Browse files for the built-in, keyboard-accessible file chooser, enter a
+file path and press Enter/Open request, drop a file onto the window, or launch
+with `--request path`. The chooser lists up to 256 entries per directory;
+the path field supports exact paths when a directory is larger. Cancel or
+Escape closes the chooser without replacing the current request. A failed
+replacement clears the old request. Reads are limited to 4097 bytes; supported
+requests are at most 4096 bytes. Proof files receive a separate error. The
+original bytes and decoded request remain immutable in memory; no request
+data is stored in preferences and loading makes no RPC or key calls.
+
+Review shows the same request fields as `quietproof inspect`, including the
+request-provided verifier, purpose, network, creation/not-before and expiry,
+statement version, claim count/script kinds and snapshot request. Timestamps
+use UTC; creation and not-before are the same request timestamp. The live time
+window includes not-before and excludes expiry, matching the CLI prover.
+Time validity alone does not establish wallet readiness or current-chain status.
+Show claims expands exact transaction outpoints, integer satoshi/BTC amounts,
+public key hashes and canonical output script hex. Summary and claims scroll.
+Verifier identity is unverified; URLs remain literal text and are never opened.
+Invisible directional/layout characters are shown as explicit Unicode escapes;
+the original request bytes and values remain unchanged.
 
 `--help` lists deterministic rendering options. For a headless lifecycle check:
 
