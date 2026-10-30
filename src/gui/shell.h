@@ -2,6 +2,8 @@
 
 #include "preferences.h"
 #include "theme.h"
+#include "request.h"
+#include "request_review.h"
 
 #include <array>
 #include <string>
@@ -16,9 +18,16 @@ struct ShellState {
   bool details = false;
   bool save_preferences = false;
   bool reveal_focus = false;
+  bool editing_path = false;
+  bool claims_expanded = false;
+  int64_t now = 0;
+  RequestState request;
+  RequestChooser chooser;
+  std::array<char, 4096> request_path{};
+  void OpenRequest(const std::filesystem::path& path);
   std::string preference_status;
   nk_scroll scroll{};
-  std::array<struct nk_rect, 12> controls{};
+  std::array<struct nk_rect, 273> controls{};
 };
 void HandleShellKey(ShellState& state, const SDL_KeyboardEvent& key);
 void DrawShell(nk_context* context, ShellState& state, int width, int height,

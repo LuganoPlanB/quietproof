@@ -80,10 +80,10 @@ with tempfile.TemporaryDirectory(prefix='quietproof-display-') as directory:
     preferences[0].write_text('x' * 129)
     assert run('oversize-preferences')[0]['theme'] == 'light'
     state, _, _ = run('guide-end', ['--width', '400', '--height', '640', '--font-scale', '1.5'],
-                      ['backtab', 'backtab', 'enter', 'end'])
+                      ['backtab', 'backtab', 'backtab', 'enter', 'end'])
     assert state['scroll'] > 0
     state, controls, _ = run('guide-focus', ['--width', '400', '--height', '640', '--font-scale', '1.5'],
-                             ['backtab', 'backtab', 'enter', 'end', 'backtab', 'tab'])
+                             ['backtab', 'backtab', 'backtab', 'enter', 'end', 'backtab', 'tab'])
     assert state['focus'] == 10 and 160 <= controls[10][1] <= 440
     state, controls, _ = run('settings-focus', ['--settings', '--width', '400', '--height', '640',
                                               '--font-scale', '1.5'], ['end', 'tab'])

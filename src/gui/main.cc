@@ -31,9 +31,9 @@ int main(int argc, char** argv) {
         std::cout << "Quietproof native prover\n"
                      "  --theme light|dark  --width 400..4096  --height 640..4096\n"
                      "  --font-scale 1|1.25|1.5  --builtin-font\n"
-                     "  --settings\n"
+                     "  --settings  --request request-file\n"
                      "  --smoke-test [--screenshot output.bmp] [--pixel-scale 1|2]\n"
-                     "               [--test-events events.txt]\n";
+                     "               [--test-events events.txt] [--test-now unix-seconds]\n";
         return 0;
       } else if (arg == "--theme") {
         const auto theme = value();
@@ -59,19 +59,28 @@ int main(int argc, char** argv) {
         options.screenshot = value();
       } else if (arg == "--settings") {
         options.settings = true;
+      } else if (arg == "--request") {
+        options.request = value();
       } else if (arg == "--pixel-scale") {
         const auto scale = value();
         if (scale != "1" && scale != "2") throw std::runtime_error("Unsupported pixel scale");
         options.pixel_scale = scale == "2" ? 2 : 1;
       } else if (arg == "--test-events") {
         options.test_events = value();
+      } else if (arg == "--test-now") {
+        const auto text = value();
+        int64_t now = 0;
+        const auto [end,error] = std::from_chars(text.data(),text.data()+text.size(),now);
+        if (error != std::errc{} || end != text.data()+text.size())
+          throw std::runtime_error("Invalid rendering test time");
+        options.test_now = now;
       } else {
         throw std::runtime_error("Unknown option; see --help");
       }
     }
     if (!options.screenshot.empty() && !options.smoke_test)
       throw std::runtime_error("Screenshot capture requires --smoke-test");
-    if ((!options.test_events.empty() || options.pixel_scale != 1) && !options.smoke_test)
+    if ((!options.test_events.empty() || options.pixel_scale != 1 || options.test_now) && !options.smoke_test)
       throw std::runtime_error("Rendering test options require --smoke-test");
     return quietproof::gui::Run(options);
   } catch (const std::exception& error) {

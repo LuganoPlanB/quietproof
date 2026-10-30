@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -74,6 +75,8 @@ struct TestEvent {
   SDL_Keycode key = 0;
   bool shift = false;
   int x = -1, y = -1;
+  std::string text;
+  bool drop = false;
 };
 std::vector<TestEvent> ReadTestEvents(const std::filesystem::path& path) {
   if (path.empty()) return {};
@@ -95,7 +98,13 @@ std::vector<TestEvent> ReadTestEvents(const std::filesystem::path& path) {
     else if (line=="home") event.key=SDLK_HOME;
     else if (line=="end") event.key=SDLK_END;
     else if (line=="escape") event.key=SDLK_ESCAPE;
-    else {
+    else if (line.starts_with("text ")) {
+      event.text = line.substr(5);
+      if (event.text.size() > 31) throw std::runtime_error("Rendering text event too long");
+    } else if (line.starts_with("drop ")) {
+      event.text = line.substr(5);
+      event.drop = true;
+    } else {
       std::istringstream words(line);
       std::string command,extra;
       if (!(words>>command>>event.x>>event.y) || command!="click" || (words>>extra) ||
@@ -110,7 +119,19 @@ std::vector<TestEvent> ReadTestEvents(const std::filesystem::path& path) {
 
 void InjectTestEvent(const TestEvent& test, bool down, Uint32 window_id) {
   SDL_Event event{};
-  if (test.key) {
+  if (!test.text.empty()) {
+    if (!down) return;
+    if (test.drop) {
+      event.type = SDL_DROPFILE;
+      event.drop.windowID = window_id;
+      event.drop.file = SDL_strdup(test.text.c_str());
+      if (!event.drop.file) throw std::bad_alloc();
+    } else {
+      event.type = SDL_TEXTINPUT;
+      event.text.windowID = window_id;
+      SDL_strlcpy(event.text.text,test.text.c_str(),sizeof(event.text.text));
+    }
+  } else if (test.key) {
     event.type=down ? SDL_KEYDOWN : SDL_KEYUP;
     event.key.windowID=window_id;
     event.key.keysym.sym=test.key;
@@ -156,6 +177,7 @@ int Run(const Options& options) {
   if (options.theme_override) state.preferences.dark=options.dark;
   if (options.font_override) state.preferences.font_index=options.font_scale==1.5f ? 2 : options.font_scale==1.25f ? 1 : 0;
   if (options.settings) {state.view=View::Settings;state.focus=5;}
+  if (!options.request.empty()) state.OpenRequest(options.request);
   NuklearSession nuklear(window.get(), renderer.get());
   nk_font_atlas* atlas = nullptr;
   nk_sdl_font_stash_begin(&atlas);
@@ -194,6 +216,25 @@ int Run(const Options& options) {
     while (SDL_PollEvent(&event)) {
       if (event.type == SDL_QUIT) running = false;
       if (event.type == SDL_KEYDOWN) HandleShellKey(state,event.key);
+      if (event.type == SDL_DROPFILE) {
+        std::unique_ptr<char, decltype(&SDL_free)> dropped(event.drop.file, SDL_free);
+        if (dropped) state.OpenRequest(std::filesystem::path(dropped.get()));
+        continue;
+      }
+      if (event.type == SDL_TEXTINPUT) {
+        // The pinned upstream backend forwards only the first glyph. SDL text
+        // input may contain several UTF-8 characters (including IME commits).
+        const int length = static_cast<int>(std::find(std::begin(event.text.text),
+            std::end(event.text.text),'\0') - std::begin(event.text.text));
+        for (int offset=0; offset<length;) {
+          nk_rune rune = 0;
+          const int consumed = nk_utf_decode(event.text.text+offset,&rune,length-offset);
+          if (consumed <= 0) break;
+          nk_input_unicode(nuklear.context,rune);
+          offset += consumed;
+        }
+        continue;
+      }
       nk_sdl_handle_event(&event);
     }
     nk_input_end(nuklear.context);
@@ -205,6 +246,8 @@ int Run(const Options& options) {
     if (width <= 0 || height <= 0) { SDL_Delay(16); continue; }
     if (SDL_RenderSetLogicalSize(renderer.get(), width, height) != 0) SdlError("Set logical size");
     const int font_index=state.preferences.font_index;
+    state.now = options.test_now.value_or(std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count());
     DrawShell(nuklear.context,state,width,height,&body[font_index]->handle,&heading[font_index]->handle);
     if (state.save_preferences) {
       state.preference_status=SavePreferences(preference_path,state.preferences) ?
@@ -229,6 +272,15 @@ int Run(const Options& options) {
     std::cout << "GUI smoke: " << frames << " frames; orderly SDL_QUIT; font="
               << (native_font ? "Inter" : "builtin") << '\n';
   if (options.smoke_test) {
+    std::cout << "GUI request: loaded=" << bool(state.request.loaded)
+              << " error=" << static_cast<int>(state.request.error)
+              << " revision=" << state.request.revision << " chooser=" << state.chooser.open
+              << " prove=disabled\n";
+    if (state.request.loaded)
+      std::cout << "GUI review: version=" << unsigned(state.request.loaded->statement.statement_version)
+                << " window=" << RequestWindowName(RequestWindowAt(state.request.loaded->statement,state.now))
+                << " claimsExpanded=" << state.claims_expanded
+                << " claimCount=" << state.request.loaded->statement.claims.size() << '\n';
     std::cout << "GUI state: view=" << ViewName(state.view) << " theme=" << (state.preferences.dark ? "dark" : "light")
               << " fontIndex=" << state.preferences.font_index << " focus=" << state.focus << " scrollY=" << state.scroll.y
               << " pixels=" << output_width << 'x' << output_height
