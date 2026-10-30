@@ -88,6 +88,101 @@ void ReviewField(nk_context* context, const char* label, const std::string& text
   ReviewText(context,text,width);
 }
 
+void DrawNodeProbe(nk_context* context, ShellState& state, float width, float action_height) {
+  if (!state.node_probe.result) return;
+  const auto& result = *state.node_probe.result;
+  const auto& probe = result.probe;
+  Paragraph(context,result.Message().c_str(),width);
+  ReviewText(context,std::string("Authentication: ")+(probe.authenticated ? "accepted" :
+      result.error.code == proofs::BitcoinRpcErrorCode::kAuthentication ? "rejected; check node cookie" : "not established"),width);
+  if (probe.version) ReviewText(context,"Node version: "+std::to_string(*probe.version),width);
+  if (probe.chain) ReviewText(context,"Node chain: "+*probe.chain+
+      (probe.network_matches == true ? " (matches)" : " (wrong network)"),width);
+  if (probe.syncing) ReviewText(context,std::string("Sync: ")+(*probe.syncing ? "initial block download" : "initial block download complete"),width);
+  if (probe.export_address_key) ReviewText(context,std::string("Key export capability: ")+
+      (*probe.export_address_key ? "exportaddresskey advertised" : "unsupported; Core proving deferred"),width);
+  if (probe.wallets_listed) ReviewText(context,"Loaded wallets: "+std::to_string(probe.wallets.size()),width);
+  std::optional<std::string> selection;
+  for (size_t i=0; i<probe.wallets.size(); ++i) {
+    const auto& wallet = probe.wallets[i];
+    ReviewText(context,"Wallet "+std::to_string(i+1)+": "+
+        (wallet.name.empty() ? "(default unnamed wallet)" : RequestDisplayText(wallet.name)),width);
+    ReviewText(context,wallet.private_keys_enabled == false ? "Private keys disabled / watch-only" :
+        wallet.private_keys_enabled == true ? "Private keys enabled" : "Wallet capability not checked",width);
+    if (wallet.descriptor_wallet) ReviewText(context,*wallet.descriptor_wallet ?
+        "Descriptor wallet supported" : "Legacy wallet unsupported by Roots export",width);
+    if (wallet.external_signer == true) ReviewText(context,"External-signer wallet unsupported by Roots export",width);
+    if (wallet.request_matches) ReviewText(context,*wallet.request_matches ? "Request address and script match" : "Request address/script is ineligible for local export",width);
+    if (result.selected_wallet && *result.selected_wallet == wallet.name) ReviewText(context,"Selected wallet",width);
+    else if (result.Eligible(wallet)) {
+      nk_layout_row_dynamic(context,action_height,1);
+      const auto label = "Select wallet "+std::to_string(i+1);
+      if (Button(context,state,285+static_cast<int>(i),label.c_str())) selection = wallet.name;
+    }
+  }
+  if (selection) {
+    state.node_probe.Invalidate();
+    state.node_selection.swap(selection);
+    state.test_node = true;
+  }
+}
+
+void DrawNodeSettings(nk_context* context, ShellState& state, float width, float action_height) {
+  const auto network = state.request.loaded ? state.request.loaded->statement.network : state.node_network;
+  ReviewText(context,std::string(state.request.loaded ? "Request network: " : "Test network (no request): ")+
+      proofs::QuietProofNetworkName(network),width);
+  if (!state.request.loaded) {
+    nk_layout_row_dynamic(context,action_height,1);
+    if (Button(context,state,277,"Change test network")) {
+      state.node_network = static_cast<proofs::QuietProofNetwork>((static_cast<unsigned>(state.node_network)+1)%5);
+      state.InvalidateNodeProbe();
+    }
+  }
+  if (state.node_busy) Paragraph(context,"Testing local RPC on the worker. You can keep reviewing or changing settings. Total test budget: 10 seconds.",width);
+  if (!state.node_advanced) DrawNodeProbe(context,state,width,action_height);
+  std::string error;
+  const auto configured = ConfigureNode(state.node_settings,network,&error);
+  if (configured) {
+    ReviewField(context,"Local RPC endpoint",configured->resolved.url,width);
+    ReviewField(context,"Cookie authentication",configured->resolved.cookie_path,width);
+    Paragraph(context,"Cookie is read only when connecting and reloaded on each call. It must be owned by you with owner-only permissions.",width);
+  } else Paragraph(context,error.c_str(),width);
+  nk_layout_row_dynamic(context,action_height,1);
+  if (Button(context,state,274,state.node_advanced ? "Hide advanced settings" : "Advanced settings",state.node_advanced)) {
+    state.node_advanced = !state.node_advanced;
+  }
+  if (state.node_advanced) {
+    const auto previous = state.node_settings.fields;
+    Paragraph(context,"Blank fields use defaults. Port follows the request network unless overridden. Cookie path overrides data directory. Overrides remain until cleared or reset. No passwords are accepted here.",width);
+    // Nuklear has one active editor per window. Unfocusing each nonselected
+    // field would also clear the selected editor before the next frame.
+    if (state.focus < 278 || state.focus > 284) nk_edit_unfocus(context);
+    for (size_t i=0; i<state.node_settings.fields.size(); ++i) {
+      const auto field = static_cast<NodeField>(i);
+      ReviewText(context,NodeFieldLabel(field),width);
+      nk_layout_row_dynamic(context,action_height,1);
+      const int id = 278+static_cast<int>(i);
+      state.controls[id] = nk_widget_bounds(context);
+      if (state.focus == id) nk_edit_focus(context,NK_EDIT_ALWAYS_INSERT_MODE);
+      const auto edit = nk_edit_string_zero_terminated(context,NK_EDIT_FIELD,
+          state.node_settings.Text(field),static_cast<int>(state.node_settings.fields[i].size()),nk_filter_default);
+      if (edit & NK_EDIT_ACTIVATED) state.focus = id;
+      if (state.focus == id) state.editing_path = (edit & NK_EDIT_ACTIVE) != 0;
+    }
+    nk_layout_row_dynamic(context,action_height,1);
+    if (Button(context,state,275,"Save connection settings")) state.save_node_settings = true;
+    nk_layout_row_dynamic(context,action_height,1);
+    if (Button(context,state,276,"Reset overrides")) {
+      state.node_settings = {};
+      state.InvalidateNodeProbe();
+      state.save_node_settings = true;
+    }
+    if (state.node_settings.fields != previous) state.InvalidateNodeProbe();
+  }
+  if (!state.node_settings_status.empty()) Paragraph(context,state.node_settings_status.c_str(),width);
+  Paragraph(context,"Connection success does not establish proof readiness. Wallet passwords belong in the private unlock dialog after explicit approval.",width);
+}
+
 void DrawRequestReview(nk_context* context, ShellState& state, float width, float action_height) {
   const auto& statement = state.request.loaded->statement;
   const auto review = InspectRequest(statement);
@@ -149,6 +244,7 @@ void DrawRequestReview(nk_context* context, ShellState& state, float width, floa
 }  // namespace
 
 void ShellState::OpenRequest(const std::filesystem::path& path) {
+  InvalidateNodeProbe();
   request.Open(path);
   const auto text = path.string();
   request_path.fill(0);
@@ -183,6 +279,7 @@ void HandleShellKey(ShellState& state, const SDL_KeyboardEvent& key) {
     state.focus = 2;
   }
   if (key.keysym.sym == SDLK_TAB) {
+    state.editing_path = false;
     std::vector<int> order = state.view == View::Settings ?
       std::vector<int>{1,2,3,4,5,6,7,8,9,11} : std::vector<int>{1,2,3,4,10};
     if (state.view == View::Request) {
@@ -196,6 +293,25 @@ void HandleShellKey(ShellState& state, const SDL_KeyboardEvent& key) {
         order.push_back(10);
         order.push_back(11);
       }
+    } else if (state.view == View::Node) {
+      order = {1,2,3,4};
+      if (!state.request.loaded) order.push_back(277);
+      if (!state.node_advanced && state.node_probe.result) {
+        for (size_t i=0; i<state.node_probe.result->probe.wallets.size(); ++i) {
+          const auto& wallet = state.node_probe.result->probe.wallets[i];
+          if (state.node_probe.result->Eligible(wallet) &&
+              state.node_probe.result->selected_wallet != std::optional<std::string>(wallet.name))
+            order.push_back(285+static_cast<int>(i));
+        }
+      }
+      order.push_back(274);
+      if (state.node_advanced) {
+        for (int id=278; id<=284; ++id) order.push_back(id);
+        order.push_back(275);
+        order.push_back(276);
+      }
+      order.push_back(10);
+      if (!state.node_busy) order.push_back(11);
     }
     auto iterator = std::find(order.begin(), order.end(), state.focus);
     int index = iterator == order.end() ? ((key.keysym.mod & KMOD_SHIFT) ? 0 : -1) :
@@ -324,7 +440,8 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
               state.scroll = {};
             }
           }
-        } else Paragraph(context,descriptions[index],content_width);
+        } else if (state.view == View::Node) DrawNodeSettings(context,state,content_width,action_height);
+        else Paragraph(context,descriptions[index],content_width);
         nk_layout_row_dynamic(context,body->height+12,1);
         nk_label_colored(context,"LOCAL  /  PRIVATE",NK_TEXT_LEFT,p.soft_text);
         nk_layout_row_dynamic(context,action_height,1);
@@ -359,7 +476,9 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
     } else {
       const char* statuses[] = {state.request.error != RequestError::None ? "Request rejected. Recovery details above." :
                                 state.request.loaded ? RequestWindowMessage(RequestWindowAt(state.request.loaded->statement,state.now)) : "No request loaded. Proving is unavailable.",
-                                "No node configured. Connection test is unavailable.",
+                                state.node_busy ? "Testing connection. Wallet secrets are not accessed." :
+                                  state.node_probe.result ? "Connection report above. Proving remains unavailable." :
+                                  "Connection untested or settings changed. Test again.",
                                 "No completed proof. Save is unavailable."};
       nk_label_wrap(context,statuses[static_cast<int>(state.view)]);
     }
@@ -369,6 +488,13 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
     } else if (state.view == View::Request) {
       if (Button(context,state,11,"Open request",true)) {
         state.OpenRequest(std::filesystem::path(state.request_path.data()));
+      }
+    } else if (state.view == View::Node && !state.node_busy) {
+      if (Button(context,state,11,"Test connection",true)) {
+        state.test_node = true;
+        state.node_advanced = false;
+        state.editing_path = false;
+        state.scroll = {};
       }
     } else {
       const char* labels[] = {"Review request","Test connection","Save proof"};

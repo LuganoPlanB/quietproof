@@ -50,6 +50,36 @@ struct BitcoinCoreRpcConfig {
   std::chrono::milliseconds rpc_timeout{30000};
   std::chrono::milliseconds scan_timeout{600000};
 };
+// Nonsecret resolved settings. Performs no RPC or cookie reads; the transport
+// reopens the cookie for each call so node restarts/rotation remain supported.
+struct BitcoinRpcSettings {
+  std::string url;
+  std::string cookie_path;
+};
+bool ResolveBitcoinRpcSettings(const BitcoinCoreRpcConfig&, BitcoinRpcSettings*,
+                               BitcoinRpcError* = nullptr);
+struct BitcoinRpcKeyMatch {
+  std::array<uint8_t, 20> program{};
+  std::vector<QuietProofScriptKind> script_kinds;
+};
+struct BitcoinRpcWalletProbe {
+  std::string name;
+  std::optional<bool> private_keys_enabled;
+  std::optional<bool> descriptor_wallet;
+  std::optional<bool> external_signer;
+  std::optional<bool> request_matches;
+  BitcoinRpcError error;
+};
+struct BitcoinRpcProbe {
+  bool authenticated = false;
+  std::optional<uint64_t> version;
+  std::optional<std::string> chain;
+  std::optional<bool> network_matches;
+  std::optional<bool> syncing;
+  std::optional<bool> export_address_key;
+  bool wallets_listed = false;
+  std::vector<BitcoinRpcWalletProbe> wallets;
+};
 struct BitcoinUtxoQuery {
   std::string address;
   uint64_t min_confirmations = 1;
@@ -88,6 +118,13 @@ class BitcoinCoreRpc final : public QuietProofChainProvider {
   BitcoinCoreRpc& operator=(const BitcoinCoreRpc&) = delete;
   bool Discover(const BitcoinUtxoQuery&, BitcoinUtxoDiscovery*,
                 BitcoinRpcError* = nullptr);
+  // Nonsecret capability probe: never unlocks or invokes key export.
+  // Returns partial observations on failure. Total budget is 1..60000 ms;
+  // each call is bounded by remaining time and configured transport timeouts.
+  // Inspects at most 16 loaded wallets. Instances remain sequential.
+  bool Probe(const std::optional<BitcoinRpcKeyMatch>&, BitcoinRpcProbe*,
+             BitcoinRpcError* = nullptr,
+             std::chrono::milliseconds budget = std::chrono::milliseconds(10000));
   // Native P2WPKH export. Empty address derives it from the request program;
   // empty wallet selects the sole loaded wallet. Checks node network and
   // address program before requesting a secret. Leaves output unchanged on

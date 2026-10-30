@@ -7,12 +7,20 @@ target_include_directories(quietproof-gui-request PUBLIC "${CMAKE_CURRENT_SOURCE
 target_compile_options(quietproof-gui-request PRIVATE
   $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>)
 
-add_executable(quietproof-prover-gui main.cc application.cc preferences.cc theme.cc shell.cc nuklear_backend.cc)
+find_package(Threads REQUIRED)
+add_library(quietproof-gui-node STATIC node_settings.cc node_probe.cc preferences.cc)
+target_compile_features(quietproof-gui-node PUBLIC cxx_std_20)
+target_link_libraries(quietproof-gui-node PUBLIC LongfellowZKQuietProof::rpc Threads::Threads)
+target_include_directories(quietproof-gui-node PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_options(quietproof-gui-node PRIVATE
+  $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>)
+
+add_executable(quietproof-prover-gui main.cc application.cc theme.cc shell.cc nuklear_backend.cc)
 set_target_properties(quietproof-prover-gui PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}")
 target_compile_features(quietproof-prover-gui PRIVATE cxx_std_20)
 target_link_libraries(quietproof-prover-gui PRIVATE
-  LongfellowZKQuietProof::rpc quietproof-gui-request SDL2::SDL2)
+  quietproof-gui-node quietproof-gui-request SDL2::SDL2)
 target_compile_definitions(quietproof-prover-gui PRIVATE SDL_MAIN_HANDLED)
 target_compile_options(quietproof-prover-gui PRIVATE
   $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>)
@@ -33,11 +41,31 @@ install(FILES vendor/LICENSE vendor/SDL-LICENSE.txt vendor/PROVENANCE.md BRANDIN
   DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/quietproof-prover-gui)
 
 if(BUILD_TESTING)
+  add_executable(quietproof-gui-node-settings-test ${PROJECT_SOURCE_DIR}/tests/gui/node_settings_test.cc)
+  target_link_libraries(quietproof-gui-node-settings-test PRIVATE quietproof-gui-node)
+  add_test(NAME quietproof-gui-node-settings-test COMMAND quietproof-gui-node-settings-test
+    ${CMAKE_CURRENT_BINARY_DIR}/node-fixtures)
   add_executable(quietproof-gui-request-test ${PROJECT_SOURCE_DIR}/tests/gui/request_test.cc)
   target_link_libraries(quietproof-gui-request-test PRIVATE quietproof-gui-request)
   add_test(NAME quietproof-gui-request-test COMMAND quietproof-gui-request-test
     ${CMAKE_CURRENT_BINARY_DIR}/request-fixtures)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  add_executable(quietproof-gui-node-probe-test ${PROJECT_SOURCE_DIR}/tests/gui/node_probe_test.cc)
+  target_link_libraries(quietproof-gui-node-probe-test PRIVATE quietproof-gui-node)
+  add_test(NAME quietproof-gui-node-probe-test
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/gui/node_probe_fixture.py
+      $<TARGET_FILE:quietproof-gui-node-probe-test> ${CMAKE_CURRENT_BINARY_DIR}/probe-artifacts)
+  set_tests_properties(quietproof-gui-node-probe-test PROPERTIES TIMEOUT 90)
+  add_test(NAME quietproof-gui-node-probe-ui-test
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/gui/node_probe_ui_test.py
+      $<TARGET_FILE:quietproof-prover-gui> ${CMAKE_CURRENT_BINARY_DIR}/review-fixtures
+      ${CMAKE_CURRENT_BINARY_DIR}/probe-ui-artifacts)
+  set_tests_properties(quietproof-gui-node-probe-ui-test PROPERTIES TIMEOUT 120 FIXTURES_REQUIRED gui-review-files)
+  add_test(NAME quietproof-gui-node-settings-ui-test
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/gui/node_settings_ui_test.py
+      $<TARGET_FILE:quietproof-prover-gui> ${CMAKE_CURRENT_BINARY_DIR}/node-artifacts
+      ${CMAKE_CURRENT_BINARY_DIR}/review-fixtures)
+  set_tests_properties(quietproof-gui-node-settings-ui-test PROPERTIES TIMEOUT 120 FIXTURES_REQUIRED gui-review-files)
   add_executable(quietproof-gui-review-test ${PROJECT_SOURCE_DIR}/tests/gui/request_review_test.cc)
   target_link_libraries(quietproof-gui-review-test PRIVATE quietproof-gui-request)
   add_test(NAME quietproof-gui-review-test COMMAND quietproof-gui-review-test

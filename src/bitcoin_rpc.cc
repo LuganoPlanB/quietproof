@@ -311,7 +311,7 @@ bool PostRpcHttp(const BitcoinCoreRpcConfig& config, const std::string& request,
   ResolvedRpcConfig resolved;
   if (!ResolveRpcConfig(config, &resolved, error)) return false;
   if (wallet) {
-    if (wallet->empty() || wallet->size() > 1024 || !QuietProofUtf8(*wallet))
+    if (wallet->size() > 1024 || !QuietProofUtf8(*wallet))
       return Fail(error, BitcoinRpcErrorCode::kConfiguration, "Wallet name is invalid");
     // Encode every byte, including dots, slashes and percent signs. The name
     // stays one opaque segment; it cannot alter the validated origin or path.
@@ -663,6 +663,17 @@ bool DiscoverAddress(RpcClient& client, const BitcoinUtxoQuery& query,
 }  // namespace proofs::bitcoin_rpc_internal
 
 namespace proofs {
+bool ResolveBitcoinRpcSettings(const BitcoinCoreRpcConfig& config,
+                               BitcoinRpcSettings* output, BitcoinRpcError* error) {
+  bitcoin_rpc_internal::ResolvedRpcConfig resolved;
+  if (!output) {
+    if (error) *error = {BitcoinRpcErrorCode::kConfiguration,0,std::nullopt,"RPC settings output is required"};
+    return false;
+  }
+  if (!bitcoin_rpc_internal::ResolveRpcConfig(config, &resolved, error)) return false;
+  *output = {std::move(resolved.url), std::move(resolved.cookie_path)};
+  return true;
+}
 class BitcoinCoreRpc::Impl {
  public:
   explicit Impl(BitcoinCoreRpcConfig config) : client_(std::move(config)) {}
@@ -753,6 +764,125 @@ std::string ProgramAddress(QuietProofNetwork network,
   return address;
 }
 }  // namespace
+
+bool BitcoinCoreRpc::Probe(const std::optional<BitcoinRpcKeyMatch>& match,
+                          BitcoinRpcProbe* output, BitcoinRpcError* error,
+                          std::chrono::milliseconds budget) {
+  using namespace bitcoin_rpc_internal;
+  using namespace quietproof_internal;
+  BitcoinRpcError local_error;
+  if (!error) error = &local_error;
+  if (!output || budget.count() <= 0 || budget.count() > 60000)
+    return Fail(error,BitcoinRpcErrorCode::kConfiguration,"Invalid connection test budget or output");
+  *output = {};
+  if (match && (match->script_kinds.empty() || std::any_of(match->script_kinds.begin(),match->script_kinds.end(),
+      [](auto kind) { return kind != QuietProofScriptKind::kP2pkh && kind != QuietProofScriptKind::kP2wpkh; })))
+    return Fail(error,BitcoinRpcErrorCode::kUnsupportedScript,"Request script kinds are unsupported");
+  const auto deadline = std::chrono::steady_clock::now()+budget;
+  RpcDecodedResponse response;
+  auto call = [&](const char* method, const nlohmann::json& params,
+                  const std::optional<std::string>& wallet = std::nullopt) {
+    auto config = impl_->client_.config();
+    const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline-std::chrono::steady_clock::now());
+    if (remaining.count() <= 0) return Fail(error,BitcoinRpcErrorCode::kTimeout,"Connection test time budget expired");
+    config.rpc_timeout = std::min(config.rpc_timeout,remaining);
+    config.connect_timeout = std::min(config.connect_timeout,remaining);
+    // Private sequential clients let remaining time bound the entire probe,
+    // including enumeration. Cookies are still reopened for every call.
+    RpcClient client(std::move(config));
+    return client.Call(method,params,false,&response,error,wallet);
+  };
+  auto malformed = [&] { return Fail(error,BitcoinRpcErrorCode::kMalformed,"Connection test response is malformed"); };
+  try {
+    if (!call("getnetworkinfo",nlohmann::json::array())) return false;
+    output->authenticated = true;
+    uint64_t version = 0;
+    if (!response.result.is_object() || !response.result.contains("version") ||
+        !JsonUnsigned(response.result["version"],&version)) return malformed();
+    output->version = version;
+    if (!call("getblockchaininfo",nlohmann::json::array())) return false;
+    const auto& chain = response.result;
+    if (!chain.is_object() || !chain.contains("chain") || !chain["chain"].is_string() ||
+        !chain.contains("initialblockdownload") || !chain["initialblockdownload"].is_boolean()) return malformed();
+    const auto chain_name = chain["chain"].get<std::string>();
+    if (chain_name != "main" && chain_name != "test" && chain_name != "testnet4" &&
+        chain_name != "signet" && chain_name != "regtest") return malformed();
+    output->chain = chain_name;
+    output->network_matches = chain_name == QuietProofBitcoinCoreChainName(impl_->client_.config().network);
+    output->syncing = chain["initialblockdownload"].get<bool>();
+    if (!call("help",nlohmann::json::array({"exportaddresskey"}))) {
+      if (error->rpc_code != -32601 && error->rpc_code != -8) return false;
+      output->export_address_key = false;
+      ClearError(error);
+    } else {
+      if (!response.result.is_string()) return malformed();
+      const auto& help = response.result.get_ref<const std::string&>();
+      output->export_address_key = help.starts_with("exportaddresskey ") || help.starts_with("exportaddresskey\n");
+    }
+    if (!call("listwallets",nlohmann::json::array())) return false;
+    if (!response.result.is_array() || response.result.size() > 16) return malformed();
+    std::set<std::string> names;
+    for (const auto& value : response.result) {
+      if (!value.is_string()) return malformed();
+      auto name = value.get<std::string>();
+      if (name.size() > 1024 || !QuietProofUtf8(name) ||
+          std::any_of(name.begin(),name.end(),[](unsigned char c) { return c < 32 || c == 127; }) ||
+          !names.insert(name).second) return malformed();
+      output->wallets.push_back({std::move(name),{}, {}, {}, {}, {}});
+    }
+    output->wallets_listed = true;
+    std::string address;
+    if (match && *output->network_matches) {
+      const bool p2pkh = std::find(match->script_kinds.begin(),match->script_kinds.end(),QuietProofScriptKind::kP2pkh) != match->script_kinds.end();
+      address = p2pkh ? P2pkhAddress(impl_->client_.config().network,match->program) :
+                        ProgramAddress(impl_->client_.config().network,match->program);
+      if (!call("validateaddress",nlohmann::json::array({address}))) return false;
+      const auto& validated = response.result;
+      std::vector<uint8_t> script;
+      QuietProofScriptKind kind;
+      std::array<uint8_t,20> hash{};
+      if (!validated.is_object() || !validated.contains("isvalid") || !validated["isvalid"].is_boolean() ||
+          !validated["isvalid"].get<bool>() || !validated.contains("scriptPubKey") ||
+          !validated["scriptPubKey"].is_string() || !DecodeHex(validated["scriptPubKey"].get<std::string>(),&script) ||
+          !QuietProofClassifyScript(script,&kind,&hash) || hash != match->program ||
+          std::find(match->script_kinds.begin(),match->script_kinds.end(),kind) == match->script_kinds.end())
+        return Fail(error,BitcoinRpcErrorCode::kInvalidAddress,"Node address script does not match the request");
+    }
+    for (auto& wallet : output->wallets) {
+      if (!call("getwalletinfo",nlohmann::json::array(),wallet.name)) {
+        wallet.error = *error;
+        return false;
+      }
+      const auto& info = response.result;
+      if (!info.is_object() || !info.contains("private_keys_enabled") || !info["private_keys_enabled"].is_boolean() ||
+          !info.contains("descriptors") || !info["descriptors"].is_boolean() ||
+          !info.contains("external_signer") || !info["external_signer"].is_boolean()) return malformed();
+      wallet.private_keys_enabled = info["private_keys_enabled"].get<bool>();
+      wallet.descriptor_wallet = info["descriptors"].get<bool>();
+      wallet.external_signer = info["external_signer"].get<bool>();
+      if (!address.empty()) {
+        if (!call("getaddressinfo",nlohmann::json::array({address}),wallet.name)) {
+          wallet.error = *error;
+          return false;
+        }
+        const auto& address_info = response.result;
+        if (!address_info.is_object() || !address_info.contains("ismine") || !address_info["ismine"].is_boolean() ||
+            !address_info.contains("scriptPubKey") || !address_info["scriptPubKey"].is_string() ||
+            (address_info.contains("iswatchonly") && !address_info["iswatchonly"].is_boolean())) return malformed();
+        std::vector<uint8_t> script;
+        QuietProofScriptKind kind;
+        std::array<uint8_t,20> hash{};
+        if (!DecodeHex(address_info["scriptPubKey"].get<std::string>(),&script) ||
+            !QuietProofClassifyScript(script,&kind,&hash)) return malformed();
+        wallet.request_matches = address_info["ismine"].get<bool>() &&
+            (!address_info.contains("iswatchonly") || !address_info["iswatchonly"].get<bool>()) && hash == match->program &&
+            std::find(match->script_kinds.begin(),match->script_kinds.end(),kind) != match->script_kinds.end();
+      }
+    }
+    ClearError(error);
+    return true;
+  } catch (...) { return malformed(); }
+}
 
 bool BitcoinCoreRpc::ExportAddressKey(
     const std::string& requested_wallet, const std::string& requested_address,
