@@ -121,6 +121,7 @@ void DrawNodeProbe(nk_context* context, ShellState& state, float width, float ac
     }
   }
   if (selection) {
+    state.CancelWalletInput();
     state.node_probe.Invalidate();
     state.node_selection.swap(selection);
     state.test_node = true;
@@ -243,6 +244,54 @@ void DrawRequestReview(nk_context* context, ShellState& state, float width, floa
 }
 }  // namespace
 
+namespace {
+bool WalletReady(const ShellState& state) {
+  return state.request.loaded && RequestWindowAt(state.request.loaded->statement,state.now) == RequestWindow::Valid &&
+    state.node_probe.result && state.node_probe.result->selected_wallet &&
+    state.node_probe.result->complete && state.node_probe.result->probe.syncing == false &&
+    !state.node_busy && !state.wallet_busy;
+}
+void DrawWalletDialog(nk_context* context, ShellState& state, int width, int height,
+                      nk_user_font* body, nk_user_font* heading) {
+  const auto p = BrandPalette(state.preferences.dark);
+  const float action = body->height+22;
+  if (nk_begin(context,"Private wallet input",nk_rect(0,0,width,height),NK_WINDOW_NO_SCROLLBAR)) {
+    nk_edit_unfocus(context);
+    Heading(context,"Unlock selected wallet",heading,body);
+    nk_layout_row_dynamic(context,std::max(120.0f,height-action*4-heading->height-90),1);
+    if (nk_group_scrolled_begin(context,&state.wallet_scroll,"Unlock information",NK_WINDOW_BORDER)) {
+      const float available = nk_window_get_content_region_size(context).x;
+      const auto wallet = state.wallet_job && state.wallet_job->wallet ? *state.wallet_job->wallet : "";
+      ReviewField(context,"Selected RPC wallet",wallet.empty() ? "Default unnamed wallet" : RequestDisplayText(wallet),available);
+      Paragraph(context,"Wallet password only. RPC cookie authentication is separate.",available);
+      Paragraph(context,"One 15-second unlock, then relock. Other wallet clients can change this timer.",available);
+      Paragraph(context,"Typing only, up to 1024 UTF-8 bytes. Paste, copy, cut and undo are disabled. Backspace removes a character; Delete clears.",available);
+      if (!state.wallet_status.empty()) Paragraph(context,state.wallet_status.c_str(),available);
+      nk_group_scrolled_end(context);
+    }
+    nk_layout_row_dynamic(context,body->height+10,1);
+    nk_label(context,"Wallet password",NK_TEXT_LEFT);
+    nk_layout_row_dynamic(context,action,1);
+    // Nuklear sees only a mask. No nk_edit buffer or undo storage ever holds
+    // the input. Appending/backspace happens directly from intercepted SDL.
+    const std::string mask = state.wallet_input->Size() ? std::string(std::min<size_t>(24,state.wallet_input->Size()),'*') : "Type password here";
+    state.focus = 0;
+    if (Button(context,state,301,mask.c_str(),state.wallet_focus == 0)) state.wallet_focus = 0;
+    nk_layout_row_dynamic(context,action,2);
+    if (Button(context,state,302,"Unlock once",state.wallet_focus == 1) && state.wallet_input->Size()) {
+      state.wallet_prompt = false; state.private_input_guard = true; state.submit_wallet = true;
+    }
+    if (Button(context,state,303,"Cancel",state.wallet_focus == 2)) {
+      state.CancelWalletInput(); state.wallet_status = "Wallet access canceled. Password cleared.";
+    }
+    nk_layout_row_dynamic(context,body->height+8,1);
+    nk_label_colored(context,"LOCAL  /  PRIVATE",NK_TEXT_LEFT,p.soft_text);
+  }
+  nk_end(context);
+  state.activate = 0;
+}
+}
+
 void ShellState::OpenRequest(const std::filesystem::path& path) {
   InvalidateNodeProbe();
   request.Open(path);
@@ -289,6 +338,8 @@ void HandleShellKey(ShellState& state, const SDL_KeyboardEvent& key) {
         order.push_back(15);
         for (size_t i = 0; i < state.chooser.entries.size(); ++i) order.push_back(16 + static_cast<int>(i));
       } else {
+        if (WalletReady(state)) order.push_back(304);
+        if (state.wallet_busy) order.push_back(305);
         if (state.request.loaded) order.push_back(272);
         order.push_back(10);
         order.push_back(11);
@@ -311,7 +362,7 @@ void HandleShellKey(ShellState& state, const SDL_KeyboardEvent& key) {
         order.push_back(276);
       }
       order.push_back(10);
-      if (!state.node_busy) order.push_back(11);
+      if (!state.node_busy && !state.wallet_busy) order.push_back(11);
     }
     auto iterator = std::find(order.begin(), order.end(), state.focus);
     int index = iterator == order.end() ? ((key.keysym.mod & KMOD_SHIFT) ? 0 : -1) :
@@ -337,6 +388,7 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
                nk_user_font* body, nk_user_font* heading) {
   ApplyTheme(context, state.preferences.dark);
   nk_style_set_font(context, body);
+  if (state.wallet_prompt) { DrawWalletDialog(context,state,width,height,body,heading); return; }
   const auto p = BrandPalette(state.preferences.dark);
   const float action_height = body->height + 20;
   const float header_height = heading->height + 12;
@@ -396,6 +448,20 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
         const auto index=static_cast<int>(state.view);
         Heading(context,state.view == View::Request && state.chooser.open ? "Choose a file" : titles[index],heading,body);
         if (state.view == View::Request) {
+          if (!state.wallet_warning.empty()) Paragraph(context,state.wallet_warning.c_str(),content_width);
+          if (WalletReady(state)) {
+            nk_layout_row_dynamic(context,action_height,1);
+            if (Button(context,state,304,"Prove: approve wallet access")) state.prove_wallet = true;
+            Paragraph(context,"Approval permits only this request's matching key. Proof generation follows in a later release.",content_width);
+          }
+          if (state.wallet_busy) {
+            Paragraph(context,"Checking wallet access on the worker. You can cancel; an in-flight RPC finishes before cleanup.",content_width);
+            nk_layout_row_dynamic(context,action_height,1);
+            if (Button(context,state,305,"Cancel wallet access")) {
+              state.CancelWalletInput(); state.wallet_status = "Wallet access canceled. Password cleared.";
+            }
+          }
+          if (!state.wallet_status.empty()) Paragraph(context,state.wallet_status.c_str(),content_width);
           if (!state.chooser.open && state.request.loaded) DrawRequestReview(context,state,content_width,action_height);
           if (!state.chooser.open && !state.request.loaded) Paragraph(context,state.request.error != RequestError::None ? state.request.Message() :
               "Choose a request file or enter its path. Files are checked locally before wallet access.",content_width);
@@ -471,7 +537,9 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
       state.scroll.y = static_cast<nk_uint>(std::max(0, static_cast<int>(state.scroll.y) + scroll_delta));
     }
     nk_layout_row_dynamic(context,status_height,1);
-    if (state.view == View::Settings) {
+    if (!state.wallet_warning.empty()) {
+      nk_label_wrap(context,"Wallet cleanup needs attention. Open Request for the captured wallet and details.");
+    } else if (state.view == View::Settings) {
       nk_label_wrap(context,state.preference_status.empty() ? "Theme and text size only. No wallet access." : state.preference_status.c_str());
     } else {
       const char* statuses[] = {state.request.error != RequestError::None ? "Request rejected. Recovery details above." :
@@ -489,7 +557,7 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
       if (Button(context,state,11,"Open request",true)) {
         state.OpenRequest(std::filesystem::path(state.request_path.data()));
       }
-    } else if (state.view == View::Node && !state.node_busy) {
+    } else if (state.view == View::Node && !state.node_busy && !state.wallet_busy) {
       if (Button(context,state,11,"Test connection",true)) {
         state.test_node = true;
         state.node_advanced = false;

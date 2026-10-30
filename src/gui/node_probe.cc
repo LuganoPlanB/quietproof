@@ -1,4 +1,5 @@
 #include "node_probe.h"
+#include "wallet_session.h"
 
 #include <algorithm>
 
@@ -73,11 +74,12 @@ bool NodeProbeState::Accept(NodeProbeResult value) {
   result = std::move(value);
   return true;
 }
-NodeProbeWorker::~NodeProbeWorker() { if (thread_.joinable()) thread_.join(); }
+NodeProbeWorker::NodeProbeWorker() = default;
+NodeProbeWorker::~NodeProbeWorker() { CancelWallet(); if (thread_.joinable()) thread_.join(); }
 bool NodeProbeWorker::Start(NodeProbeJob job) {
   if (running_.load()) return false;
   if (thread_.joinable()) thread_.join();
-  { std::lock_guard lock(mutex_); result_.reset(); }
+  { std::lock_guard lock(mutex_); result_.reset(); wallet_result_.reset(); }
   running_.store(true);
   try {
     thread_ = std::thread([this,job=std::move(job)] {

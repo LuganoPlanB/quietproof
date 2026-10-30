@@ -1437,6 +1437,24 @@ void TestRotation(const std::string& url, const std::string& cookie) {
   WriteCookie(cookie, "__cookie__:rotated-secret");
   TestHttp(url, cookie, "ok");
 }
+void TestJsonErasure() {
+  HttpBuffers partial;
+  std::string fragment(64,static_cast<char>(67));
+  Require(HttpBodyCallback(fragment.data(),1,fragment.size(),&partial) == fragment.size(),
+          "partial HTTP body buffered before transport failure");
+  partial.EraseBody();
+  Require(partial.body.size() == fragment.size() &&
+          std::all_of(partial.body.begin(),partial.body.end(),[](char byte) { return byte == 0; }),
+          "owned partial HTTP response erasure");
+  nlohmann::json value = {{"credential",std::string(32,static_cast<char>(65))},
+      {"nested",nlohmann::json::array({std::string(12,static_cast<char>(66)),17,true,nullptr})}};
+  EraseRpcJson(value);
+  for (const auto* text : {&value["credential"].get_ref<const std::string&>(),
+                           &value["nested"][0].get_ref<const std::string&>()})
+    Require(std::all_of(text->begin(),text->end(),[](char byte) { return byte == 0; }),"owned decoded JSON string erasure");
+  Require(value["nested"][1] == 17 && value["nested"][2] == true && value["nested"][3].is_null(),
+          "JSON erasure leaves non-string values intact");
+}
 }  // namespace
 int main(int argc, char** argv) {
   try {
@@ -1446,7 +1464,7 @@ int main(int argc, char** argv) {
     else if (argc == 5 && std::string(argv[1]) == "--http") TestHttp(argv[2], argv[3], argv[4]);
     else if (argc == 5 && std::string(argv[1]) == "--rpc") TestClientHttp(argv[2], argv[3], argv[4]);
     else if (argc == 4 && std::string(argv[1]) == "--rotate") TestRotation(argv[2], argv[3]);
-    else if (argc == 1) { TestConfig(); TestCallbacks(); TestCookies(); TestEnvelopes(); TestExactMoney(); TestRequests(); TestLookup(); TestProviderParity(); TestVerifierParity(); TestDiscovery(); TestWalletDiscovery(); TestTypedDiscovery(); }
+    else if (argc == 1) { TestConfig(); TestCallbacks(); TestCookies(); TestEnvelopes(); TestExactMoney(); TestRequests(); TestLookup(); TestProviderParity(); TestVerifierParity(); TestDiscovery(); TestWalletDiscovery(); TestTypedDiscovery(); TestJsonErasure(); }
     else throw std::runtime_error("invalid test arguments");
     std::cout << "RPC adapter checks passed\n";
     return 0;

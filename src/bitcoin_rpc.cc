@@ -187,6 +187,11 @@ bool EqualsAsciiCase(std::string_view a, std::string_view b) {
 bool SecureCookieMetadata(mode_t mode, uid_t owner, uid_t effective_user) {
   return S_ISREG(mode) && owner == effective_user && (mode & 077) == 0;
 }
+void HttpBuffers::EraseBody() noexcept {
+  volatile char* bytes = body.data();
+  for (size_t i = 0; i < body.size(); ++i) bytes[i] = 0;
+}
+HttpBuffers::~HttpBuffers() { EraseBody(); }
 
 bool ResolveRpcConfig(const BitcoinCoreRpcConfig& config,
                       ResolvedRpcConfig* output, BitcoinRpcError* error) {
@@ -896,6 +901,20 @@ bool BitcoinCoreRpc::ExportAddressKey(
     const std::array<uint8_t, 20>& expected_program,
     const std::vector<QuietProofScriptKind>& script_kinds,
     std::array<uint8_t, 32>* secret, BitcoinRpcError* error) {
+  return ExportAddressKeyImpl(requested_wallet, requested_address, expected_program,
+                             script_kinds, secret, error, true);
+}
+bool BitcoinCoreRpc::ExportSelectedAddressKey(const std::string& wallet,
+    const BitcoinRpcKeyMatch& match, std::array<uint8_t, 32>* secret, BitcoinRpcError* error,
+    const std::function<bool()>& stop) {
+  return ExportAddressKeyImpl(wallet, {}, match.program, match.script_kinds, secret, error, false, stop);
+}
+bool BitcoinCoreRpc::ExportAddressKeyImpl(
+    const std::string& requested_wallet, const std::string& requested_address,
+    const std::array<uint8_t, 20>& expected_program,
+    const std::vector<QuietProofScriptKind>& script_kinds,
+    std::array<uint8_t, 32>* secret, BitcoinRpcError* error, bool select_sole,
+    const std::function<bool()>& stop) {
   using namespace bitcoin_rpc_internal;
   using namespace quietproof_internal;
   auto fail = [&](BitcoinRpcErrorCode code, const char* message) {
@@ -920,23 +939,23 @@ bool BitcoinCoreRpc::ExportAddressKey(
   // libraries may retain copies; this is not a guarantee of complete erasure.
   struct EraseResult {
     nlohmann::json& result;
-    ~EraseResult() {
-      if (result.is_object() && result.contains("private_key_hex") &&
-          result["private_key_hex"].is_string()) {
-        auto& text = result["private_key_hex"].get_ref<std::string&>();
-        volatile char* bytes = text.data();
-        for (size_t i = 0; i < text.size(); ++i) bytes[i] = 0;
-      }
-    }
+    ~EraseResult() { EraseRpcJson(result); }
   } erase{response.result};
   try {
     auto& client = impl_->client_;
+    auto stopped = [&] {
+      if (!stop || !stop()) return false;
+      fail(BitcoinRpcErrorCode::kInconclusive,"Address-key export canceled before key access");
+      return true;
+    };
+    if (stopped()) return false;
     if (!client.Call("getblockchaininfo", nlohmann::json::array(), false, &response, error)) return false;
     Tip tip;
     if (!ParseTipFields(response.result, &tip))
       return fail(BitcoinRpcErrorCode::kMalformed, "Node tip is malformed");
     if (tip.chain != QuietProofBitcoinCoreChainName(client.config().network))
       return fail(BitcoinRpcErrorCode::kWrongNetwork, "Bitcoin node network does not match request");
+    if (stopped()) return false;
     if (!client.Call("validateaddress", nlohmann::json::array({address}), false, &response, error)) return false;
     const auto& validated = response.result;
     std::vector<uint8_t> script;
@@ -951,7 +970,8 @@ bool BitcoinCoreRpc::ExportAddressKey(
       return fail(BitcoinRpcErrorCode::kUnsupportedScript, "Address script kind does not match the request; no key exported");
     if (key_hash != expected_program)
       return fail(BitcoinRpcErrorCode::kInvalidAddress, "Address does not match the request; no key exported");
-    if (wallet.empty()) {
+    if (stopped()) return false;
+    if (wallet.empty() && select_sole) {
       if (!client.Call("listwallets", nlohmann::json::array(), false, &response, error)) return false;
       if (!response.result.is_array())
         return fail(BitcoinRpcErrorCode::kMalformed, "Malformed loaded wallet list");
@@ -985,6 +1005,77 @@ bool BitcoinCoreRpc::ExportAddressKey(
   } catch (...) {
     return fail(BitcoinRpcErrorCode::kMalformed, "Address-key export failed; private diagnostics suppressed");
   }
+}
+bool BitcoinCoreRpc::WalletState(const std::string& wallet,
+    BitcoinRpcWalletState* state, BitcoinRpcError* error) {
+  using namespace bitcoin_rpc_internal;
+  if (!state) return Fail(error, BitcoinRpcErrorCode::kConfiguration, "Missing wallet state output");
+  RpcDecodedResponse response;
+  if (!impl_->client_.Call("getwalletinfo", nlohmann::json::array(), false, &response, error, wallet)) return false;
+  const auto& info = response.result;
+  if (!info.is_object()) return Fail(error, BitcoinRpcErrorCode::kMalformed, "Malformed wallet state");
+  if (!info.contains("unlocked_until")) { *state = BitcoinRpcWalletState::kUnencrypted; return true; }
+  const auto& until = info["unlocked_until"];
+  if ((!until.is_number_integer() && !until.is_number_unsigned()) ||
+      (until.is_number_integer() && !until.is_number_unsigned() && until.get<int64_t>() < 0))
+    return Fail(error, BitcoinRpcErrorCode::kMalformed, "Malformed wallet unlock time");
+  *state = until == 0 ? BitcoinRpcWalletState::kLocked : BitcoinRpcWalletState::kUnlocked;
+  return true;
+}
+namespace {
+void WalletError(BitcoinRpcError* error) {
+  if (!error) return;
+  if (error->rpc_code == -14) {
+    error->code = BitcoinRpcErrorCode::kWrongPassphrase;
+    error->message = "Wallet password rejected. Retry explicitly; no password was saved";
+  } else if (error->rpc_code == -13) {
+    error->code = BitcoinRpcErrorCode::kWalletLocked;
+    error->message = "Wallet is locked. Approve a new attempt explicitly";
+  } else if (error->rpc_code == -32601 || error->rpc_code == -15) {
+    error->code = BitcoinRpcErrorCode::kUnsupportedWallet;
+    error->message = "Wallet unlock operation is unsupported for this wallet";
+  }
+}
+}
+bool BitcoinCoreRpc::UnlockWallet(const std::string& wallet, std::span<const char> passphrase,
+    std::chrono::seconds lease, BitcoinRpcError* error) {
+  using namespace bitcoin_rpc_internal;
+  if (passphrase.empty() || passphrase.size() > 1024 || lease.count() < 1 || lease.count() > 30)
+    return Fail(error, BitcoinRpcErrorCode::kConfiguration, "Invalid bounded wallet unlock input");
+  nlohmann::json params = nlohmann::json::array();
+  struct Erase {
+    nlohmann::json& params;
+    ~Erase() {
+      if (!params.empty() && params[0].is_string()) {
+        auto& text = params[0].get_ref<std::string&>();
+        volatile char* p = text.data();
+        for (size_t i = 0; i < text.size(); ++i) p[i] = 0;
+      }
+    }
+  } erase{params};
+  try {
+    params.push_back("");
+    params[0].get_ref<std::string&>().assign(passphrase.data(), passphrase.size());
+    params.push_back(lease.count());
+    RpcDecodedResponse response;
+    struct EraseResponse {
+      nlohmann::json& value;
+      ~EraseResponse() { EraseRpcJson(value); }
+    } erase_response{response.result};
+    if (!impl_->client_.Call("walletpassphrase", params, false, &response, error, wallet)) {
+      WalletError(error);
+      return false;
+    }
+    if (!response.result.is_null()) return Fail(error, BitcoinRpcErrorCode::kMalformed, "Malformed wallet unlock acknowledgement");
+    return true;
+  } catch (...) { return Fail(error, BitcoinRpcErrorCode::kConfiguration, "Wallet unlock failed; private diagnostics suppressed"); }
+}
+bool BitcoinCoreRpc::LockWallet(const std::string& wallet, BitcoinRpcError* error) {
+  using namespace bitcoin_rpc_internal;
+  RpcDecodedResponse response;
+  if (!impl_->client_.Call("walletlock", nlohmann::json::array(), false, &response, error, wallet)) return false;
+  if (!response.result.is_null()) return Fail(error, BitcoinRpcErrorCode::kMalformed, "Malformed wallet lock acknowledgement");
+  return true;
 }
 QuietProofProviderKind BitcoinCoreRpc::kind() const {
   return QuietProofProviderKind::kCurrentTip;

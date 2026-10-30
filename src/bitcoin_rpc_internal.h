@@ -32,6 +32,9 @@ bool PostRpcHttp(const BitcoinCoreRpcConfig&, const std::string& request,
 bool SecureCookieMetadata(mode_t mode, uid_t owner, uid_t effective_user);
 
 struct HttpBuffers {
+  ~HttpBuffers();
+  // Also covers partial bodies discarded on transport/encoding/size failure.
+  void EraseBody() noexcept;
   std::string body;
   std::size_t header_bytes = 0;
   bool too_large = false;

@@ -6,6 +6,8 @@
 #include "request_review.h"
 #include "node_settings.h"
 #include "node_probe.h"
+#include "wallet_session.h"
+#include "private_input.h"
 
 #include <array>
 #include <string>
@@ -30,8 +32,26 @@ struct ShellState {
   NodeProbeState node_probe;
   bool node_busy = false;
   bool test_node = false;
+  bool prove_wallet = false;
+  bool submit_wallet = false;
+  bool cancel_wallet = false;
+  bool wallet_busy = false;
+  bool wallet_prompt = false;
+  bool private_input_guard = false;
+  int wallet_focus = 0;
+  nk_scroll wallet_scroll{};
+  std::unique_ptr<PrivateInput> wallet_input = std::make_unique<PrivateInput>();
+  std::optional<WalletSessionJob> wallet_job;
+  std::string wallet_status;
+  std::string wallet_warning;
+  void CancelWalletInput() {
+    private_input_guard = private_input_guard || wallet_prompt || wallet_busy || wallet_input->Size() != 0;
+    wallet_input->Clear(); wallet_prompt = false; submit_wallet = false;
+    cancel_wallet = true; wallet_job.reset();
+    wallet_status.clear();
+  }
   std::optional<std::string> node_selection;
-  void InvalidateNodeProbe() { node_probe.Invalidate(); node_selection.reset(); }
+  void InvalidateNodeProbe() { node_probe.Invalidate(); node_selection.reset(); CancelWalletInput(); }
   int64_t now = 0;
   RequestState request;
   RequestChooser chooser;
@@ -39,7 +59,7 @@ struct ShellState {
   void OpenRequest(const std::filesystem::path& path);
   std::string preference_status;
   nk_scroll scroll{};
-  std::array<struct nk_rect, 301> controls{};
+  std::array<struct nk_rect, 306> controls{};
 };
 void HandleShellKey(ShellState& state, const SDL_KeyboardEvent& key);
 void DrawShell(nk_context* context, ShellState& state, int width, int height,

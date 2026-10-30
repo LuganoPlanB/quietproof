@@ -23,6 +23,9 @@ struct RpcDecodedResponse {
   nlohmann::json result;
   std::map<std::string, ExactMoney> money;
 };
+// Overwrite owned string values before destruction; parser/allocator internals
+// can retain additional copies. Intended for decoded secret/error values.
+void EraseRpcJson(nlohmann::json&) noexcept;
 bool DecodeRpcResponse(const HttpResponse&, const std::string& expected_id,
                        RpcDecodedResponse*, BitcoinRpcError*);
 using HttpTransport = bool (*)(const BitcoinCoreRpcConfig&, const std::string&,

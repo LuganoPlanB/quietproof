@@ -144,6 +144,16 @@ bool SignedRpcCode(const Json& value, int64_t* output) {
 }
 }  // namespace
 
+void EraseRpcJson(nlohmann::json& value) noexcept {
+  if (value.is_string()) {
+    auto& text = value.get_ref<std::string&>();
+    volatile char* p = text.data();
+    for (size_t i = 0; i < text.size(); ++i) p[i] = 0;
+  } else if (value.is_array() || value.is_object()) {
+    for (auto& child : value) EraseRpcJson(child);
+  }
+}
+
 bool DecodeRpcResponse(const HttpResponse& response, const std::string& expected_id,
                        RpcDecodedResponse* output, BitcoinRpcError* error) {
   if (!output || expected_id.empty())
@@ -160,6 +170,10 @@ bool DecodeRpcResponse(const HttpResponse& response, const std::string& expected
   try {
     if (response.body.find('\0') != std::string::npos) return malformed();
     ResponseSax sax;
+    struct EraseParsedValues {
+      Json& value;
+      ~EraseParsedValues() { EraseRpcJson(value); }
+    } erase{sax.root};
     if (!Json::sax_parse(response.body, &sax, Json::input_format_t::json, true)) return malformed();
     const auto& envelope = sax.root;
     if (!envelope.is_object() || !envelope.contains("jsonrpc") ||
@@ -200,8 +214,27 @@ bool RpcClient::Call(const std::string& method, const Json& params, bool scan,
   if (next_id_ == std::numeric_limits<uint64_t>::max()) exhausted_ = true;
   else ++next_id_;
   try {
-    const Json request = {{"jsonrpc", "2.0"}, {"id", id}, {"method", method}, {"params", params}};
-    const std::string body = request.dump();  // Only REQUESTS are serialized.
+    Json request = {{"jsonrpc", "2.0"}, {"id", id}, {"method", method}};
+    std::string body;
+    struct EraseUnlockRequest {
+      Json& request;
+      std::string& body;
+      bool sensitive;
+      ~EraseUnlockRequest() {
+        if (!sensitive) return;
+        const auto parameters = request.find("params");
+        if (parameters != request.end() && parameters->is_array() &&
+            !parameters->empty() && (*parameters)[0].is_string()) {
+          auto& text = (*parameters)[0].get_ref<std::string&>();
+          volatile char* p = text.data();
+          for (size_t i = 0; i < text.size(); ++i) p[i] = 0;
+        }
+        volatile char* p = body.data();
+        for (size_t i = 0; i < body.size(); ++i) p[i] = 0;
+      }
+    } erase_request{request, body, method == "walletpassphrase" && !params.empty() && params[0].is_string()};
+    request["params"] = params;
+    body = request.dump();  // Only REQUESTS are serialized.
     HttpResponse response;
     struct EraseExportBody {
       HttpResponse& response;
@@ -211,7 +244,7 @@ bool RpcClient::Call(const std::string& method, const Json& params, bool scan,
         volatile char* bytes = response.body.data();
         for (size_t i = 0; i < response.body.size(); ++i) bytes[i] = 0;
       }
-    } erase{response, method == "exportaddresskey"};
+    } erase{response, method == "exportaddresskey" || method == "walletpassphrase"};
     BitcoinRpcError transport_error;
     const bool received = transport_(config_, body, scan, &response, &transport_error, wallet);
     if (!received && (transport_error.code != BitcoinRpcErrorCode::kHttp || response.status == 0)) {

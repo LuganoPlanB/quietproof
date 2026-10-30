@@ -8,6 +8,9 @@
 #include <thread>
 
 namespace quietproof::gui {
+struct WalletSessionJob;
+struct WalletSessionResult;
+class PrivateInput;
 struct NodeProbeJob {
   uint64_t revision;
   NodeConfiguration configuration;
@@ -36,13 +39,19 @@ struct NodeProbeState {
   void Invalidate();
   bool Accept(NodeProbeResult);
 };
-// One job and one result maximum. Worker constructs/owns its sequential RPC.
-// Destruction joins; no detached work or SDL/Nuklear access. Total RPC budget
-// bounds shutdown (default ten seconds), including every enumerated wallet.
+// One RPC job maximum, shared by capability probes and wallet sessions. Worker
+// owns RPC/password/key; result metadata only crosses to the UI. Destruction
+// cancels the wallet session and joins; no detached work or SDL/Nuklear access.
+// Probe budget is ten seconds. Wallet shutdown settles its bounded call, then
+// attempts captured-wallet cleanup; see wallet_session.h.
 class NodeProbeWorker {
  public:
+  NodeProbeWorker();
   ~NodeProbeWorker();
   bool Start(NodeProbeJob);
+  bool StartWallet(WalletSessionJob, std::unique_ptr<PrivateInput>);
+  void CancelWallet() { canceled_.store(true); }
+  std::unique_ptr<WalletSessionResult> PollWallet();
   bool Running() const { return running_.load(); }
   std::optional<NodeProbeResult> Poll();
  private:
@@ -50,5 +59,7 @@ class NodeProbeWorker {
   std::thread thread_;
   std::mutex mutex_;
   std::optional<NodeProbeResult> result_;
+  std::unique_ptr<WalletSessionResult> wallet_result_;
+  std::atomic<bool> canceled_{false};
 };
 }  // namespace quietproof::gui
