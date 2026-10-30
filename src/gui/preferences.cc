@@ -29,8 +29,13 @@ bool SavePreferences(const std::filesystem::path& path, DisplayPreferences prefe
   if (path.empty() || preferences.font_index < 0 || preferences.font_index > 2) return false;
   const std::string contents = std::string("theme=") + (preferences.dark ? "dark" : "light") +
                                "\nfont=" + char('0' + preferences.font_index) + "\n";
+  return SavePrivatePreferences(path, contents);
+}
+
+bool SavePrivatePreferences(const std::filesystem::path& path, std::string_view contents) {
+  if (path.empty()) return false;
 #ifndef _WIN32
-  // Exclusive temporary creation keeps the nonsecret display file atomic and private.
+  // Exclusive temporary creation keeps nonsecret preferences atomic and private.
   std::string pattern = path.string() + ".XXXXXX";
   std::vector<char> temporary(pattern.begin(), pattern.end());
   temporary.push_back('\0');

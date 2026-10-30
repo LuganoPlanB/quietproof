@@ -97,6 +97,7 @@ std::vector<TestEvent> ReadTestEvents(const std::filesystem::path& path) {
     else if (line=="pageup") event.key=SDLK_PAGEUP;
     else if (line=="home") event.key=SDLK_HOME;
     else if (line=="end") event.key=SDLK_END;
+    else if (line=="wait") event.key=SDLK_UNKNOWN;
     else if (line=="escape") event.key=SDLK_ESCAPE;
     else if (line.starts_with("text ")) {
       event.text = line.substr(5);
@@ -173,7 +174,10 @@ int Run(const Options& options) {
   if (SDL_RenderSetLogicalSize(renderer.get(),options.width,options.height)!=0) SdlError("Set logical size");
   const auto preference_path=PreferencePath();
   ShellState state;
+  NodeProbeWorker node_worker;
   state.preferences=LoadPreferences(preference_path);
+  const auto node_path = preference_path.empty() ? std::filesystem::path{} : preference_path.parent_path()/"node.conf";
+  state.node_settings=LoadNodeSettings(node_path,&state.node_settings_status);
   if (options.theme_override) state.preferences.dark=options.dark;
   if (options.font_override) state.preferences.font_index=options.font_scale==1.5f ? 2 : options.font_scale==1.25f ? 1 : 0;
   if (options.settings) {state.view=View::Settings;state.focus=5;}
@@ -248,11 +252,30 @@ int Run(const Options& options) {
     const int font_index=state.preferences.font_index;
     state.now = options.test_now.value_or(std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count());
+    state.node_busy = node_worker.Running();
+    if (auto result = node_worker.Poll()) state.node_probe.Accept(std::move(*result));
     DrawShell(nuklear.context,state,width,height,&body[font_index]->handle,&heading[font_index]->handle);
+    if (state.test_node) {
+      state.test_node = false;
+      const auto network = state.request.loaded ? state.request.loaded->statement.network : state.node_network;
+      std::string error;
+      if (auto configuration = ConfigureNode(state.node_settings,network,&error)) {
+        state.node_probe.Invalidate();
+        NodeProbeJob job{state.node_probe.revision,std::move(*configuration),{},bool(state.request.loaded),state.node_selection};
+        if (state.request.loaded) job.match = MatchRequest(*state.request.loaded);
+        if (!node_worker.Start(std::move(job))) state.node_settings_status = "Connection test already running or worker unavailable.";
+      } else state.node_settings_status = error;
+    }
     if (state.save_preferences) {
       state.preference_status=SavePreferences(preference_path,state.preferences) ?
         "Display preferences saved on this device." : "Display preferences could not be saved.";
       state.save_preferences=false;
+    }
+    if (state.save_node_settings) {
+      state.node_settings_status=SaveNodeSettings(node_path,state.node_settings) ?
+          "Nonsecret connection settings saved on this device." :
+          "Settings not saved. Check fields and local file permissions.";
+      state.save_node_settings=false;
     }
     const auto canvas = BrandPalette(state.preferences.dark).canvas;
     SDL_SetRenderDrawColor(renderer.get(), canvas.r, canvas.g, canvas.b, 255);
@@ -272,6 +295,18 @@ int Run(const Options& options) {
     std::cout << "GUI smoke: " << frames << " frames; orderly SDL_QUIT; font="
               << (native_font ? "Inter" : "builtin") << '\n';
   if (options.smoke_test) {
+    const auto node_network = state.request.loaded ? state.request.loaded->statement.network : state.node_network;
+    std::cout << "GUI node: network=" << proofs::QuietProofNetworkName(node_network)
+              << " configured=" << bool(ConfigureNode(state.node_settings,node_network,nullptr))
+              << " advanced=" << state.node_advanced << '\n';
+    std::cout << "GUI probe: busy=" << state.node_busy << " report=" << bool(state.node_probe.result)
+              << " revision=" << state.node_probe.revision;
+    if (state.node_probe.result)
+      std::cout << " authenticated=" << state.node_probe.result->probe.authenticated
+                << " complete=" << state.node_probe.result->complete
+                << " selected=" << bool(state.node_probe.result->selected_wallet)
+                << " error=" << static_cast<int>(state.node_probe.result->error.code);
+    std::cout << '\n';
     std::cout << "GUI request: loaded=" << bool(state.request.loaded)
               << " error=" << static_cast<int>(state.request.error)
               << " revision=" << state.request.revision << " chooser=" << state.chooser.open

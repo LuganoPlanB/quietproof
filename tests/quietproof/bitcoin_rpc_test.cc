@@ -45,6 +45,10 @@ void TestConfig() {
     Require(ResolveRpcConfig(config, &result, &error), "default network config");
     Require(result.url == std::string("http://127.0.0.1:") + ports[i] + "/", "network port");
     Require(result.cookie_path == std::string("/explicit-data/") + paths[i], "network cookie");
+    BitcoinRpcSettings public_settings;
+    Require(ResolveBitcoinRpcSettings(config,&public_settings,&error) &&
+            public_settings.url == result.url && public_settings.cookie_path == result.cookie_path,
+            "public nonsecret settings match transport");
     config.rpc_cookie = "/explicit-cookie";
     Require(ResolveRpcConfig(config, &result, &error), "explicit cookie");
     Require(result.cookie_path == config.rpc_cookie, "explicit cookie precedence");
@@ -76,6 +80,13 @@ void TestConfig() {
     Require(error.message.find(url) == std::string::npos, "URL leaked in error");
   }
   config.rpc_url = std::string("http://127.0.0.1\0.example/", 26);
+  BitcoinRpcSettings public_settings{"unchanged","unchanged"};
+  BitcoinRpcError public_error;
+  Require(!ResolveBitcoinRpcSettings(config,&public_settings,&public_error) &&
+          public_settings.url == "unchanged" && public_error.code == BitcoinRpcErrorCode::kConfiguration,
+          "public settings failure preserves output");
+  Require(!ResolveBitcoinRpcSettings(Config(),nullptr,&public_error) &&
+          public_error.code == BitcoinRpcErrorCode::kConfiguration,"public settings null output");
   ResolvedRpcConfig output;
   Require(!ResolveRpcConfig(config, &output, nullptr), "NUL URL accepted");
   config = Config();

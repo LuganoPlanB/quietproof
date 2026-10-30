@@ -13,8 +13,60 @@ ctest --test-dir build-gui -R '^quietproof-gui-' --output-on-failure
 
 GUI defaults OFF. Its SDL/Nuklear dependencies do not enter exported library
 targets, CLI-only or WASI configurations. GUI ON with RPC OFF is rejected.
-The application opens existing v1/v2 request files for local review. It does
-not yet connect to wallets or generate proofs.
+The application opens existing v1/v2 request files for local review and tests
+local RPC connectivity and wallet capabilities. Proof generation is not yet available.
+
+Node shows the loaded request's network explicitly. Without a request, Change
+test network selects a network for connection testing only. Defaults use numeric
+localhost (127.0.0.1), the network's RPC port (8332/18332/38332/18443/48332 for
+mainnet/testnet3/signet/regtest/testnet4) and its cookie under the Bitcoin data
+directory (Linux `~/.bitcoin`). These match Bitcoin Roots v31.1-roots.3.
+Advanced settings accept localhost or numeric loopback hosts, port, data
+directory, explicit cookie path, loaded wallet name and connect/RPC timeouts
+(milliseconds, at most 60000). Non-loopback hosts, URL syntax and credentials in
+hosts are rejected by the same endpoint validation used by the RPC transport.
+No redirects are followed. This GUI uses cookie authentication only.
+
+Blank fields inherit defaults. An explicit cookie path takes precedence over
+data directory; blank port follows the request network. Explicit overrides
+survive request/network changes until cleared or Reset overrides.
+Save stores only these nonsecret choices in `Plan-B/quietproof/node.conf`,
+atomically with owner-only permissions on Linux. Reset also saves defaults.
+Malformed, excessive or unknown config fields restore defaults with a visible
+message. Neither cookie contents nor wallet passwords are read or persisted by
+configuration; the transport reopens its owner-only cookie on every call, so
+rotation after a node restart is supported. Custom node configuration such as
+`-rpccookiefile`, `-datadir` or `-rpcport` must be reflected in these overrides;
+the GUI does not parse bitcoin.conf. Connection success alone never establishes
+proof readiness.
+
+Test connection runs on one worker that owns its sequential RPC instance.
+The main thread continues handling SDL/Nuklear events. Authentication, numeric
+node version, node chain versus request network, initial-block-download state,
+loaded wallets and advertised exportaddresskey support are reported separately.
+Help advertisement is a capability observation, not a successful key export.
+Core nodes without that method show explicit unsupported-proving guidance;
+full Core wallet proving remains deferred. Test connection never unlocks a
+wallet, calls exportaddresskey, or exports descriptors/private keys.
+
+For supported single-key requests (including mixed P2PKH/P2WPKH claims with
+the same key hash), the probe derives the matching address and checks its
+script and network, then checks each wallet's public ownership information.
+Watch-only/private-key-disabled, legacy/non-descriptor, external-signer or nonmatching wallets
+are ineligible for the current Roots export provider.
+Only one eligible loaded wallet is selected automatically. With several,
+select a wallet in the report; it is tested again. An explicit advanced wallet
+name counts as a selection. The default unnamed wallet is also supported.
+Unsupported requests and mismatched networks cannot establish readiness.
+These checks do not test current-chain claims, unlock state or actual key
+availability; proving still requires later explicit approval and validation.
+
+Each test inspects at most 16 loaded wallets and has a ten-second total
+budget; configured connect/RPC timeouts can shorten individual calls. No scan
+RPC runs. Changed settings, network, wallet selection or request invalidate
+results, and late results are discarded. One job runs at a time; a later test
+waits for the current bounded test to finish. Closing joins the worker and
+may take the remaining time budget (up to ten seconds); no thread is detached.
 
 Use Browse files for the built-in, keyboard-accessible file chooser, enter a
 file path and press Enter/Open request, drop a file onto the window, or launch
