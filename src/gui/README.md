@@ -14,7 +14,8 @@ ctest --test-dir build-gui -R '^quietproof-gui-' --output-on-failure
 GUI defaults OFF. Its SDL/Nuklear dependencies do not enter exported library
 targets, CLI-only or WASI configurations. GUI ON with RPC OFF is rejected.
 The application opens existing v1/v2 request files for local review and tests
-local RPC connectivity and wallet capabilities. Proof generation is not yet available.
+local RPC connectivity and wallet capabilities. Explicit Prove approval can
+validate matching RPC key access; proof generation is not yet available.
 
 Node shows the loaded request's network explicitly. Without a request, Change
 test network selects a network for connection testing only. Defaults use numeric
@@ -60,6 +61,77 @@ name counts as a selection. The default unnamed wallet is also supported.
 Unsupported requests and mismatched networks cannot establish readiness.
 These checks do not test current-chain claims, unlock state or actual key
 availability; proving still requires later explicit approval and validation.
+
+The worker-only wallet session API rechecks the immutable request's validity,
+network, supported script, selected loaded wallet and public key ownership after
+explicit Prove intent. A selected empty wallet name is an explicit identity,
+even with several loaded wallets. It uses Roots `exportaddresskey`; descriptor
+wallets are never assumed to support Core `dumpprivkey`. After Test connection,
+return to Request and choose **Prove: approve wallet access**. No manual key
+entry/import is exposed. In this milestone a validated key is promptly erased
+on the worker; the UI does not retain it or present a completed proof.
+
+Only a locked eligible wallet requests a wallet password; cookie authentication
+remains separate. Submission repeats preflight. Already-unlocked and unencrypted
+wallets are exported without changing their lock state. A locked wallet gets one
+15-second `walletpassphrase` lease, no automatic retry or extension, and prompt
+`walletlock` after export, failure, cancellation or invalidation. Cleanup always
+targets the captured wallet, regardless of later UI selection. Returned scalar
+and compressed-key hash are validated against the exact reviewed request before
+the worker retains a key. Failed cleanup discards it. RPC calls are individually
+bounded to at most five seconds; the capability probe has a ten-second total
+budget. An in-flight call settles before cancellation cleanup.
+Cancellation is checked between export preflight RPCs and before key export.
+Request/settings/wallet changes invalidate the captured session; stale results
+cannot reopen a prompt or retain a key. Cleanup warnings retain the old wallet's
+identity even after a selection change. The single worker handles both connection
+tests and wallet sessions, so those jobs cannot overlap. Closing while wallet
+access is active keeps SDL responsive until the bounded call and relock settle.
+If cleanup fails during closing, the window stays open with the warning; closing
+again exits. On other exits the worker is canceled and joined, never detached.
+
+Lock ownership is best effort: Core-style RPC has no atomic compare-and-unlock
+or per-client unlock token. Another client may change state between checks,
+extend the node's timer, or be affected by this app's relock. A lost unlock
+response is uncertain even after a relock acknowledgement: late server processing
+can unlock after that relock. These cases explicitly warn the user to check the
+captured wallet in the node. The node's short timer is a fallback, counted from
+its processing of the unlock, not a guarantee after dispatch or against another
+client. Prefer avoiding concurrent wallet operations in other clients.
+
+The key result is noncopyable and erased on release; owned unlock serialization
+and received export bodies are overwritten with volatile writes. JSON, allocator,
+transport, OS and compiler temporaries can retain other copies. This does not
+protect against a compromised process/host, swap, crash dumps or the node's own
+logging/storage.
+
+Wallet passwords use a dedicated noncopyable 1024-byte buffer. The append-only
+field accepts complete UTF-8 text commits, rejects ASCII control characters and input
+that would exceed capacity, and displays only a mask (at most 24 asterisks).
+Backspace removes and erases one Unicode character; Delete clears the buffer.
+Paste is disabled, including Ctrl/Super+V and Shift+Insert. Copy, cut, undo/redo,
+and selection are unsupported. Tab/Shift+Tab moves between the input, Unlock
+once and Cancel; Enter submits, Escape cancels, and Page Up/Page Down scrolls
+the information panel. IME commits are accepted; intermediate composition is
+discarded rather than displayed. No Nuklear text editor or undo buffer receives
+plaintext. RPC cookie authentication uses its own transport path.
+
+Submission transfers buffer ownership to the worker and clears it immediately
+after unlock RPC use, or on earlier failure. Wrong passwords reopen an empty
+field and require an explicit fresh retry. Cancel, request replacement, expiry,
+error, close and destruction clear owned input. Consumed/queued SDL text and
+composition events are overwritten, and extended composition allocations are
+freed. SDL/IME/OS internal copies and keyboard interception remain outside this
+practical erasure guarantee; this is not protection against a compromised host.
+Rendering test scripts must contain synthetic commands only; `private-synthetic`
+generates transient fixture input inside the process instead of storing it in a
+script, argv, environment or preference file. Never use real credentials in
+rendering scripts or evidence screenshots.
+RPC state and lease semantics follow the primary
+[getwalletinfo](https://bitcoincore.org/en/doc/30.0.0/rpc/wallet/getwalletinfo/),
+[walletpassphrase](https://developer.bitcoin.org/reference/rpc/walletpassphrase.html)
+and [walletlock](https://developer.bitcoin.org/reference/rpc/walletlock.html)
+documentation; live Roots qualification remains a separate gate.
 
 Each test inspects at most 16 loaded wallets and has a ten-second total
 budget; configured connect/RPC timeouts can shorten individual calls. No scan

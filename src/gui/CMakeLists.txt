@@ -8,9 +8,9 @@ target_compile_options(quietproof-gui-request PRIVATE
   $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>)
 
 find_package(Threads REQUIRED)
-add_library(quietproof-gui-node STATIC node_settings.cc node_probe.cc preferences.cc)
+add_library(quietproof-gui-node STATIC node_settings.cc node_probe.cc preferences.cc wallet_session.cc private_input.cc)
 target_compile_features(quietproof-gui-node PUBLIC cxx_std_20)
-target_link_libraries(quietproof-gui-node PUBLIC LongfellowZKQuietProof::rpc Threads::Threads)
+target_link_libraries(quietproof-gui-node PUBLIC LongfellowZKQuietProof::rpc Threads::Threads quietproof-gui-request SDL2::SDL2)
 target_include_directories(quietproof-gui-node PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_options(quietproof-gui-node PRIVATE
   $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>)
@@ -50,6 +50,21 @@ if(BUILD_TESTING)
   add_test(NAME quietproof-gui-request-test COMMAND quietproof-gui-request-test
     ${CMAKE_CURRENT_BINARY_DIR}/request-fixtures)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  add_executable(quietproof-gui-private-input-test ${PROJECT_SOURCE_DIR}/tests/gui/private_input_test.cc)
+  target_link_libraries(quietproof-gui-private-input-test PRIVATE quietproof-gui-node)
+  add_test(NAME quietproof-gui-private-input-test COMMAND quietproof-gui-private-input-test)
+  set_tests_properties(quietproof-gui-private-input-test PROPERTIES ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_RENDER_DRIVER=software" TIMEOUT 15)
+  add_executable(quietproof-gui-wallet-session-test ${PROJECT_SOURCE_DIR}/tests/gui/wallet_session_test.cc)
+  target_link_libraries(quietproof-gui-wallet-session-test PRIVATE quietproof-gui-node)
+  add_test(NAME quietproof-gui-wallet-session-test
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/gui/wallet_session_fixture.py
+      $<TARGET_FILE:quietproof-gui-wallet-session-test> ${CMAKE_CURRENT_BINARY_DIR}/wallet-session-artifacts)
+  set_tests_properties(quietproof-gui-wallet-session-test PROPERTIES TIMEOUT 120)
+  add_test(NAME quietproof-gui-private-input-ui-test
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/gui/private_input_ui_test.py
+      $<TARGET_FILE:quietproof-prover-gui> $<TARGET_FILE:quietproof-gui-wallet-session-test>
+      ${CMAKE_CURRENT_BINARY_DIR}/private-input-artifacts)
+  set_tests_properties(quietproof-gui-private-input-ui-test PROPERTIES TIMEOUT 90)
   add_executable(quietproof-gui-node-probe-test ${PROJECT_SOURCE_DIR}/tests/gui/node_probe_test.cc)
   target_link_libraries(quietproof-gui-node-probe-test PRIVATE quietproof-gui-node)
   add_test(NAME quietproof-gui-node-probe-test

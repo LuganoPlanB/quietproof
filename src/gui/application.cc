@@ -77,6 +77,10 @@ struct TestEvent {
   int x = -1, y = -1;
   std::string text;
   bool drop = false;
+  bool private_synthetic = false;
+  bool control_modifier = false;
+  int control = 0;
+  bool quit = false;
 };
 std::vector<TestEvent> ReadTestEvents(const std::filesystem::path& path) {
   if (path.empty()) return {};
@@ -99,6 +103,18 @@ std::vector<TestEvent> ReadTestEvents(const std::filesystem::path& path) {
     else if (line=="end") event.key=SDLK_END;
     else if (line=="wait") event.key=SDLK_UNKNOWN;
     else if (line=="escape") event.key=SDLK_ESCAPE;
+    else if (line=="backspace") event.key=SDLK_BACKSPACE;
+    else if (line=="delete") event.key=SDLK_DELETE;
+    else if (line=="private-synthetic") event.private_synthetic=true;
+    else if (line=="quit") event.quit=true;
+    else if (line=="copy" || line=="cut" || line=="paste" || line=="undo" || line=="redo") {
+      event.control_modifier=true;
+      event.key=line=="copy" ? SDLK_c : line=="cut" ? SDLK_x : line=="paste" ? SDLK_v : line=="undo" ? SDLK_z : SDLK_y;
+    } else if (line.starts_with("control ")) {
+      std::istringstream words(line.substr(8)); std::string extra;
+      if (!(words>>event.control) || event.control<1 || event.control>305 || (words>>extra))
+        throw std::runtime_error("Invalid rendering control");
+    }
     else if (line.starts_with("text ")) {
       event.text = line.substr(5);
       if (event.text.size() > 31) throw std::runtime_error("Rendering text event too long");
@@ -112,15 +128,22 @@ std::vector<TestEvent> ReadTestEvents(const std::filesystem::path& path) {
           event.x<0 || event.y<0 || event.x>8192 || event.y>8192)
         throw std::runtime_error("Unknown rendering event");
     }
-    if (events.size()==64) throw std::runtime_error("Too many rendering events");
+    if (events.size()==256) throw std::runtime_error("Too many rendering events");
     events.push_back(event);
   }
   return events;
 }
 
-void InjectTestEvent(const TestEvent& test, bool down, Uint32 window_id) {
+void InjectTestEvent(const TestEvent& test, bool down, Uint32 window_id, const ShellState& state) {
   SDL_Event event{};
-  if (!test.text.empty()) {
+  if (test.private_synthetic) {
+    if (!down) return;
+    event.type=SDL_TEXTINPUT; event.text.windowID=window_id;
+    for (int i=0;i<12;++i) event.text.text[i]=static_cast<char>(65+i);
+  } else if (test.quit) {
+    if (!down) return;
+    event.type=SDL_QUIT;
+  } else if (!test.text.empty()) {
     if (!down) return;
     if (test.drop) {
       event.type = SDL_DROPFILE;
@@ -136,23 +159,28 @@ void InjectTestEvent(const TestEvent& test, bool down, Uint32 window_id) {
     event.type=down ? SDL_KEYDOWN : SDL_KEYUP;
     event.key.windowID=window_id;
     event.key.keysym.sym=test.key;
-    event.key.keysym.mod=test.shift ? KMOD_SHIFT : KMOD_NONE;
+    event.key.keysym.mod=test.control_modifier ? KMOD_CTRL : test.shift ? KMOD_SHIFT : KMOD_NONE;
   } else {
+    const auto bounds = state.controls[test.control];
+    const int x = test.control ? static_cast<int>(bounds.x+bounds.w/2) : test.x;
+    const int y = test.control ? static_cast<int>(bounds.y+bounds.h/2) : test.y;
+    if (test.control && (bounds.w<=0 || bounds.h<=0)) throw std::runtime_error("Rendering control unavailable");
     if (down) {
       SDL_Event motion{};
       motion.type=SDL_MOUSEMOTION;
       motion.motion.windowID=window_id;
-      motion.motion.x=test.x;
-      motion.motion.y=test.y;
+      motion.motion.x=x;
+      motion.motion.y=y;
       if (SDL_PushEvent(&motion)<0) SdlError("Queue pointer motion");
     }
     event.type=down ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
     event.button.windowID=window_id;
     event.button.button=SDL_BUTTON_LEFT;
-    event.button.x=test.x;
-    event.button.y=test.y;
+    event.button.x=x;
+    event.button.y=y;
   }
   if (SDL_PushEvent(&event)<0) SdlError("Queue rendering event");
+  ErasePrivateEvent(event);
 }
 }  // namespace
 
@@ -210,15 +238,60 @@ int Run(const Options& options) {
   }
   SDL_StartTextInput();
   bool running = true;
+  bool closing_wallet = false;
+  bool private_prompt_before_close = false;
+  bool private_mask_before_close = false;
+  int private_focus_before_close = 0;
+  nk_uint private_scroll_before_close = 0;
+  bool wallet_status_before_close = false;
+  bool wallet_checked_before_close = false;
+  bool wallet_warning_before_close = false;
   int frames = 0;
   const int smoke_frames=3+static_cast<int>(test_events.size())*2;
   while (running) {
     if (frames>0 && static_cast<size_t>((frames-1)/2)<test_events.size())
-      InjectTestEvent(test_events[(frames-1)/2],(frames-1)%2==0,SDL_GetWindowID(window.get()));
+      InjectTestEvent(test_events[(frames-1)/2],(frames-1)%2==0,SDL_GetWindowID(window.get()),state);
     nk_input_begin(nuklear.context);
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
-      if (event.type == SDL_QUIT) running = false;
+      if (event.type == SDL_QUIT) {
+        private_prompt_before_close = state.wallet_prompt;
+        private_mask_before_close = state.wallet_input->Size() != 0;
+        private_focus_before_close = state.wallet_focus;
+        private_scroll_before_close = state.wallet_scroll.y;
+        wallet_status_before_close = !state.wallet_status.empty();
+        wallet_checked_before_close = state.wallet_status.starts_with("Request-matching key checked and erased.");
+        wallet_warning_before_close = !state.wallet_warning.empty();
+        state.CancelWalletInput(); node_worker.CancelWallet();
+        if (state.wallet_busy) {
+          closing_wallet = true;
+          state.wallet_status = "Closing after the current bounded RPC and wallet cleanup.";
+          if (options.smoke_test) std::cout << "GUI wallet close: waiting for bounded cleanup" << std::endl;
+        } else running = false;
+      }
+      const bool private_mode = state.wallet_prompt || state.wallet_busy || state.private_input_guard;
+      if (private_mode && (event.type == SDL_TEXTINPUT || event.type == SDL_TEXTEDITING ||
+          event.type == SDL_TEXTEDITING_EXT || event.type == SDL_KEYDOWN || event.type == SDL_KEYUP)) {
+        const auto action = HandlePrivateEvent(*state.wallet_input,event,state.wallet_prompt && state.wallet_focus == 0);
+        if (action == PrivateAction::Cancel) {
+          state.CancelWalletInput(); state.wallet_status = "Wallet access canceled. Password cleared.";
+        } else if (state.wallet_prompt) {
+          if (action == PrivateAction::Next) state.wallet_focus = (state.wallet_focus+1)%3;
+          if (action == PrivateAction::Previous) state.wallet_focus = (state.wallet_focus+2)%3;
+          if (action == PrivateAction::ScrollDown) state.wallet_scroll.y = std::min(10000u,state.wallet_scroll.y+100);
+          if (action == PrivateAction::ScrollUp) state.wallet_scroll.y = state.wallet_scroll.y > 100 ? state.wallet_scroll.y-100 : 0;
+          if (action == PrivateAction::Submit) {
+            if (state.wallet_focus == 2) {
+              state.CancelWalletInput(); state.wallet_status = "Wallet access canceled. Password cleared.";
+            }
+            else if (state.wallet_input->Size()) {
+              state.submit_wallet = true; state.wallet_prompt = false; state.private_input_guard = true;
+            }
+          }
+        }
+        continue;
+      }
+      if (event.type == SDL_TEXTEDITING || event.type == SDL_TEXTEDITING_EXT) { ErasePrivateEvent(event); continue; }
       if (event.type == SDL_KEYDOWN) HandleShellKey(state,event.key);
       if (event.type == SDL_DROPFILE) {
         std::unique_ptr<char, decltype(&SDL_free)> dropped(event.drop.file, SDL_free);
@@ -237,6 +310,7 @@ int Run(const Options& options) {
           nk_input_unicode(nuklear.context,rune);
           offset += consumed;
         }
+        ErasePrivateEvent(event);
         continue;
       }
       nk_sdl_handle_event(&event);
@@ -252,14 +326,77 @@ int Run(const Options& options) {
     const int font_index=state.preferences.font_index;
     state.now = options.test_now.value_or(std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count());
-    state.node_busy = node_worker.Running();
+    if (state.wallet_prompt && (!state.request.loaded ||
+        RequestWindowAt(state.request.loaded->statement,state.now) != RequestWindow::Valid)) {
+      state.CancelWalletInput(); state.wallet_status = "Request is no longer valid. Wallet password cleared.";
+    }
+    state.node_busy = node_worker.Running() && !state.wallet_busy;
     if (auto result = node_worker.Poll()) state.node_probe.Accept(std::move(*result));
+    if (auto result = node_worker.PollWallet()) {
+      state.wallet_busy = false;
+      const bool cleanup_warning = result->cleanup == WalletCleanup::Failed ||
+          (result->unlock_attempted && !result->unlock_confirmed && result->cleanup == WalletCleanup::Relocked);
+      const bool current = state.wallet_job && result->revision == state.node_probe.revision;
+      if (closing_wallet) {
+        if (cleanup_warning) {
+          closing_wallet = false; state.view = View::Request; state.scroll = {};
+        } else running = false;
+      }
+      if (current || cleanup_warning) {
+        const auto wallet = result->wallet.value_or("");
+        state.wallet_status = "Wallet "+(wallet.empty() ? std::string("(default unnamed)") : RequestDisplayText(wallet))+": "+result->Message();
+        if (cleanup_warning) state.wallet_warning = state.wallet_status;
+        if (current && (result->status == WalletSessionStatus::PasswordRequired ||
+            result->error.code == proofs::BitcoinRpcErrorCode::kWrongPassphrase)) {
+          state.wallet_input->Clear(); state.wallet_focus = 0; state.wallet_scroll = {};
+          state.wallet_prompt = true; state.private_input_guard = true;
+        } else {
+          if (current && result->status == WalletSessionStatus::Acquired)
+            state.wallet_status = "Request-matching key checked and erased. Proof generation is not available in this build.";
+          state.wallet_job.reset();
+        }
+      }
+    }
+    if (!running) break;
     DrawShell(nuklear.context,state,width,height,&body[font_index]->handle,&heading[font_index]->handle);
-    if (state.test_node) {
+    if (state.cancel_wallet) { node_worker.CancelWallet(); state.cancel_wallet = false; }
+    if (state.prove_wallet) {
+      state.prove_wallet = false;
+      std::string error;
+      if (!node_worker.Running() && state.request.loaded && state.node_probe.result && state.node_probe.result->selected_wallet) {
+        if (auto config = ConfigureNode(state.node_settings,state.request.loaded->statement.network,&error)) {
+          state.wallet_job = WalletSessionJob{state.node_probe.revision,std::move(*config),state.request.loaded,
+              state.node_probe.result->selected_wallet,true};
+          state.wallet_input->Clear();
+          state.wallet_busy = node_worker.StartWallet(*state.wallet_job,std::make_unique<PrivateInput>());
+          state.private_input_guard = true;
+          state.wallet_status = "Rechecking the reviewed request and selected RPC wallet.";
+          if (!state.wallet_busy) { state.wallet_job.reset(); state.wallet_status = "Wallet worker unavailable. Start a new attempt explicitly."; }
+        } else state.wallet_status = error;
+      }
+    }
+    if (state.submit_wallet) {
+      state.submit_wallet = false;
+      auto password = std::move(state.wallet_input);
+      state.wallet_input = std::make_unique<PrivateInput>();
+      if (state.wallet_job && state.wallet_job->revision == state.node_probe.revision)
+        state.wallet_busy = node_worker.StartWallet(*state.wallet_job,std::move(password));
+      state.private_input_guard = true;
+      state.wallet_status = "Accessing the selected wallet. Cancel waits for the current bounded RPC and cleanup.";
+      if (!state.wallet_busy) { state.wallet_job.reset(); state.wallet_status = "Wallet worker unavailable. Password cleared; start a new attempt explicitly."; }
+    }
+    if (state.private_input_guard) {
+      DrainPrivateTextEvents();
+      ErasePrivateMemory(nuklear.context->input.keyboard.text,sizeof(nuklear.context->input.keyboard.text));
+      nuklear.context->input.keyboard.text_len = 0;
+      state.private_input_guard = state.wallet_prompt || state.wallet_busy;
+    }
+    if (state.test_node && !state.wallet_busy) {
       state.test_node = false;
       const auto network = state.request.loaded ? state.request.loaded->statement.network : state.node_network;
       std::string error;
       if (auto configuration = ConfigureNode(state.node_settings,network,&error)) {
+        state.CancelWalletInput();
         state.node_probe.Invalidate();
         NodeProbeJob job{state.node_probe.revision,std::move(*configuration),{},bool(state.request.loaded),state.node_selection};
         if (state.request.loaded) job.match = MatchRequest(*state.request.loaded);
@@ -291,10 +428,19 @@ int Run(const Options& options) {
     SDL_Delay(16);
   }
   SDL_StopTextInput();
+  state.CancelWalletInput();
+  node_worker.CancelWallet();
+  DrainPrivateTextEvents();
   if (options.smoke_test)
     std::cout << "GUI smoke: " << frames << " frames; orderly SDL_QUIT; font="
               << (native_font ? "Inter" : "builtin") << '\n';
   if (options.smoke_test) {
+    std::cout << "GUI wallet: prompt=" << private_prompt_before_close
+              << " masked=" << private_mask_before_close << " cleared=" << (state.wallet_input->Size() == 0)
+              << " busy=" << state.wallet_busy << " focus=" << private_focus_before_close
+              << " scroll=" << private_scroll_before_close << '\n';
+    std::cout << "GUI wallet context: transient=" << wallet_status_before_close
+              << " checked=" << wallet_checked_before_close << " warning=" << wallet_warning_before_close << '\n';
     const auto node_network = state.request.loaded ? state.request.loaded->statement.network : state.node_network;
     std::cout << "GUI node: network=" << proofs::QuietProofNetworkName(node_network)
               << " configured=" << bool(ConfigureNode(state.node_settings,node_network,nullptr))
@@ -325,6 +471,7 @@ int Run(const Options& options) {
       if (r.w>0) std::cout << "control " << id << ' ' << r.x << ' ' << r.y << ' ' << r.w << ' ' << r.h << '\n';
     }
   }
+  if (options.smoke_test) std::cout.flush();
   return 0;
 }
 }  // namespace quietproof::gui

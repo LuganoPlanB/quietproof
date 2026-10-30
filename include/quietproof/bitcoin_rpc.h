@@ -20,8 +20,10 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -32,7 +34,7 @@ enum class BitcoinRpcErrorCode {
   kNone, kConfiguration, kCookie, kAuthentication, kConnection, kTimeout,
   kResponseTooLarge, kHttp, kRpc, kMalformed, kWrongNetwork,
   kInvalidAddress, kUnsupportedScript, kScanBusy, kScanIncomplete,
-  kInconclusive
+  kInconclusive, kWalletLocked, kWrongPassphrase, kUnsupportedWallet
 };
 struct BitcoinRpcError {
   BitcoinRpcErrorCode code = BitcoinRpcErrorCode::kNone;
@@ -80,6 +82,7 @@ struct BitcoinRpcProbe {
   bool wallets_listed = false;
   std::vector<BitcoinRpcWalletProbe> wallets;
 };
+enum class BitcoinRpcWalletState { kUnencrypted, kLocked, kUnlocked };
 struct BitcoinUtxoQuery {
   std::string address;
   uint64_t min_confirmations = 1;
@@ -133,6 +136,18 @@ class BitcoinCoreRpc final : public QuietProofChainProvider {
                         const std::array<uint8_t, 20>& expected_program,
                         std::array<uint8_t, 32>* secret,
                         BitcoinRpcError* = nullptr);
+  // Explicit identity, including the unnamed wallet. Never auto-selects.
+  bool ExportSelectedAddressKey(const std::string& wallet,
+                        const BitcoinRpcKeyMatch&, std::array<uint8_t, 32>*,
+                        BitcoinRpcError* = nullptr,
+                        const std::function<bool()>& stop = {});
+  bool WalletState(const std::string& wallet, BitcoinRpcWalletState*,
+                   BitcoinRpcError* = nullptr);
+  // One bounded lease; no retries. A transport failure may mean it succeeded.
+  // Passphrase bytes are borrowed only for this call, never RPC cookie auth.
+  bool UnlockWallet(const std::string& wallet, std::span<const char> passphrase,
+                    std::chrono::seconds lease, BitcoinRpcError* = nullptr);
+  bool LockWallet(const std::string& wallet, BitcoinRpcError* = nullptr);
   // Typed export: accepted address kinds must occur in the request. Empty
   // address prefers P2PKH when present, otherwise P2WPKH. The original overload
   // retains its P2WPKH-only contract.
@@ -145,6 +160,10 @@ class BitcoinCoreRpc final : public QuietProofChainProvider {
   QuietProofChainEvidence Lookup(const QuietProofChainRequest&) override;
 
  private:
+  bool ExportAddressKeyImpl(const std::string&, const std::string&,
+      const std::array<uint8_t, 20>&, const std::vector<QuietProofScriptKind>&,
+      std::array<uint8_t, 32>*, BitcoinRpcError*, bool select_sole,
+      const std::function<bool()>& stop = {});
   class Impl;
   std::unique_ptr<Impl> impl_;
 };
