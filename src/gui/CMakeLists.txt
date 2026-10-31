@@ -39,6 +39,17 @@ install(FILES assets/Inter.ttf assets/Inter-OFL.txt
   DESTINATION ${CMAKE_INSTALL_DATADIR}/quietproof/fonts)
 install(FILES vendor/LICENSE vendor/SDL-LICENSE.txt vendor/PROVENANCE.md BRANDING.md
   DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/quietproof-prover-gui)
+install(FILES assets/DEPENDENCIES.md assets/curl-COPYING.txt
+  ${PROJECT_SOURCE_DIR}/COPYING
+  ${PROJECT_SOURCE_DIR}/LICENSES/Plan-B-theme-permission.txt
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/quietproof-prover-gui)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  install(FILES assets/quietproof-prover.desktop
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+  install(FILES ${PROJECT_SOURCE_DIR}/docs/public/quietproof-mark.svg
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
+    RENAME quietproof-prover.svg)
+endif()
 
 if(BUILD_TESTING)
   add_executable(quietproof-gui-node-settings-test ${PROJECT_SOURCE_DIR}/tests/gui/node_settings_test.cc)

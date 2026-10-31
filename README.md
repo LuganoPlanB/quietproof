@@ -50,11 +50,16 @@ history/privacy limits and unsupported Firefox/mobile claims are documented in
 the guide. [Build and preview the complete static artifact](docs/wasm-build.md#build-and-preview-the-complete-static-artifact)
 with pinned WASI/source inputs, hashed assets, source/license notices and
 provenance. Production requires only static hosting; Node is a build/preview
-dependency. Theme distribution permission is unresolved and must be settled
-before publication. The native Core-backed workflow below has a different
+dependency. Scoped theme authorization for this deliverable is recorded in
+[the permission notice](LICENSES/Plan-B-theme-permission.txt).
+The native Core-backed workflow below has a different
 chain-evidence and durable nonce boundary.
 
 ## Build
+
+The optional Linux [native prover GUI](docs/guide/native-gui.md) opens public
+requests, obtains a selected Roots wallet key after approval, and saves a
+locally verified proof. Its guide covers installation, wallet support and recovery.
 
 Prebuilt static Linux x86_64 binaries with native RPC support are available from
 [GitHub Releases](https://github.com/LuganoPlanB/quietproof/releases).

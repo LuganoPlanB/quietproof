@@ -120,7 +120,9 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/LongfellowZKQuietProofConfig.cmake
 install(FILES README.md pokc.md
   DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/LongfellowZKQuietProof)
 install(DIRECTORY docs/
-  DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/LongfellowZKQuietProof/docs)
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/LongfellowZKQuietProof/docs
+  PATTERN ".vitepress/dist" EXCLUDE
+  PATTERN ".vitepress/cache" EXCLUDE)
 install(DIRECTORY spec/
   DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/LongfellowZKQuietProof/spec)
 
