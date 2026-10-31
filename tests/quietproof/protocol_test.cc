@@ -19,13 +19,22 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "quietproof/envelope.h"
 #include "quietproof/chain_state.h"
+#include "quietproof/verifier.h"
 
 namespace proofs {
 namespace {
+
+using EnvelopeDecoder = bool (*)(const std::vector<uint8_t>&,
+                                 QuietProofEnvelopeV1*, QuietProofDecodeError*);
+static_assert(std::is_same_v<decltype(&DecodeQuietProofEnvelope), EnvelopeDecoder>);
+using ProofVerifier = QuietProofVerification (*)(const std::vector<uint8_t>&,
+                                                const QuietProofVerifierConfig&);
+static_assert(std::is_same_v<decltype(&VerifyQuietProof), ProofVerifier>);
 
 void Require(bool condition, const char* message) {
   if (!condition) throw std::runtime_error(message);
@@ -390,6 +399,16 @@ void TestMalformedStatementCorpus() {
 }
 
 void TestEnvelopeAndTranscript() {
+  auto [result, claims, total_sats] = QuietProofVerification{};
+  Require(result == QuietProofVerifyResult::kMalformedStatement && claims.empty() && total_sats == 0,
+          "legacy verification aggregate changed");
+  ProofVerifier typed_verifier = &VerifyQuietProof;
+  auto deduced_verifier = &VerifyQuietProof;
+  QuietProofVerifierConfig config;
+  Require(typed_verifier({}, config).result == result &&
+              deduced_verifier({}, config).result == result &&
+              VerifyQuietProof({}, config).result == result,
+          "legacy verifier function type or calls changed");
   QuietProofEnvelopeV1 envelope;
   envelope.statement = Statement();
   for (size_t index = 0; index < envelope.proof.circuit_digest.size(); ++index) {
@@ -412,6 +431,14 @@ void TestEnvelopeAndTranscript() {
   Require(EncodeQuietProofEnvelope(envelope, &wire), "encode envelope");
   QuietProofEnvelopeV1 decoded;
   Require(DecodeQuietProofEnvelope(wire, &decoded), "decode envelope");
+  EnvelopeDecoder typed_decoder = &DecodeQuietProofEnvelope;
+  auto deduced_decoder = &DecodeQuietProofEnvelope;
+  QuietProofDecodeError pointer_error;
+  Require(typed_decoder(wire, &decoded, &pointer_error) &&
+              pointer_error == QuietProofDecodeError::kNone &&
+              deduced_decoder(wire, &decoded, nullptr) &&
+              DecodeQuietProofEnvelope(wire, &decoded, &pointer_error),
+          "old decoder function type or default calls changed");
   std::vector<uint8_t> again;
   Require(EncodeQuietProofEnvelope(decoded, &again) && wire == again,
           "envelope is not canonical");
@@ -422,6 +449,9 @@ void TestEnvelopeAndTranscript() {
   timestamped.envelope_version = 2;
   timestamped.proof_created_at = 150;
   const auto timestamp_seed = PoKCTranscriptSeed(timestamped);
+  Require(Hex(timestamp_seed.data(), timestamp_seed.size()) ==
+              "da3d58eb080598b83bf2c9088d93395aac5c5e70257ec290a7fb050909eff38b",
+          "timestamp transcript differs from independent hashlib vector");
   Require(timestamp_seed != seed, "timestamp envelope lacks domain separation");
   std::vector<uint8_t> timestamp_wire;
   Require(EncodeQuietProofEnvelope(timestamped, &timestamp_wire) &&
@@ -474,11 +504,15 @@ void TestEnvelopeAndTranscript() {
   }
 
   auto unsupported = wire;
-  unsupported[4] = 3;
+  unsupported[4] = 4; // v3 is now known and has a distinct strict wire layout.
   QuietProofDecodeError error = QuietProofDecodeError::kNone;
   Require(!DecodeQuietProofEnvelope(unsupported, &decoded, &error) &&
               error == QuietProofDecodeError::kUnsupported,
           "unsupported envelope version misclassified");
+  unsupported[4] = 3;
+  Require(!DecodeQuietProofEnvelope(unsupported, &decoded, &error) &&
+              error == QuietProofDecodeError::kMalformed,
+          "known v3 with old wire layout misclassified");
 
   std::vector<uint8_t> oversized = {'Q', 'P', 'E', '1', 1};
   QuietProofAppendU32(&oversized,

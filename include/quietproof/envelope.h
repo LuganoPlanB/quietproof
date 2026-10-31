@@ -21,6 +21,7 @@
 #include <sstream>
 #include "pokc/proof.h"
 #include "quietproof/statement.h"
+#include "quietproof/signature_envelope.h"
 
 namespace proofs {
 // The single-key proof measures about 45 MiB. Keep the existing fixed
@@ -42,7 +43,10 @@ struct QuietProofEnvelopeV1 {
 inline bool QuietProofEnvelopeTimeValid(const QuietProofEnvelopeV1& envelope) {
   if (envelope.envelope_version == 1)
     return envelope.proof_created_at == 0 && envelope.statement.statement_version == 1;
-  return envelope.envelope_version == 2 && envelope.proof_created_at != 0 &&
+  return envelope.envelope_version == 2 &&
+         (envelope.statement.statement_version == 1 ||
+          envelope.statement.statement_version == 2) &&
+         envelope.proof_created_at != 0 &&
          envelope.proof_created_at >= envelope.statement.not_before &&
          envelope.proof_created_at < envelope.statement.expires_at;
 }
@@ -51,10 +55,27 @@ inline bool EncodeQuietProofEnvelope(const QuietProofEnvelopeV1& envelope, std::
   std::vector<uint8_t> statement; if (!out || !QuietProofEnvelopeTimeValid(envelope) || !EncodeQuietProofStatement(envelope.statement, &statement) || statement.size() > std::numeric_limits<uint32_t>::max() || envelope.proof.bytes.empty() || envelope.proof.bytes.size() > kQuietProofMaxProofBytes || QuietProofAllZero(envelope.proof.circuit_digest) || envelope.proof.circuit_version != PoKCParametersV1::kCircuitVersion || envelope.proof.rate != PoKCParametersV1::kRate || envelope.proof.queries != PoKCParametersV1::kQueries) return false;
   out->clear(); out->insert(out->end(), {'Q','P','E','1',envelope.envelope_version}); QuietProofAppendU32(out, static_cast<uint32_t>(statement.size())); out->insert(out->end(), statement.begin(), statement.end()); if (envelope.envelope_version == 2) QuietProofAppendU64(out, envelope.proof_created_at); out->insert(out->end(), envelope.proof.circuit_digest.begin(), envelope.proof.circuit_digest.end()); QuietProofAppendU32(out, envelope.proof.circuit_version); QuietProofAppendU32(out, static_cast<uint32_t>(envelope.proof.rate)); QuietProofAppendU32(out, static_cast<uint32_t>(envelope.proof.queries)); QuietProofAppendU32(out, static_cast<uint32_t>(envelope.proof.bytes.size())); out->insert(out->end(), envelope.proof.bytes.begin(), envelope.proof.bytes.end()); return true;
 }
-inline bool DecodeQuietProofEnvelope(
+inline bool DecodeQuietProofEnvelopeWithReason(
     const std::vector<uint8_t>& bytes, QuietProofEnvelopeV1* envelope,
-    QuietProofDecodeError* error = nullptr) {
+    QuietProofDecodeError* error = nullptr, const char** reason = nullptr) {
   if (error != nullptr) *error = QuietProofDecodeError::kMalformed;
+  if (reason) *reason = "malformed_statement";
+  if (QuietProofIsPrivateReceiptInput(bytes.data(), bytes.size())) {
+    if (reason) *reason = "private_receipt_input";
+    return false;
+  }
+  if (bytes.size() >= 5 && std::memcmp(bytes.data(), "QPE1", 4) == 0 && bytes[4] == 3) {
+    QuietProofSignatureEnvelopeMetadataV3 metadata;
+    QuietProofSignatureEnvelopeError signature_error;
+    const bool inspected = InspectQuietProofSignatureEnvelope(bytes, &metadata, &signature_error);
+    if (error) *error = inspected || signature_error == QuietProofSignatureEnvelopeError::kUnsupported ?
+        QuietProofDecodeError::kUnsupported : QuietProofDecodeError::kMalformed;
+    // The old API has no explicit signature allowance or retained expected
+    // request. Format detection can never opt a scalar caller into that mode.
+    if (reason) *reason = inspected ? "signature_mode_requires_explicit_allowance" :
+        QuietProofSignatureEnvelopeErrorName(signature_error);
+    return false;
+  }
   if (!envelope || bytes.size() < kQuietProofEnvelopeOverheadBytes ||
       bytes.size() > kQuietProofMaxEnvelopeBytes) return false;
   QuietProofReader r(bytes);
@@ -63,6 +84,7 @@ inline bool DecodeQuietProofEnvelope(
   if (!r.bytes(magic, 4) || std::memcmp(magic, "QPE1", 4) != 0) return false;
   if (!r.u8(&version) || (version != 1 && version != 2)) {
     if (error != nullptr) *error = QuietProofDecodeError::kUnsupported;
+    if (reason) *reason = "unsupported";
     return false;
   }
   if (!r.u32(&n) || n == 0 || n > kQuietProofMaxStatementBytes || n > r.left())
@@ -71,8 +93,20 @@ inline bool DecodeQuietProofEnvelope(
   if (!r.bytes(statement.data(), n)) return false;
   QuietProofEnvelopeV1 out;
   QuietProofDecodeError statement_error = QuietProofDecodeError::kMalformed;
+  if (statement.size() >= 5 && statement[4] == kQuietProofSignatureStatementVersion) {
+    QuietProofSignatureStatementV3 signature;
+    // v3 is a known incompatible statement in either old envelope. Unknown
+    // nested IDs retain unsupported attribution before the compatibility check.
+    if (!DecodeQuietProofSignatureStatement(statement, &signature, &statement_error) &&
+        statement_error == QuietProofDecodeError::kUnsupported) {
+      if (error) *error = statement_error;
+      if (reason) *reason = "unsupported";
+    }
+    return false;
+  }
   if (!DecodeQuietProofStatement(statement, &out.statement, &statement_error)) {
     if (error != nullptr) *error = statement_error;
+    if (reason && statement_error == QuietProofDecodeError::kUnsupported) *reason = "unsupported";
     return false;
   }
   out.envelope_version = version;
@@ -87,6 +121,7 @@ inline bool DecodeQuietProofEnvelope(
       rate != PoKCParametersV1::kRate ||
       queries != PoKCParametersV1::kQueries) {
     if (error != nullptr) *error = QuietProofDecodeError::kUnsupported;
+    if (reason) *reason = "unsupported";
     return false;
   }
   out.proof.rate = rate;
@@ -95,7 +130,16 @@ inline bool DecodeQuietProofEnvelope(
   if (!r.bytes(out.proof.bytes.data(), proof_size)) return false;
   *envelope = std::move(out);
   if (error != nullptr) *error = QuietProofDecodeError::kNone;
+  if (reason) *reason = "none";
   return true;
+}
+
+// Preserve the exact original function type, including taking its address.
+// The diagnostic entry point has a separate name to avoid overload ambiguity.
+inline bool DecodeQuietProofEnvelope(
+    const std::vector<uint8_t>& bytes, QuietProofEnvelopeV1* envelope,
+    QuietProofDecodeError* error = nullptr) {
+  return DecodeQuietProofEnvelopeWithReason(bytes, envelope, error, nullptr);
 }
 
 // Inspection is deliberately a presentation format. Verification always uses

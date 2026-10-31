@@ -51,6 +51,7 @@ namespace {
 
 constexpr int kUsage = 64;
 constexpr int kData = 65;
+constexpr int kUnsupported = 66;
 constexpr int kSoftware = 70;
 constexpr int kIoError = 74;
 constexpr uint64_t kDefaultLifetimeSeconds = 300;
@@ -210,6 +211,27 @@ bool ReadBounded(const std::string& path, size_t maximum,
     output->insert(output->end(), buffer.data(), buffer.data() + count);
   }
   return stream.eof();
+}
+
+enum class PublicProofPrefix { kOther, kPrivateReceipt, kSignatureEnvelope };
+PublicProofPrefix ProbePublicProofPrefix(const std::string& path) {
+  // Only five bytes from a regular file. Missing/unreadable/nonregular input
+  // retains the unavailable old-operation path; a FIFO cannot block this probe.
+  const int descriptor = open(path.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+  if (descriptor < 0) return PublicProofPrefix::kOther;
+  struct stat status{};
+  std::array<uint8_t, 5> prefix{};
+  ssize_t size = -1;
+  if (fstat(descriptor, &status) == 0 && S_ISREG(status.st_mode)) {
+    do { size = read(descriptor, prefix.data(), prefix.size()); }
+    while (size < 0 && errno == EINTR);
+  }
+  close(descriptor);
+  if (size >= 4 && proofs::QuietProofIsPrivateReceiptInput(prefix.data(), size))
+    return PublicProofPrefix::kPrivateReceipt;
+  if (size == 5 && std::memcmp(prefix.data(), "QPE1", 4) == 0 && prefix[4] == 3)
+    return PublicProofPrefix::kSignatureEnvelope;
+  return PublicProofPrefix::kOther;
 }
 
 // This preflight avoids expensive work. The atomic writer still enforces
@@ -569,6 +591,15 @@ int Prove(int argc, char** argv) {
   proofs::QuietProofDecodeError error = proofs::QuietProofDecodeError::kMalformed;
   if (!ReadBounded(request_path, proofs::kQuietProofMaxStatementBytes, &request) ||
       !proofs::DecodeQuietProofStatement(request, &statement, &error)) {
+    if (request.size() >= 5 && std::memcmp(request.data(), "QPS1", 4) == 0 && request[4] == 3) {
+      proofs::QuietProofSignatureStatementV3 signature;
+      if (!proofs::DecodeQuietProofSignatureStatement(request, &signature, &error)) {
+        std::cerr << "invalid or unsupported signature request\n";
+        return error == proofs::QuietProofDecodeError::kUnsupported ? kUnsupported : kData;
+      }
+      std::cerr << "signature_mode_disabled\n";
+      return kUnsupported;
+    }
     std::cerr << "invalid or unsupported QuietProof request\n";
     return kData;
   }
@@ -700,8 +731,14 @@ int Verify(int argc, char** argv) {
   proofs::QuietProofNetwork asserted_network;
   if (options.count("--network") &&
       !proofs::QuietProofParseNetwork(network_name, &asserted_network)) return Usage();
+  PublicProofPrefix prefix = PublicProofPrefix::kOther;
 #ifndef QUIETPROOF_HAS_RPC
-  if (!legacy) return NativeUnavailable();
+  // Preserve the original gate position and argument-validation precedence.
+  // New-format detection selects only a local parser, never mode allowance.
+  if (!legacy) {
+    prefix = ProbePublicProofPrefix(proof_path);
+    if (prefix == PublicProofPrefix::kOther) return NativeUnavailable();
+  }
 #endif
   uint64_t min_confirmations = 1, minimum_total = 0,
            max_lifetime = kMaximumLifetimeSeconds;
@@ -712,16 +749,27 @@ int Verify(int argc, char** argv) {
       minimum_total > proofs::kQuietProofMaxMoneySats || max_lifetime == 0 ||
       max_lifetime > kMaximumLifetimeSeconds) return Usage();
 
+  if (prefix == PublicProofPrefix::kOther) prefix = ProbePublicProofPrefix(proof_path);
+  if (prefix == PublicProofPrefix::kPrivateReceipt) {
+    std::cerr << "private_receipt_input\n";
+    return PrintResult({proofs::QuietProofVerifyResult::kMalformedStatement, {}});
+  }
+
   std::vector<uint8_t> wire;
   if (!ReadBounded(proof_path, proofs::kQuietProofMaxEnvelopeBytes, &wire))
     return PrintResult({proofs::QuietProofVerifyResult::kMalformedStatement, {}});
   proofs::QuietProofEnvelopeV1 envelope;
   proofs::QuietProofDecodeError error = proofs::QuietProofDecodeError::kMalformed;
-  if (!proofs::DecodeQuietProofEnvelope(wire, &envelope, &error))
+  const char* reason = nullptr;
+  if (!proofs::DecodeQuietProofEnvelopeWithReason(wire, &envelope, &error, &reason)) {
+    const bool new_format = proofs::QuietProofIsPrivateReceiptInput(wire.data(), wire.size()) ||
+        (wire.size() >= 5 && std::memcmp(wire.data(), "QPE1", 4) == 0 && wire[4] == 3);
+    if (new_format && reason) std::cerr << reason << '\n';
     return PrintResult({error == proofs::QuietProofDecodeError::kUnsupported
                             ? proofs::QuietProofVerifyResult::kUnsupported
                             : proofs::QuietProofVerifyResult::kMalformedStatement,
                         {}});
+  }
   if (options.count("--network") && asserted_network != envelope.statement.network) {
     std::cerr << "{\"error\":\"wrong_network\",\"message\":\"Proof network does not "
                  "match the local network policy\"}\n";

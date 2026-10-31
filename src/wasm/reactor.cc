@@ -104,6 +104,7 @@ extern "C" uint32_t quietproof_wasm_prepare(const uint8_t* proof, uint32_t proof
   ++context_id; // Invalidates all previous phases even on failed preparation.
   if (!owned(proof, proof_size) || proof_size > proofs::kQuietProofMaxEnvelopeBytes ||
       !owned(policy, policy_size) || policy_size > 8192) return fail("Invalid verification input");
+  if (proofs::QuietProofIsPrivateReceiptInput(proof, proof_size)) return fail("private_receipt_input");
   proofs::QuietProofBrowserPolicy expected;
   if (!proofs::DecodeQuietProofBrowserPolicy(std::vector<uint8_t>(policy, policy + policy_size), &expected))
     return fail("Independent expected policy is required", 4);

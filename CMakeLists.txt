@@ -54,6 +54,7 @@ if(QUIETPROOF_BUILD_SIGNATURE_MODE)
   add_library(LongfellowZKQuietProof::signature ALIAS quietproof-signature)
   set_target_properties(quietproof-signature PROPERTIES EXPORT_NAME signature)
   target_link_libraries(quietproof-signature INTERFACE LongfellowZKQuietProof::quietproof)
+  target_compile_definitions(quietproof-signature INTERFACE QUIETPROOF_HAS_SIGNATURE_MODE=1)
   install(TARGETS quietproof-signature EXPORT LongfellowZKQuietProofSignatureTargets)
   install(EXPORT LongfellowZKQuietProofSignatureTargets
     FILE LongfellowZKQuietProofSignatureTargets.cmake NAMESPACE LongfellowZKQuietProof::
@@ -267,6 +268,89 @@ if(BUILD_TESTING)
   add_pokc_test(key-ownership-test tests/quietproof/key_ownership_test.cc)
   add_pokc_test(ripemd160-test tests/quietproof/ripemd160_test.cc)
   add_pokc_test(quietproof-protocol-test tests/quietproof/protocol_test.cc)
+  add_pokc_test(quietproof-signature-statement-disabled-test tests/quietproof/signature_statement_test.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/spec/signature-profile-v1.json)
+  add_pokc_test(quietproof-signature-codec-disabled-test tests/quietproof/signature_codec_test.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/spec/signature-profile-v1.json)
+  add_pokc_test(quietproof-signature-envelope-disabled-test tests/quietproof/signature_envelope_test.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/spec/signature-profile-v1.json)
+  add_executable(quietproof-signature-receipt-disabled-driver tests/quietproof/signature_receipt_driver.cc)
+  target_link_libraries(quietproof-signature-receipt-disabled-driver PRIVATE LongfellowZKQuietProof::quietproof)
+  add_test(NAME quietproof-signature-receipt-disabled-test COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/signature_receipt_test.py
+    --driver $<TARGET_FILE:quietproof-signature-receipt-disabled-driver> --disabled
+    --work ${CMAKE_CURRENT_BINARY_DIR}/tests/results)
+  set_tests_properties(quietproof-signature-receipt-disabled-test PROPERTIES TIMEOUT 120)
+  if(QUIETPROOF_BUILD_SIGNATURE_MODE)
+    add_pokc_test(quietproof-signature-envelope-test tests/quietproof/signature_envelope_test.cc
+      ${CMAKE_CURRENT_SOURCE_DIR}/spec/signature-profile-v1.json)
+    target_link_libraries(quietproof-signature-envelope-test PRIVATE LongfellowZKQuietProof::signature)
+    add_executable(quietproof-signature-receipt-driver tests/quietproof/signature_receipt_driver.cc)
+    target_link_libraries(quietproof-signature-receipt-driver PRIVATE LongfellowZKQuietProof::signature)
+    add_test(NAME quietproof-signature-receipt-test COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/signature_receipt_test.py
+      --driver $<TARGET_FILE:quietproof-signature-receipt-driver> --work ${CMAKE_CURRENT_BINARY_DIR}/tests/results)
+    set_tests_properties(quietproof-signature-receipt-test PROPERTIES TIMEOUT 120)
+    if(QUIETPROOF_ENABLE_CORE32_SIGNING_TEST)
+      add_test(NAME quietproof-signature-receipt-core-test COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/signature_receipt_test.py
+        --driver $<TARGET_FILE:quietproof-signature-receipt-driver> --work ${CMAKE_CURRENT_BINARY_DIR}/tests/results
+        --core32 ${QUIETPROOF_CORE32_DIR} --oracle $<TARGET_FILE:quietproof-signing-oracle>)
+      set_tests_properties(quietproof-signature-receipt-core-test PROPERTIES TIMEOUT 180 RUN_SERIAL TRUE LABELS "bitcoin-core32;signature-reference")
+    endif()
+    add_pokc_test(quietproof-signature-statement-test tests/quietproof/signature_statement_test.cc
+      ${CMAKE_CURRENT_SOURCE_DIR}/spec/signature-profile-v1.json)
+    target_link_libraries(quietproof-signature-statement-test PRIVATE LongfellowZKQuietProof::signature)
+    add_pokc_test(quietproof-signature-codec-test tests/quietproof/signature_codec_test.cc
+      ${CMAKE_CURRENT_SOURCE_DIR}/spec/signature-profile-v1.json)
+    target_link_libraries(quietproof-signature-codec-test PRIVATE LongfellowZKQuietProof::signature)
+    add_test(NAME quietproof-signature-codec-reference-test COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/signature_codec_reference_test.py
+      --codec $<TARGET_FILE:quietproof-signature-codec-test>
+      --fixture ${CMAKE_CURRENT_SOURCE_DIR}/spec/signature-profile-v1.json)
+    set_tests_properties(quietproof-signature-codec-reference-test PROPERTIES TIMEOUT 60 LABELS "signature-reference")
+    # Compile base-only and enabled objects separately, then link in both
+    # orders. Force unoptimized/no-inline coverage even in Release builds.
+    foreach(variant IN ITEMS debug optimized)
+      foreach(capability IN ITEMS disabled enabled)
+        set(object quietproof-signature-capability-${variant}-${capability})
+        add_library(${object} OBJECT tests/quietproof/signature_capability/${capability}.cc)
+        if(capability STREQUAL "enabled")
+          target_link_libraries(${object} PRIVATE LongfellowZKQuietProof::signature)
+        else()
+          target_link_libraries(${object} PRIVATE LongfellowZKQuietProof::quietproof)
+        endif()
+        set_property(TARGET ${object} PROPERTY INTERPROCEDURAL_OPTIMIZATION FALSE)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+          target_compile_options(${object} PRIVATE -fno-lto)
+          if(variant STREQUAL "debug")
+            target_compile_options(${object} PRIVATE -O0 -fno-inline -fno-inline-functions)
+          else()
+            target_compile_options(${object} PRIVATE -O2)
+          endif()
+        elseif(MSVC)
+          if(variant STREQUAL "debug")
+            target_compile_options(${object} PRIVATE /Od /Ob0)
+          else()
+            target_compile_options(${object} PRIVATE /O2)
+          endif()
+        endif()
+      endforeach()
+      foreach(first IN ITEMS disabled enabled)
+        if(first STREQUAL "disabled")
+          set(second enabled)
+        else()
+          set(second disabled)
+        endif()
+        set(test quietproof-signature-capability-${variant}-${first}-first-test)
+        add_executable(${test} tests/quietproof/signature_capability/main.cc
+          $<TARGET_OBJECTS:quietproof-signature-capability-${variant}-${first}>
+          $<TARGET_OBJECTS:quietproof-signature-capability-${variant}-${second}>)
+        target_link_libraries(${test} PRIVATE LongfellowZKQuietProof::quietproof)
+        add_test(NAME ${test} COMMAND ${test})
+      endforeach()
+    endforeach()
+  endif()
   add_pokc_test(quietproof-challenge-test tests/quietproof/challenge_test.cc)
   add_pokc_test(quietproof-browser-codec-test tests/wasm/codec_test.cc)
   add_pokc_test(quietproof-browser-verifier-test tests/wasm/verifier_test.cc
@@ -281,7 +365,8 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/testdata/pokc_sage_vectors.json)
   add_test(NAME quietproof-cli-test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/cli_test.sh $<TARGET_FILE:quietproof-cli>)
   add_test(NAME quietproof-cli-context-test COMMAND ${Python3_EXECUTABLE}
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/cli_context_test.py $<TARGET_FILE:quietproof-cli>)
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/cli_context_test.py $<TARGET_FILE:quietproof-cli>
+    --rpc-enabled ${QUIETPROOF_BUILD_RPC})
   set_tests_properties(quietproof-cli-context-test PROPERTIES TIMEOUT 180)
   if(QUIETPROOF_BUILD_RPC)
     set(_quietproof_cli_rpc_mode --cli)
