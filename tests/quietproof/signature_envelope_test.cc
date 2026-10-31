@@ -276,7 +276,7 @@ int main(int argc,char** argv) {
     Check(argc==2,"fixture path required");std::ifstream file(argv[1]);nlohmann::json fixture;file>>fixture;
     for(const auto& vector:fixture.at("vectors"))Test(vector);
     CircuitIdentityAlgorithm();
-    std::cout<<checks<<" envelope checks; synthetic identities TEST ONLY; production signature support unavailable\n";
+    std::cout<<checks<<" envelope checks; synthetic identities TEST ONLY and unapproved\n";
     return 0;
   } catch(const std::exception& error) {std::cerr<<error.what()<<'\n';return 1;}
 }

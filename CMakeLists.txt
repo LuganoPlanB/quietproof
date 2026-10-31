@@ -60,6 +60,8 @@ if(QUIETPROOF_BUILD_SIGNATURE_MODE)
     FILE LongfellowZKQuietProofSignatureTargets.cmake NAMESPACE LongfellowZKQuietProof::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LongfellowZKQuietProof)
   install(FILES include/circuit/bitcoin_ecdsa.h include/circuit/bitcoin_ecdsa_witness.h
+    include/circuit/signature_possession.h include/circuit/signature_possession_circuit.h
+    include/circuit/signature_possession_witness.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/longfellow-zk-quietproof/circuit)
 endif()
 
@@ -128,7 +130,8 @@ endif()
 install(TARGETS quietproof EXPORT LongfellowZKQuietProofTargets)
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/longfellow-zk-quietproof
   PATTERN "bitcoin_ecdsa.h" EXCLUDE
-  PATTERN "bitcoin_ecdsa_witness.h" EXCLUDE)
+  PATTERN "bitcoin_ecdsa_witness.h" EXCLUDE
+  PATTERN "signature_possession*.h" EXCLUDE)
 install(EXPORT LongfellowZKQuietProofTargets
   FILE LongfellowZKQuietProofTargets.cmake NAMESPACE LongfellowZKQuietProof::
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LongfellowZKQuietProof)
@@ -202,6 +205,23 @@ if(BUILD_TESTING)
     add_test(NAME ${target} COMMAND ${target} ${ARGN})
   endfunction()
   if(QUIETPROOF_BUILD_SIGNATURE_MODE)
+    add_executable(quietproof-signature-proof-test tests/quietproof/signature_proof_test.cc)
+    target_link_libraries(quietproof-signature-proof-test PRIVATE LongfellowZKQuietProof::signature)
+    add_test(NAME quietproof-signature-proof-test COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/signature_proof_test.py
+      --driver $<TARGET_FILE:quietproof-signature-proof-test> --work ${CMAKE_CURRENT_BINARY_DIR}/tests/results)
+    set_tests_properties(quietproof-signature-proof-test
+      PROPERTIES TIMEOUT 7200 RUN_SERIAL TRUE LABELS "signature-reference;proof-heavy")
+    add_executable(quietproof-signature-identity-test tests/quietproof/signature_identity_test.cc)
+    target_link_libraries(quietproof-signature-identity-test PRIVATE LongfellowZKQuietProof::signature)
+    add_test(NAME quietproof-signature-identity-test COMMAND quietproof-signature-identity-test)
+    add_executable(quietproof-ecdsa-circuit-test tests/quietproof/signature_possession_test.cc)
+    target_link_libraries(quietproof-ecdsa-circuit-test PRIVATE LongfellowZKQuietProof::signature)
+    add_test(NAME quietproof-ecdsa-circuit-test COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/signature_possession_test.py
+      --circuit $<TARGET_FILE:quietproof-ecdsa-circuit-test>)
+    set_tests_properties(quietproof-ecdsa-circuit-test
+      PROPERTIES TIMEOUT 1800 RUN_SERIAL TRUE LABELS "signature-reference")
     add_executable(quietproof-ecdsa-prototype tests/quietproof/bitcoin_ecdsa_test.cc)
     target_link_libraries(quietproof-ecdsa-prototype PRIVATE LongfellowZKQuietProof::signature)
     add_test(NAME quietproof-ecdsa-constraint-test COMMAND ${Python3_EXECUTABLE}
@@ -270,6 +290,13 @@ if(BUILD_TESTING)
   add_pokc_test(quietproof-protocol-test tests/quietproof/protocol_test.cc)
   add_pokc_test(quietproof-signature-statement-disabled-test tests/quietproof/signature_statement_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/spec/signature-profile-v1.json)
+  add_executable(quietproof-signature-proof-disabled-test tests/quietproof/signature_proof_test.cc)
+  target_link_libraries(quietproof-signature-proof-disabled-test PRIVATE LongfellowZKQuietProof::quietproof)
+  add_test(NAME quietproof-signature-proof-disabled-test COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/signature_proof_test.py
+    --driver $<TARGET_FILE:quietproof-signature-proof-disabled-test>
+    --work ${CMAKE_CURRENT_BINARY_DIR}/tests/results --disabled)
+  set_tests_properties(quietproof-signature-proof-disabled-test PROPERTIES TIMEOUT 30)
   add_pokc_test(quietproof-signature-codec-disabled-test tests/quietproof/signature_codec_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/spec/signature-profile-v1.json)
   add_pokc_test(quietproof-signature-envelope-disabled-test tests/quietproof/signature_envelope_test.cc

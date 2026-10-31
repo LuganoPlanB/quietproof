@@ -11,9 +11,13 @@
 #include "circuits/logic/compiler_backend.h"
 #include "circuits/logic/logic.h"
 #include "sumcheck/prover_layers.h"
+#include "poksig/prover.h"
 
 int main() {
   using namespace proofs;
+  if (!PoKSigCircuitIdentityApproved(PoKSigExpectedCircuitDigest())) return 2;
+  PoKSigProofV1 signature_output{{17}};
+  if (PoKSigProveReceipt({}, {}, &signature_output, {true}) || signature_output.bytes != std::vector<uint8_t>{17}) return 3;
   using Field = Fp256k1Base;
   using Backend = CompilerBackend<Field>;
   using CircuitLogic = Logic<Field, Backend>;

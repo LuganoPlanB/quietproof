@@ -107,7 +107,8 @@ def main():
             run(mode + '-build', ['cmake', '--build', build, '--parallel', '2'])
             run(mode + '-install', ['cmake', '--install', build])
             installations[(rpc, signature)] = install
-            for name in ('bitcoin_ecdsa.h', 'bitcoin_ecdsa_witness.h'):
+            for name in ('bitcoin_ecdsa.h', 'bitcoin_ecdsa_witness.h', 'signature_possession.h',
+                         'signature_possession_circuit.h', 'signature_possession_witness.h'):
                 check(mode + '-header-' + name, (install / header_relative / name).exists() == signature)
             check(mode + '-export', (install / package_relative / signature_export).exists() == signature)
             exports = '\n'.join(p.read_text() for p in (install / package_relative).glob('*.cmake'))
@@ -169,7 +170,8 @@ def main():
         removed = args.work / 'removed-signature'
         shutil.copytree(on, removed, dirs_exist_ok=True)
         (removed / package_relative / signature_export).unlink()
-        for name in ('bitcoin_ecdsa.h', 'bitcoin_ecdsa_witness.h'):
+        for name in ('bitcoin_ecdsa.h', 'bitcoin_ecdsa_witness.h', 'signature_possession.h',
+                     'signature_possession_circuit.h', 'signature_possession_witness.h'):
             (removed / header_relative / name).unlink()
         consumer('core-after-signature-removal', 'core-consumer', removed,
                  ['-DCMAKE_DISABLE_FIND_PACKAGE_CURL=TRUE'])
