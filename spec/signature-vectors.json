@@ -1,0 +1,2146 @@
+{
+  "format": "quietproof-signature-vectors-v1",
+  "status": "public deterministic test fixtures; not wallet authorisations or circuit evidence",
+  "integer_encoding": "unsigned hexadecimal without 0x; z is exactly 32 big-endian bytes; null point is infinity",
+  "domains": {
+    "p": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
+    "n": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
+    "G": {
+      "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+    },
+    "coordinate_arithmetic": "mod p, but Q coordinates must be canonical before arithmetic",
+    "scalar_arithmetic": "mod n; e=BE256(z) mod n; 1<=r<n; 1<=s<=floor(n/2)",
+    "nonce_point": "finite R=s^-1(eG+rQ); x(R)=r OR x(R)=r+n<p; no p wrap"
+  },
+  "oracle_contract": {
+    "binary": "quietproof-signing-oracle (L2, test-only libsecp256k1 0.8.1)",
+    "argv": [
+      "z hex",
+      "strict DER hex (no sighash byte)",
+      "compressed SEC hex"
+    ],
+    "not_encodable": "Explicit relation-only cases, not skipped or executed oracle tests",
+    "rejections": "Malformed/range/low-S cases are not cryptographic negatives; only canonical in-range inputs reach the ECDSA equation"
+  },
+  "rare_branch_k": 2,
+  "relation_cases": [
+    {
+      "id": "digest_zero_G",
+      "tags": [
+        "digest_boundary",
+        "G"
+      ],
+      "construction": "public d=1 or n-1, nonce k=2; normalize s",
+      "z": "0000000000000000000000000000000000000000000000000000000000000000",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "s": "1cfdc035df09414967dd5fc8b51fc1932f1ba74d912cb1ca0a132a69b9e2d12e",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "0",
+        "u": "0",
+        "v": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd036413f",
+        "R": {
+          "x": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "y": "e51e970159c23cc65c3a7be6b99315110809cd9acd992f1edc9bce55af301705"
+        },
+        "x_branch": "r"
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000000",
+        "der": "3045022100c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee502201cfdc035df09414967dd5fc8b51fc1932f1ba74d912cb1ca0a132a69b9e2d12e",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "digest_zero_minus_G",
+      "tags": [
+        "digest_boundary",
+        "minus_G"
+      ],
+      "construction": "public d=1 or n-1, nonce k=2; normalize s",
+      "z": "0000000000000000000000000000000000000000000000000000000000000000",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "b7c52588d95c3b9aa25b0403f1eef75702e84bb7597aabe663b82f6f04ef2777"
+      },
+      "r": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "s": "1cfdc035df09414967dd5fc8b51fc1932f1ba74d912cb1ca0a132a69b9e2d12e",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "0",
+        "u": "0",
+        "v": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd036413f",
+        "R": {
+          "x": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "y": "1ae168fea63dc339a3c58419466ceaeef7f632653266d0e1236431a950cfe52a"
+        },
+        "x_branch": "r"
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000000",
+        "der": "3045022100c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee502201cfdc035df09414967dd5fc8b51fc1932f1ba74d912cb1ca0a132a69b9e2d12e",
+        "Q_compressed": "0379be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "digest_one_G",
+      "tags": [
+        "digest_boundary",
+        "G"
+      ],
+      "construction": "public d=1 or n-1, nonce k=2; normalize s",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "s": "63023fca20f6beb69822a0374ae03e6c2e3bc725c6779e53d5d604dcae384f73",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "1",
+        "u": "28f2ba3a20cbdb02d529efd1e92756aad32196adc8a8a9c223d60f2cb1f90224",
+        "v": "d70d45c5df3424fd2ad6102e16d8a953e78d4638e69ff6799bfc4f601e3d3f1f",
+        "R": {
+          "x": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "y": "1ae168fea63dc339a3c58419466ceaeef7f632653266d0e1236431a950cfe52a"
+        },
+        "x_branch": "r"
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3045022100c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5022063023fca20f6beb69822a0374ae03e6c2e3bc725c6779e53d5d604dcae384f73",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "digest_one_minus_G",
+      "tags": [
+        "digest_boundary",
+        "minus_G"
+      ],
+      "construction": "public d=1 or n-1, nonce k=2; normalize s",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "b7c52588d95c3b9aa25b0403f1eef75702e84bb7597aabe663b82f6f04ef2777"
+      },
+      "r": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "s": "63023fca20f6beb69822a0374ae03e6c2e3bc725c6779e53d5d604dcae384f72",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "1",
+        "u": "112fec9ae31d72594afb9fc02350ee141d6d846bc787d7910c64ff9779faba4d",
+        "v": "112fec9ae31d72594afb9fc02350ee141d6d846bc787d7910c64ff9779faba4f",
+        "R": {
+          "x": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "y": "e51e970159c23cc65c3a7be6b99315110809cd9acd992f1edc9bce55af301705"
+        },
+        "x_branch": "r"
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3045022100c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5022063023fca20f6beb69822a0374ae03e6c2e3bc725c6779e53d5d604dcae384f72",
+        "Q_compressed": "0379be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "digest_n_minus_one_G",
+      "tags": [
+        "digest_boundary",
+        "G"
+      ],
+      "construction": "public d=1 or n-1, nonce k=2; normalize s",
+      "z": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "s": "63023fca20f6beb69822a0374ae03e6c2e3bc725c6779e53d5d604dcae384f72",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140",
+        "u": "eed013651ce28da6b504603fdcaf11ea9d41587ae7c0c8aab36d5ef5563b86f4",
+        "v": "112fec9ae31d72594afb9fc02350ee141d6d846bc787d7910c64ff9779faba4f",
+        "R": {
+          "x": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "y": "1ae168fea63dc339a3c58419466ceaeef7f632653266d0e1236431a950cfe52a"
+        },
+        "x_branch": "r"
+      },
+      "oracle_input": {
+        "z": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140",
+        "der": "3045022100c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5022063023fca20f6beb69822a0374ae03e6c2e3bc725c6779e53d5d604dcae384f72",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "digest_n_minus_one_minus_G",
+      "tags": [
+        "digest_boundary",
+        "minus_G"
+      ],
+      "construction": "public d=1 or n-1, nonce k=2; normalize s",
+      "z": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "b7c52588d95c3b9aa25b0403f1eef75702e84bb7597aabe663b82f6f04ef2777"
+      },
+      "r": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "s": "63023fca20f6beb69822a0374ae03e6c2e3bc725c6779e53d5d604dcae384f73",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140",
+        "u": "d70d45c5df3424fd2ad6102e16d8a953e78d4638e69ff6799bfc4f601e3d3f1d",
+        "v": "d70d45c5df3424fd2ad6102e16d8a953e78d4638e69ff6799bfc4f601e3d3f1f",
+        "R": {
+          "x": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "y": "e51e970159c23cc65c3a7be6b99315110809cd9acd992f1edc9bce55af301705"
+        },
+        "x_branch": "r"
+      },
+      "oracle_input": {
+        "z": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140",
+        "der": "3045022100c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5022063023fca20f6beb69822a0374ae03e6c2e3bc725c6779e53d5d604dcae384f73",
+        "Q_compressed": "0379be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "digest_n_G",
+      "tags": [
+        "digest_boundary",
+        "G"
+      ],
+      "construction": "public d=1 or n-1, nonce k=2; normalize s",
+      "z": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "s": "1cfdc035df09414967dd5fc8b51fc1932f1ba74d912cb1ca0a132a69b9e2d12e",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "0",
+        "u": "0",
+        "v": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd036413f",
+        "R": {
+          "x": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "y": "e51e970159c23cc65c3a7be6b99315110809cd9acd992f1edc9bce55af301705"
+        },
+        "x_branch": "r"
+      },
+      "oracle_input": {
+        "z": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
+        "der": "3045022100c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee502201cfdc035df09414967dd5fc8b51fc1932f1ba74d912cb1ca0a132a69b9e2d12e",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "digest_n_minus_G",
+      "tags": [
+        "digest_boundary",
+        "minus_G"
+      ],
+      "construction": "public d=1 or n-1, nonce k=2; normalize s",
+      "z": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "b7c52588d95c3b9aa25b0403f1eef75702e84bb7597aabe663b82f6f04ef2777"
+      },
+      "r": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "s": "1cfdc035df09414967dd5fc8b51fc1932f1ba74d912cb1ca0a132a69b9e2d12e",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "0",
+        "u": "0",
+        "v": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd036413f",
+        "R": {
+          "x": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "y": "1ae168fea63dc339a3c58419466ceaeef7f632653266d0e1236431a950cfe52a"
+        },
+        "x_branch": "r"
+      },
+      "oracle_input": {
+        "z": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
+        "der": "3045022100c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee502201cfdc035df09414967dd5fc8b51fc1932f1ba74d912cb1ca0a132a69b9e2d12e",
+        "Q_compressed": "0379be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "digest_n_plus_one_G",
+      "tags": [
+        "digest_boundary",
+        "G"
+      ],
+      "construction": "public d=1 or n-1, nonce k=2; normalize s",
+      "z": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364142",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "s": "63023fca20f6beb69822a0374ae03e6c2e3bc725c6779e53d5d604dcae384f73",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "1",
+        "u": "28f2ba3a20cbdb02d529efd1e92756aad32196adc8a8a9c223d60f2cb1f90224",
+        "v": "d70d45c5df3424fd2ad6102e16d8a953e78d4638e69ff6799bfc4f601e3d3f1f",
+        "R": {
+          "x": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "y": "1ae168fea63dc339a3c58419466ceaeef7f632653266d0e1236431a950cfe52a"
+        },
+        "x_branch": "r"
+      },
+      "oracle_input": {
+        "z": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364142",
+        "der": "3045022100c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5022063023fca20f6beb69822a0374ae03e6c2e3bc725c6779e53d5d604dcae384f73",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "digest_n_plus_one_minus_G",
+      "tags": [
+        "digest_boundary",
+        "minus_G"
+      ],
+      "construction": "public d=1 or n-1, nonce k=2; normalize s",
+      "z": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364142",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "b7c52588d95c3b9aa25b0403f1eef75702e84bb7597aabe663b82f6f04ef2777"
+      },
+      "r": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "s": "63023fca20f6beb69822a0374ae03e6c2e3bc725c6779e53d5d604dcae384f72",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "1",
+        "u": "112fec9ae31d72594afb9fc02350ee141d6d846bc787d7910c64ff9779faba4d",
+        "v": "112fec9ae31d72594afb9fc02350ee141d6d846bc787d7910c64ff9779faba4f",
+        "R": {
+          "x": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "y": "e51e970159c23cc65c3a7be6b99315110809cd9acd992f1edc9bce55af301705"
+        },
+        "x_branch": "r"
+      },
+      "oracle_input": {
+        "z": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364142",
+        "der": "3045022100c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5022063023fca20f6beb69822a0374ae03e6c2e3bc725c6779e53d5d604dcae384f72",
+        "Q_compressed": "0379be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "digest_p_minus_one_G",
+      "tags": [
+        "digest_boundary",
+        "G"
+      ],
+      "construction": "public d=1 or n-1, nonce k=2; normalize s",
+      "z": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2e",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "s": "63023fca20f6beb69822a0374ae03e6cd0e458b26ed34e35f5ecd595c61d2ce9",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "14551231950b75fc4402da1722fc9baed",
+        "u": "ab6e10967c360935b0577731f33d224206ff43a456b7ed2832dd5ee0bef575a2",
+        "v": "5491ef6983c9f6ca4fa888ce0cc2ddbcb3af99425890b3138cf4ffac1140cba1",
+        "R": {
+          "x": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "y": "1ae168fea63dc339a3c58419466ceaeef7f632653266d0e1236431a950cfe52a"
+        },
+        "x_branch": "r"
+      },
+      "oracle_input": {
+        "z": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2e",
+        "der": "3045022100c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5022063023fca20f6beb69822a0374ae03e6cd0e458b26ed34e35f5ecd595c61d2ce9",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "digest_p_minus_one_minus_G",
+      "tags": [
+        "digest_boundary",
+        "minus_G"
+      ],
+      "construction": "public d=1 or n-1, nonce k=2; normalize s",
+      "z": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2e",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "b7c52588d95c3b9aa25b0403f1eef75702e84bb7597aabe663b82f6f04ef2777"
+      },
+      "r": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "s": "63023fca20f6beb69822a0374ae03e6b8b9335991e1bee71b5bf3423965371fc",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "14551231950b75fc4402da1722fc9baed",
+        "u": "23d04b6e87cd867fe16dbcee07a7041d091c4f75e45c6dec23135d9f448afba0",
+        "v": "23d04b6e87cd867fe16dbcee07a7041d091c4f75e45c6dec23135d9f448afba2",
+        "R": {
+          "x": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "y": "e51e970159c23cc65c3a7be6b99315110809cd9acd992f1edc9bce55af301705"
+        },
+        "x_branch": "r"
+      },
+      "oracle_input": {
+        "z": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2e",
+        "der": "3045022100c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5022063023fca20f6beb69822a0374ae03e6b8b9335991e1bee71b5bf3423965371fc",
+        "Q_compressed": "0379be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "digest_p_G",
+      "tags": [
+        "digest_boundary",
+        "G"
+      ],
+      "construction": "public d=1 or n-1, nonce k=2; normalize s",
+      "z": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "s": "1cfdc035df09414967dd5fc8b51fc1928c7315c0e8d101e7e9fc59b0a1fdf3b7",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "14551231950b75fc4402da1722fc9baee",
+        "u": "6f71a69a073aedec6b19604a64baab0d3c6e91716fa7102808e4cf0a2a0a27a4",
+        "v": "908e5965f8c5121394e69fb59b4554f17e404b753fa19013b6ed8f82a62c199b",
+        "R": {
+          "x": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "y": "e51e970159c23cc65c3a7be6b99315110809cd9acd992f1edc9bce55af301705"
+        },
+        "x_branch": "r"
+      },
+      "oracle_input": {
+        "z": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
+        "der": "3045022100c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee502201cfdc035df09414967dd5fc8b51fc1928c7315c0e8d101e7e9fc59b0a1fdf3b7",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "digest_p_minus_G",
+      "tags": [
+        "digest_boundary",
+        "minus_G"
+      ],
+      "construction": "public d=1 or n-1, nonce k=2; normalize s",
+      "z": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "b7c52588d95c3b9aa25b0403f1eef75702e84bb7597aabe663b82f6f04ef2777"
+      },
+      "r": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "s": "1cfdc035df09414967dd5fc8b51fc193d1c438da398861ac2a29fb22d1c7aea5",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "14551231950b75fc4402da1722fc9baee",
+        "u": "4dfdc3f43ef28350f1cb3db935da17bfdc505d2fd2d6cb68d008678998cb4c42",
+        "v": "4dfdc3f43ef28350f1cb3db935da17bfdc505d2fd2d6cb68d008678998cb4c40",
+        "R": {
+          "x": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "y": "1ae168fea63dc339a3c58419466ceaeef7f632653266d0e1236431a950cfe52a"
+        },
+        "x_branch": "r"
+      },
+      "oracle_input": {
+        "z": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
+        "der": "3045022100c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee502201cfdc035df09414967dd5fc8b51fc193d1c438da398861ac2a29fb22d1c7aea5",
+        "Q_compressed": "0379be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "digest_p_plus_one_G",
+      "tags": [
+        "digest_boundary",
+        "G"
+      ],
+      "construction": "public d=1 or n-1, nonce k=2; normalize s",
+      "z": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc30",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "s": "63023fca20f6beb69822a0374ae03e6cd0e458b26ed34e35f5ecd595c61d2cea",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "14551231950b75fc4402da1722fc9baef",
+        "u": "89958cd82322c639af10a76e4104334f19c4a6b9515fd965eb939a1073c361f0",
+        "v": "766a7327dcdd39c650ef5891befbccafa0ea362d5de8c6d5d43ec47c5c72df53",
+        "R": {
+          "x": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "y": "1ae168fea63dc339a3c58419466ceaeef7f632653266d0e1236431a950cfe52a"
+        },
+        "x_branch": "r"
+      },
+      "oracle_input": {
+        "z": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc30",
+        "der": "3045022100c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5022063023fca20f6beb69822a0374ae03e6cd0e458b26ed34e35f5ecd595c61d2cea",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "digest_p_plus_one_minus_G",
+      "tags": [
+        "digest_boundary",
+        "minus_G"
+      ],
+      "construction": "public d=1 or n-1, nonce k=2; normalize s",
+      "z": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc30",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "b7c52588d95c3b9aa25b0403f1eef75702e84bb7597aabe663b82f6f04ef2777"
+      },
+      "r": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "s": "63023fca20f6beb69822a0374ae03e6b8b9335991e1bee71b5bf3423965371fb",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "14551231950b75fc4402da1722fc9baef",
+        "u": "905429ea168a2572dd01af211f6a6b1d595bf77cc301b3726ef1895a94bffed9",
+        "v": "905429ea168a2572dd01af211f6a6b1d595bf77cc301b3726ef1895a94bffedb",
+        "R": {
+          "x": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "y": "e51e970159c23cc65c3a7be6b99315110809cd9acd992f1edc9bce55af301705"
+        },
+        "x_branch": "r"
+      },
+      "oracle_input": {
+        "z": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc30",
+        "der": "3045022100c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5022063023fca20f6beb69822a0374ae03e6b8b9335991e1bee71b5bf3423965371fb",
+        "Q_compressed": "0379be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "digest_max256_G",
+      "tags": [
+        "digest_boundary",
+        "G"
+      ],
+      "construction": "public d=1 or n-1, nonce k=2; normalize s",
+      "z": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "s": "1cfdc035df09414967dd5fc8b51fc1928c7315c0e8d101e7e9fc59b021fdf1cf",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "14551231950b75fc4402da1732fc9bebe",
+        "u": "499929e7b1db1e0673c65c31a123dc3ba4c67effd0e9643011fd4986eed59d67",
+        "v": "b666d6184e24e1f98c39a3ce5edc23c315e85de6de5f3c0badd51505e160a3d8",
+        "R": {
+          "x": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "y": "e51e970159c23cc65c3a7be6b99315110809cd9acd992f1edc9bce55af301705"
+        },
+        "x_branch": "r"
+      },
+      "oracle_input": {
+        "z": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "der": "3045022100c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee502201cfdc035df09414967dd5fc8b51fc1928c7315c0e8d101e7e9fc59b021fdf1cf",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "digest_max256_minus_G",
+      "tags": [
+        "digest_boundary",
+        "minus_G"
+      ],
+      "construction": "public d=1 or n-1, nonce k=2; normalize s",
+      "z": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "b7c52588d95c3b9aa25b0403f1eef75702e84bb7597aabe663b82f6f04ef2777"
+      },
+      "r": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "s": "1cfdc035df09414967dd5fc8b51fc193d1c438da398861ac2a29fb2351c7b08d",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "14551231950b75fc4402da1732fc9bebe",
+        "u": "5f7998b36db13201f1cad23c0f99a4b61a3b1ab7837a0d7d7e6f781e62bfefac",
+        "v": "5f7998b36db13201f1cad23c0f99a4b61a3b1ab7837a0d7d7e6f781e62bfefaa",
+        "R": {
+          "x": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "y": "1ae168fea63dc339a3c58419466ceaeef7f632653266d0e1236431a950cfe52a"
+        },
+        "x_branch": "r"
+      },
+      "oracle_input": {
+        "z": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "der": "3045022100c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee502201cfdc035df09414967dd5fc8b51fc193d1c438da398861ac2a29fb2351c7b08d",
+        "Q_compressed": "0379be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "rare_x_zero_R_parity_0",
+      "tags": [
+        "rare_branch",
+        "R_even"
+      ],
+      "construction": "x(R)=n+k<p; s=1; r=k; Q=r^-1(sR-eG)",
+      "z": "0000000000000000000000000000000000000000000000000000000000000000",
+      "Q": {
+        "x": "ad802f2145df548ce1fc418b851cb32669c5a6bb939e6caf744de90310f8f1ff",
+        "y": "5cb48a344d7a1573a8a254c8a9a109e2fa904929003f541807257264144c2c0c"
+      },
+      "r": "2",
+      "s": "1",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "0",
+        "u": "0",
+        "v": "2",
+        "R": {
+          "x": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364143",
+          "y": "c94e559d14883e68cfda34341568bf1127153254788dd974c6af9bb9cd962a5c"
+        },
+        "x_branch": "r+n"
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000000",
+        "der": "3006020102020101",
+        "Q_compressed": "02ad802f2145df548ce1fc418b851cb32669c5a6bb939e6caf744de90310f8f1ff"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "rare_r_n_plus_k_R_parity_0",
+      "tags": [
+        "scalar_alias",
+        "rare_branch"
+      ],
+      "construction": "replace r=k by r=n+k: rQ unchanged mod n and raw x(R)=r; range check must reject",
+      "z": "0000000000000000000000000000000000000000000000000000000000000000",
+      "Q": {
+        "x": "ad802f2145df548ce1fc418b851cb32669c5a6bb939e6caf744de90310f8f1ff",
+        "y": "5cb48a344d7a1573a8a254c8a9a109e2fa904929003f541807257264144c2c0c"
+      },
+      "r": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364143",
+      "s": "1",
+      "expected": {
+        "valid": false,
+        "reason": "r_range",
+        "e": "0",
+        "u": null,
+        "v": null,
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000000",
+        "der": "3026022100fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364143020101",
+        "Q_compressed": "02ad802f2145df548ce1fc418b851cb32669c5a6bb939e6caf744de90310f8f1ff"
+      },
+      "oracle_class": "scalar_range_rejection",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "rare_s_n_plus_one_R_parity_0",
+      "tags": [
+        "scalar_alias",
+        "rare_branch"
+      ],
+      "construction": "replace s=1 by s=n+1: inverse unchanged mod n; range check must reject",
+      "z": "0000000000000000000000000000000000000000000000000000000000000000",
+      "Q": {
+        "x": "ad802f2145df548ce1fc418b851cb32669c5a6bb939e6caf744de90310f8f1ff",
+        "y": "5cb48a344d7a1573a8a254c8a9a109e2fa904929003f541807257264144c2c0c"
+      },
+      "r": "2",
+      "s": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364142",
+      "expected": {
+        "valid": false,
+        "reason": "s_range",
+        "e": "0",
+        "u": null,
+        "v": null,
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000000",
+        "der": "3026020102022100fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364142",
+        "Q_compressed": "02ad802f2145df548ce1fc418b851cb32669c5a6bb939e6caf744de90310f8f1ff"
+      },
+      "oracle_class": "scalar_range_rejection",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "rare_x_one_R_parity_0",
+      "tags": [
+        "rare_branch",
+        "R_even"
+      ],
+      "construction": "x(R)=n+k<p; s=1; r=k; Q=r^-1(sR-eG)",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "8a0dee06163f357e0e71688f3785eb53891144624c633ed43706b6268bb4316f",
+        "y": "e440d41220c85c709a6ceb8bb5faf8963408733e2451994f9bab1da5e0bfbff0"
+      },
+      "r": "2",
+      "s": "1",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "1",
+        "u": "1",
+        "v": "2",
+        "R": {
+          "x": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364143",
+          "y": "c94e559d14883e68cfda34341568bf1127153254788dd974c6af9bb9cd962a5c"
+        },
+        "x_branch": "r+n"
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3006020102020101",
+        "Q_compressed": "028a0dee06163f357e0e71688f3785eb53891144624c633ed43706b6268bb4316f"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "rare_x_n_R_parity_0",
+      "tags": [
+        "rare_branch",
+        "R_even"
+      ],
+      "construction": "x(R)=n+k<p; s=1; r=k; Q=r^-1(sR-eG)",
+      "z": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
+      "Q": {
+        "x": "ad802f2145df548ce1fc418b851cb32669c5a6bb939e6caf744de90310f8f1ff",
+        "y": "5cb48a344d7a1573a8a254c8a9a109e2fa904929003f541807257264144c2c0c"
+      },
+      "r": "2",
+      "s": "1",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "0",
+        "u": "0",
+        "v": "2",
+        "R": {
+          "x": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364143",
+          "y": "c94e559d14883e68cfda34341568bf1127153254788dd974c6af9bb9cd962a5c"
+        },
+        "x_branch": "r+n"
+      },
+      "oracle_input": {
+        "z": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
+        "der": "3006020102020101",
+        "Q_compressed": "02ad802f2145df548ce1fc418b851cb32669c5a6bb939e6caf744de90310f8f1ff"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "rare_x_p_R_parity_0",
+      "tags": [
+        "rare_branch",
+        "R_even"
+      ],
+      "construction": "x(R)=n+k<p; s=1; r=k; Q=r^-1(sR-eG)",
+      "z": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
+      "Q": {
+        "x": "3623b51324b408e038e1408cd0018656321245b721336545b2f1a617d8f50b71",
+        "y": "f3796c85f6a01409513bd1c16ee63859616616a5391e504fb6ea68db6c2289ea"
+      },
+      "r": "2",
+      "s": "1",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "14551231950b75fc4402da1722fc9baee",
+        "u": "14551231950b75fc4402da1722fc9baee",
+        "v": "2",
+        "R": {
+          "x": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364143",
+          "y": "c94e559d14883e68cfda34341568bf1127153254788dd974c6af9bb9cd962a5c"
+        },
+        "x_branch": "r+n"
+      },
+      "oracle_input": {
+        "z": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
+        "der": "3006020102020101",
+        "Q_compressed": "023623b51324b408e038e1408cd0018656321245b721336545b2f1a617d8f50b71"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "rare_x_max256_R_parity_0",
+      "tags": [
+        "rare_branch",
+        "R_even"
+      ],
+      "construction": "x(R)=n+k<p; s=1; r=k; Q=r^-1(sR-eG)",
+      "z": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "Q": {
+        "x": "28d77dd4457b69068542a86df487765b4cb61cd610490695d577f1c7b905209b",
+        "y": "699c09e89610be4b7a0b3a526b6ab96ba9a2cfd6e5e9ba4597e16c4d77e015d6"
+      },
+      "r": "2",
+      "s": "1",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "14551231950b75fc4402da1732fc9bebe",
+        "u": "14551231950b75fc4402da1732fc9bebe",
+        "v": "2",
+        "R": {
+          "x": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364143",
+          "y": "c94e559d14883e68cfda34341568bf1127153254788dd974c6af9bb9cd962a5c"
+        },
+        "x_branch": "r+n"
+      },
+      "oracle_input": {
+        "z": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "der": "3006020102020101",
+        "Q_compressed": "0228d77dd4457b69068542a86df487765b4cb61cd610490695d577f1c7b905209b"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "rare_x_zero_R_parity_1",
+      "tags": [
+        "rare_branch",
+        "R_odd"
+      ],
+      "construction": "x(R)=n+k<p; s=1; r=k; Q=r^-1(sR-eG)",
+      "z": "0000000000000000000000000000000000000000000000000000000000000000",
+      "Q": {
+        "x": "ad802f2145df548ce1fc418b851cb32669c5a6bb939e6caf744de90310f8f1ff",
+        "y": "a34b75cbb285ea8c575dab37565ef61d056fb6d6ffc0abe7f8da8d9aebb3d023"
+      },
+      "r": "2",
+      "s": "1",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "0",
+        "u": "0",
+        "v": "2",
+        "R": {
+          "x": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364143",
+          "y": "36b1aa62eb77c1973025cbcbea9740eed8eacdab8772268b395064453269d1d3"
+        },
+        "x_branch": "r+n"
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000000",
+        "der": "3006020102020101",
+        "Q_compressed": "03ad802f2145df548ce1fc418b851cb32669c5a6bb939e6caf744de90310f8f1ff"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "rare_r_n_plus_k_R_parity_1",
+      "tags": [
+        "scalar_alias",
+        "rare_branch"
+      ],
+      "construction": "replace r=k by r=n+k: rQ unchanged mod n and raw x(R)=r; range check must reject",
+      "z": "0000000000000000000000000000000000000000000000000000000000000000",
+      "Q": {
+        "x": "ad802f2145df548ce1fc418b851cb32669c5a6bb939e6caf744de90310f8f1ff",
+        "y": "a34b75cbb285ea8c575dab37565ef61d056fb6d6ffc0abe7f8da8d9aebb3d023"
+      },
+      "r": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364143",
+      "s": "1",
+      "expected": {
+        "valid": false,
+        "reason": "r_range",
+        "e": "0",
+        "u": null,
+        "v": null,
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000000",
+        "der": "3026022100fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364143020101",
+        "Q_compressed": "03ad802f2145df548ce1fc418b851cb32669c5a6bb939e6caf744de90310f8f1ff"
+      },
+      "oracle_class": "scalar_range_rejection",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "rare_s_n_plus_one_R_parity_1",
+      "tags": [
+        "scalar_alias",
+        "rare_branch"
+      ],
+      "construction": "replace s=1 by s=n+1: inverse unchanged mod n; range check must reject",
+      "z": "0000000000000000000000000000000000000000000000000000000000000000",
+      "Q": {
+        "x": "ad802f2145df548ce1fc418b851cb32669c5a6bb939e6caf744de90310f8f1ff",
+        "y": "a34b75cbb285ea8c575dab37565ef61d056fb6d6ffc0abe7f8da8d9aebb3d023"
+      },
+      "r": "2",
+      "s": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364142",
+      "expected": {
+        "valid": false,
+        "reason": "s_range",
+        "e": "0",
+        "u": null,
+        "v": null,
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000000",
+        "der": "3026020102022100fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364142",
+        "Q_compressed": "03ad802f2145df548ce1fc418b851cb32669c5a6bb939e6caf744de90310f8f1ff"
+      },
+      "oracle_class": "scalar_range_rejection",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "rare_x_one_R_parity_1",
+      "tags": [
+        "rare_branch",
+        "R_odd"
+      ],
+      "construction": "x(R)=n+k<p; s=1; r=k; Q=r^-1(sR-eG)",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "19099fbdddcdb7a14410b5c6ba73f51bd2f74a3d1cd8456fcc1da68ed6468884",
+        "y": "b07b9f7dd9ea5753e009246a1db85e7e1644bfdee276881a950ce59fdd45b45b"
+      },
+      "r": "2",
+      "s": "1",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "1",
+        "u": "1",
+        "v": "2",
+        "R": {
+          "x": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364143",
+          "y": "36b1aa62eb77c1973025cbcbea9740eed8eacdab8772268b395064453269d1d3"
+        },
+        "x_branch": "r+n"
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3006020102020101",
+        "Q_compressed": "0319099fbdddcdb7a14410b5c6ba73f51bd2f74a3d1cd8456fcc1da68ed6468884"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "rare_x_n_R_parity_1",
+      "tags": [
+        "rare_branch",
+        "R_odd"
+      ],
+      "construction": "x(R)=n+k<p; s=1; r=k; Q=r^-1(sR-eG)",
+      "z": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
+      "Q": {
+        "x": "ad802f2145df548ce1fc418b851cb32669c5a6bb939e6caf744de90310f8f1ff",
+        "y": "a34b75cbb285ea8c575dab37565ef61d056fb6d6ffc0abe7f8da8d9aebb3d023"
+      },
+      "r": "2",
+      "s": "1",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "0",
+        "u": "0",
+        "v": "2",
+        "R": {
+          "x": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364143",
+          "y": "36b1aa62eb77c1973025cbcbea9740eed8eacdab8772268b395064453269d1d3"
+        },
+        "x_branch": "r+n"
+      },
+      "oracle_input": {
+        "z": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
+        "der": "3006020102020101",
+        "Q_compressed": "03ad802f2145df548ce1fc418b851cb32669c5a6bb939e6caf744de90310f8f1ff"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "rare_x_p_R_parity_1",
+      "tags": [
+        "rare_branch",
+        "R_odd"
+      ],
+      "construction": "x(R)=n+k<p; s=1; r=k; Q=r^-1(sR-eG)",
+      "z": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
+      "Q": {
+        "x": "2352bb9dd7c59d49b2849d62ca870f044eebb2afec4f82908ab099c406560963",
+        "y": "4c601f1edf1143b3b77cbc0a8cb4505a9ea474f1924f86f739a3c12f3ed74bc4"
+      },
+      "r": "2",
+      "s": "1",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "14551231950b75fc4402da1722fc9baee",
+        "u": "14551231950b75fc4402da1722fc9baee",
+        "v": "2",
+        "R": {
+          "x": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364143",
+          "y": "36b1aa62eb77c1973025cbcbea9740eed8eacdab8772268b395064453269d1d3"
+        },
+        "x_branch": "r+n"
+      },
+      "oracle_input": {
+        "z": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
+        "der": "3006020102020101",
+        "Q_compressed": "022352bb9dd7c59d49b2849d62ca870f044eebb2afec4f82908ab099c406560963"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "rare_x_max256_R_parity_1",
+      "tags": [
+        "rare_branch",
+        "R_odd"
+      ],
+      "construction": "x(R)=n+k<p; s=1; r=k; Q=r^-1(sR-eG)",
+      "z": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "Q": {
+        "x": "543acb47f7a9ce7fe46d647079489c90ef9a96915b0938c936a193556c19ad7c",
+        "y": "3878310cbc6079219a0119cae04487feacceb628e9a82ee10cc1d0cbadc289a5"
+      },
+      "r": "2",
+      "s": "1",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "14551231950b75fc4402da1732fc9bebe",
+        "u": "14551231950b75fc4402da1732fc9bebe",
+        "v": "2",
+        "R": {
+          "x": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364143",
+          "y": "36b1aa62eb77c1973025cbcbea9740eed8eacdab8772268b395064453269d1d3"
+        },
+        "x_branch": "r+n"
+      },
+      "oracle_input": {
+        "z": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "der": "3006020102020101",
+        "Q_compressed": "03543acb47f7a9ce7fe46d647079489c90ef9a96915b0938c936a193556c19ad7c"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "low_s_edge_one",
+      "tags": [
+        "low_s_boundary"
+      ],
+      "construction": "R=3G; e=7; Q=r^-1(sR-eG)",
+      "z": "0000000000000000000000000000000000000000000000000000000000000007",
+      "Q": {
+        "x": "da3a39706750c9c5b3e478dd5be782ee3b323b5cdb47ed06a5e2c2724ef76676",
+        "y": "5d0552fc46d802773f50e56c765c0852bf4b68c0485402b593e84d28b9b00166"
+      },
+      "r": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+      "s": "1",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "7",
+        "u": "7",
+        "v": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        "R": {
+          "x": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+          "y": "388f7b0f632de8140fe337e62a37f3566500a99934c2231b6cb9fd7584b8e672"
+        },
+        "x_branch": "r"
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000007",
+        "der": "3026022100f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9020101",
+        "Q_compressed": "02da3a39706750c9c5b3e478dd5be782ee3b323b5cdb47ed06a5e2c2724ef76676"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "high_s_twin_n_minus_one",
+      "tags": [
+        "high_s"
+      ],
+      "construction": "ECDSA-equivalent s -> n-s of preceding low-S case",
+      "z": "0000000000000000000000000000000000000000000000000000000000000007",
+      "Q": {
+        "x": "da3a39706750c9c5b3e478dd5be782ee3b323b5cdb47ed06a5e2c2724ef76676",
+        "y": "5d0552fc46d802773f50e56c765c0852bf4b68c0485402b593e84d28b9b00166"
+      },
+      "r": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+      "s": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140",
+      "expected": {
+        "valid": false,
+        "reason": "high_s",
+        "e": "7",
+        "u": null,
+        "v": null,
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000007",
+        "der": "3046022100f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9022100fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140",
+        "Q_compressed": "02da3a39706750c9c5b3e478dd5be782ee3b323b5cdb47ed06a5e2c2724ef76676"
+      },
+      "oracle_class": "low_s_rejection",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "low_s_edge_half_n",
+      "tags": [
+        "low_s_boundary"
+      ],
+      "construction": "R=3G; e=7; Q=r^-1(sR-eG)",
+      "z": "0000000000000000000000000000000000000000000000000000000000000007",
+      "Q": {
+        "x": "75fc9b6ef36b250c8c362d0588ef0c926c188921cfae6d27b7f3f1f7e8ddf571",
+        "y": "5cdccb74ff436a940eb59d1b3f0eb9d383d939f7a3f6eabef59117119deb947b"
+      },
+      "r": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+      "s": "7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "7",
+        "u": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364133",
+        "v": "d9eebfcdb4e79df6d9760f40ec55baa0afa294257b20d1673a0daf226ac1490",
+        "R": {
+          "x": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+          "y": "388f7b0f632de8140fe337e62a37f3566500a99934c2231b6cb9fd7584b8e672"
+        },
+        "x_branch": "r"
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000007",
+        "der": "3045022100f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f902207fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0",
+        "Q_compressed": "0375fc9b6ef36b250c8c362d0588ef0c926c188921cfae6d27b7f3f1f7e8ddf571"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "high_s_twin_half_n_plus_one",
+      "tags": [
+        "high_s"
+      ],
+      "construction": "ECDSA-equivalent s -> n-s of preceding low-S case",
+      "z": "0000000000000000000000000000000000000000000000000000000000000007",
+      "Q": {
+        "x": "75fc9b6ef36b250c8c362d0588ef0c926c188921cfae6d27b7f3f1f7e8ddf571",
+        "y": "5cdccb74ff436a940eb59d1b3f0eb9d383d939f7a3f6eabef59117119deb947b"
+      },
+      "r": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+      "s": "7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a1",
+      "expected": {
+        "valid": false,
+        "reason": "high_s",
+        "e": "7",
+        "u": null,
+        "v": null,
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000007",
+        "der": "3045022100f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f902207fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a1",
+        "Q_compressed": "0375fc9b6ef36b250c8c362d0588ef0c926c188921cfae6d27b7f3f1f7e8ddf571"
+      },
+      "oracle_class": "low_s_rejection",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "ordinary_G_nonce_one",
+      "tags": [
+        "ordinary_branch"
+      ],
+      "construction": "public d=1, k=1, z=1",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "s": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "1",
+        "u": "30d22ffc72f9f8babf9496d74dd928c4358b7129e9b0530e31fbabc6dd79f574",
+        "v": "cf2dd0038d060745406b6928b226d73a85236bbcc5984d2d8dd6b2c5f2bc4bce",
+        "R": {
+          "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+          "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+        },
+        "x_branch": "r"
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3044022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "equal_verification_addends",
+      "tags": [
+        "equal_addends",
+        "G"
+      ],
+      "construction": "e=r=x(2G); Q=G; low-S s=min(r,n-r); uG=vQ",
+      "z": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "s": "39fb806bbe128292cfbabf916a3f83265e374e9b22596394142654d373c5a25c",
+      "expected": {
+        "valid": true,
+        "reason": "accepted",
+        "e": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        "u": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140",
+        "v": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140",
+        "R": {
+          "x": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+          "y": "e51e970159c23cc65c3a7be6b99315110809cd9acd992f1edc9bce55af301705"
+        },
+        "x_branch": "r"
+      },
+      "oracle_input": {
+        "z": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        "der": "3045022100c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5022039fb806bbe128292cfbabf916a3f83265e374e9b22596394142654d373c5a25c",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "accepted",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "r_zero",
+      "tags": [
+        "scalar_boundary"
+      ],
+      "construction": "replace r in ordinary_G_nonce_one; DER is structurally canonical",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "0",
+      "s": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+      "expected": {
+        "valid": false,
+        "reason": "r_range",
+        "e": "1",
+        "u": null,
+        "v": null,
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3025020100022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "scalar_range_rejection",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "r_n",
+      "tags": [
+        "scalar_boundary"
+      ],
+      "construction": "replace r in ordinary_G_nonce_one; DER is structurally canonical",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
+      "s": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+      "expected": {
+        "valid": false,
+        "reason": "r_range",
+        "e": "1",
+        "u": null,
+        "v": null,
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3045022100fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "scalar_range_rejection",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "r_n_plus_one",
+      "tags": [
+        "scalar_boundary"
+      ],
+      "construction": "replace r in ordinary_G_nonce_one; DER is structurally canonical",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364142",
+      "s": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+      "expected": {
+        "valid": false,
+        "reason": "r_range",
+        "e": "1",
+        "u": null,
+        "v": null,
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3045022100fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364142022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "scalar_range_rejection",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "r_max256",
+      "tags": [
+        "scalar_boundary"
+      ],
+      "construction": "replace r in ordinary_G_nonce_one; DER is structurally canonical",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "s": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+      "expected": {
+        "valid": false,
+        "reason": "r_range",
+        "e": "1",
+        "u": null,
+        "v": null,
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3045022100ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "scalar_range_rejection",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "s_zero",
+      "tags": [
+        "scalar_boundary"
+      ],
+      "construction": "replace s in ordinary_G_nonce_one; DER is structurally canonical",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "s": "0",
+      "expected": {
+        "valid": false,
+        "reason": "s_range",
+        "e": "1",
+        "u": null,
+        "v": null,
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3025022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798020100",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "scalar_range_rejection",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "s_n",
+      "tags": [
+        "scalar_boundary"
+      ],
+      "construction": "replace s in ordinary_G_nonce_one; DER is structurally canonical",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "s": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
+      "expected": {
+        "valid": false,
+        "reason": "s_range",
+        "e": "1",
+        "u": null,
+        "v": null,
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3045022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798022100fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "scalar_range_rejection",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "s_n_plus_one",
+      "tags": [
+        "scalar_boundary"
+      ],
+      "construction": "replace s in ordinary_G_nonce_one; DER is structurally canonical",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "s": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364142",
+      "expected": {
+        "valid": false,
+        "reason": "s_range",
+        "e": "1",
+        "u": null,
+        "v": null,
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3045022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798022100fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364142",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "scalar_range_rejection",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "s_max256",
+      "tags": [
+        "scalar_boundary"
+      ],
+      "construction": "replace s in ordinary_G_nonce_one; DER is structurally canonical",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "s": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "expected": {
+        "valid": false,
+        "reason": "s_range",
+        "e": "1",
+        "u": null,
+        "v": null,
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3045022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798022100ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "scalar_range_rejection",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "wrong_digest",
+      "tags": [
+        "cryptographic_negative"
+      ],
+      "construction": "change z only",
+      "z": "0000000000000000000000000000000000000000000000000000000000000002",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "s": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+      "expected": {
+        "valid": false,
+        "reason": "x_mismatch",
+        "e": "2",
+        "u": "61a45ff8e5f3f1757f292dae9bb251886b16e253d360a61c63f7578dbaf3eae8",
+        "v": "cf2dd0038d060745406b6928b226d73a85236bbcc5984d2d8dd6b2c5f2bc4bce",
+        "R": {
+          "x": "7326d915fd3b8a93e2c6a590bc167fb111a6700134113bb855c6e5c232cde427",
+          "y": "ec9acd94d022d937f29b0f1445826ad6fc2a2ad6f5129348fb2fd7f86e5a6727"
+        },
+        "x_branch": null
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000002",
+        "der": "3044022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "cryptographic_rejection",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "wrong_key_parity",
+      "tags": [
+        "cryptographic_negative",
+        "key_parity"
+      ],
+      "construction": "change Q parity only",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "b7c52588d95c3b9aa25b0403f1eef75702e84bb7597aabe663b82f6f04ef2777"
+      },
+      "r": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "s": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+      "expected": {
+        "valid": false,
+        "reason": "x_mismatch",
+        "e": "1",
+        "u": "30d22ffc72f9f8babf9496d74dd928c4358b7129e9b0530e31fbabc6dd79f574",
+        "v": "cf2dd0038d060745406b6928b226d73a85236bbcc5984d2d8dd6b2c5f2bc4bce",
+        "R": {
+          "x": "9e889b0394cf260f579348912e5ba622d418b964d0623721fba152e9cd301056",
+          "y": "d14ab1dfa0942c2895aefbcaf918bb0a5d9d3955cf8f158248d5dabceeeb5fa2"
+        },
+        "x_branch": null
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3044022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+        "Q_compressed": "0379be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "cryptographic_rejection",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "wrong_r",
+      "tags": [
+        "cryptographic_negative"
+      ],
+      "construction": "increment r",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+      "s": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+      "expected": {
+        "valid": false,
+        "reason": "x_mismatch",
+        "e": "1",
+        "u": "30d22ffc72f9f8babf9496d74dd928c4358b7129e9b0530e31fbabc6dd79f574",
+        "v": "1",
+        "R": {
+          "x": "7326d915fd3b8a93e2c6a590bc167fb111a6700134113bb855c6e5c232cde427",
+          "y": "ec9acd94d022d937f29b0f1445826ad6fc2a2ad6f5129348fb2fd7f86e5a6727"
+        },
+        "x_branch": null
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3044022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "cryptographic_rejection",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "wrong_s",
+      "tags": [
+        "cryptographic_negative"
+      ],
+      "construction": "increment s",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "s": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f8179a",
+      "expected": {
+        "valid": false,
+        "reason": "x_mismatch",
+        "e": "1",
+        "u": "5dda50bad4fe7d8f268ccb5627e56427cbf34ab67997ad95006c1df1e8e5b43e",
+        "v": "444b5e8a560304e1b2e66953b03537af22c84779bc194511befa22a8fe6ad8c6",
+        "R": {
+          "x": "721d793685e95fec015ad3bf648ad2da084c8f0cbfe40f412c15ac7e76894428",
+          "y": "c16a82e89166a73b481ee5ecd1d8a11e14fbdf21b60e6e5f560854a60f261a9e"
+        },
+        "x_branch": null
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3044022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f8179a",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "cryptographic_rejection",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "cancel_G",
+      "tags": [
+        "cancelling_sum",
+        "G"
+      ],
+      "construction": "eG+rQ=(n-1)G+G=infinity; all input ranges valid",
+      "z": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "1",
+      "s": "1",
+      "expected": {
+        "valid": false,
+        "reason": "R_infinity",
+        "e": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140",
+        "u": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140",
+        "v": "1",
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": {
+        "z": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140",
+        "der": "3006020101020101",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "cryptographic_rejection",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "cancel_minus_G",
+      "tags": [
+        "cancelling_sum",
+        "minus_G"
+      ],
+      "construction": "eG+rQ=G-G=infinity; all input ranges valid",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "b7c52588d95c3b9aa25b0403f1eef75702e84bb7597aabe663b82f6f04ef2777"
+      },
+      "r": "1",
+      "s": "1",
+      "expected": {
+        "valid": false,
+        "reason": "R_infinity",
+        "e": "1",
+        "u": "1",
+        "v": "1",
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3006020101020101",
+        "Q_compressed": "0379be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "oracle_class": "cryptographic_rejection",
+      "oracle_unavailable_reason": null
+    },
+    {
+      "id": "Q_infinity",
+      "tags": [
+        "invalid_point"
+      ],
+      "construction": "direct tuple",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": null,
+      "r": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "s": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+      "expected": {
+        "valid": false,
+        "reason": "Q_infinity",
+        "e": "1",
+        "u": null,
+        "v": null,
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": null,
+      "oracle_class": "not_encodable",
+      "oracle_unavailable_reason": "Invalid affine tuple has no exact canonical compressed SEC encoding; relation-only case."
+    },
+    {
+      "id": "Q_zero_tuple",
+      "tags": [
+        "invalid_point"
+      ],
+      "construction": "direct tuple",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "0",
+        "y": "0"
+      },
+      "r": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "s": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+      "expected": {
+        "valid": false,
+        "reason": "Q_off_curve",
+        "e": "1",
+        "u": null,
+        "v": null,
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": null,
+      "oracle_class": "not_encodable",
+      "oracle_unavailable_reason": "Invalid affine tuple has no exact canonical compressed SEC encoding; relation-only case."
+    },
+    {
+      "id": "Q_off_curve_y",
+      "tags": [
+        "invalid_point"
+      ],
+      "construction": "direct tuple",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b9"
+      },
+      "r": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "s": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+      "expected": {
+        "valid": false,
+        "reason": "Q_off_curve",
+        "e": "1",
+        "u": null,
+        "v": null,
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": null,
+      "oracle_class": "not_encodable",
+      "oracle_unavailable_reason": "Invalid affine tuple has no exact canonical compressed SEC encoding; relation-only case."
+    },
+    {
+      "id": "Q_x_p",
+      "tags": [
+        "invalid_point",
+        "p_boundary"
+      ],
+      "construction": "direct tuple",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "s": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+      "expected": {
+        "valid": false,
+        "reason": "Q_noncanonical",
+        "e": "1",
+        "u": null,
+        "v": null,
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": null,
+      "oracle_class": "not_encodable",
+      "oracle_unavailable_reason": "Invalid affine tuple has no exact canonical compressed SEC encoding; relation-only case."
+    },
+    {
+      "id": "Q_y_p",
+      "tags": [
+        "invalid_point",
+        "p_boundary"
+      ],
+      "construction": "direct tuple",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f"
+      },
+      "r": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "s": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+      "expected": {
+        "valid": false,
+        "reason": "Q_noncanonical",
+        "e": "1",
+        "u": null,
+        "v": null,
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": null,
+      "oracle_class": "not_encodable",
+      "oracle_unavailable_reason": "Invalid affine tuple has no exact canonical compressed SEC encoding; relation-only case."
+    },
+    {
+      "id": "Q_x_p_alias",
+      "tags": [
+        "invalid_point",
+        "p_boundary"
+      ],
+      "construction": "direct tuple",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "179be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815a16f813c7",
+        "y": "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "r": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "s": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+      "expected": {
+        "valid": false,
+        "reason": "Q_noncanonical",
+        "e": "1",
+        "u": null,
+        "v": null,
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": null,
+      "oracle_class": "not_encodable",
+      "oracle_unavailable_reason": "Invalid affine tuple has no exact canonical compressed SEC encoding; relation-only case."
+    },
+    {
+      "id": "Q_y_p_alias",
+      "tags": [
+        "invalid_point",
+        "p_boundary"
+      ],
+      "construction": "direct tuple",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "y": "1483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08efb10d0e7"
+      },
+      "r": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "s": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+      "expected": {
+        "valid": false,
+        "reason": "Q_noncanonical",
+        "e": "1",
+        "u": null,
+        "v": null,
+        "R": null,
+        "x_branch": null
+      },
+      "oracle_input": null,
+      "oracle_class": "not_encodable",
+      "oracle_unavailable_reason": "Invalid affine tuple has no exact canonical compressed SEC encoding; relation-only case."
+    },
+    {
+      "id": "wrapped_r_plus_n",
+      "tags": [
+        "r_plus_n_no_p_wrap"
+      ],
+      "construction": "R=lift_x(1,even); r=p-n+1; s=e=1; Q=r^-1(R-G); r+n=p+1 must not wrap",
+      "z": "0000000000000000000000000000000000000000000000000000000000000001",
+      "Q": {
+        "x": "9974783b5259f424281f89a7ec7992fcc5fda91a189135193f6d1219dd14e879",
+        "y": "d10c237f5f950f5ca3ce9fa4a0be943c0e7c5a4931c040b0e093644cad787673"
+      },
+      "r": "14551231950b75fc4402da1722fc9baef",
+      "s": "1",
+      "expected": {
+        "valid": false,
+        "reason": "x_mismatch",
+        "e": "1",
+        "u": "1",
+        "v": "14551231950b75fc4402da1722fc9baef",
+        "R": {
+          "x": "1",
+          "y": "4218f20ae6c646b363db68605822fb14264ca8d2587fdd6fbc750d587e76a7ee"
+        },
+        "x_branch": null
+      },
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "30160211014551231950b75fc4402da1722fc9baef020101",
+        "Q_compressed": "039974783b5259f424281f89a7ec7992fcc5fda91a189135193f6d1219dd14e879"
+      },
+      "oracle_class": "cryptographic_rejection",
+      "oracle_unavailable_reason": null
+    }
+  ],
+  "malformed_cases": [
+    {
+      "id": "digest_short",
+      "oracle_input": {
+        "z": "00000000000000000000000000000000000000000000000000000000000000",
+        "der": "3044022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "expected": {
+        "valid": false,
+        "reason": "digest_encoding"
+      },
+      "oracle_class": "malformed_input_rejection"
+    },
+    {
+      "id": "digest_long",
+      "oracle_input": {
+        "z": "000000000000000000000000000000000000000000000000000000000000000100",
+        "der": "3044022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "expected": {
+        "valid": false,
+        "reason": "digest_encoding"
+      },
+      "oracle_class": "malformed_input_rejection"
+    },
+    {
+      "id": "SEC_infinity",
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3044022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+        "Q_compressed": "00"
+      },
+      "expected": {
+        "valid": false,
+        "reason": "public_key_encoding"
+      },
+      "oracle_class": "malformed_input_rejection"
+    },
+    {
+      "id": "SEC_bad_prefix",
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3044022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+        "Q_compressed": "0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "expected": {
+        "valid": false,
+        "reason": "public_key_encoding"
+      },
+      "oracle_class": "malformed_input_rejection"
+    },
+    {
+      "id": "SEC_uncompressed",
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3044022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+        "Q_compressed": "0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
+      },
+      "expected": {
+        "valid": false,
+        "reason": "public_key_encoding"
+      },
+      "oracle_class": "malformed_input_rejection"
+    },
+    {
+      "id": "SEC_x_p",
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3044022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+        "Q_compressed": "02fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f"
+      },
+      "expected": {
+        "valid": false,
+        "reason": "public_key_encoding"
+      },
+      "oracle_class": "malformed_input_rejection"
+    },
+    {
+      "id": "SEC_x_max256",
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3044022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+        "Q_compressed": "03ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "expected": {
+        "valid": false,
+        "reason": "public_key_encoding"
+      },
+      "oracle_class": "malformed_input_rejection"
+    },
+    {
+      "id": "SEC_nonresidue_x_zero",
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3044022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+        "Q_compressed": "020000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expected": {
+        "valid": false,
+        "reason": "public_key_encoding"
+      },
+      "oracle_class": "malformed_input_rejection"
+    },
+    {
+      "id": "SEC_truncated",
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3044022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f817"
+      },
+      "expected": {
+        "valid": false,
+        "reason": "public_key_encoding"
+      },
+      "oracle_class": "malformed_input_rejection"
+    },
+    {
+      "id": "DER_empty",
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "expected": {
+        "valid": false,
+        "reason": "signature_encoding"
+      },
+      "oracle_class": "malformed_input_rejection"
+    },
+    {
+      "id": "DER_trailing",
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3044022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f8179900",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "expected": {
+        "valid": false,
+        "reason": "signature_encoding"
+      },
+      "oracle_class": "malformed_input_rejection"
+    },
+    {
+      "id": "DER_truncated",
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3044022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f817",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "expected": {
+        "valid": false,
+        "reason": "signature_encoding"
+      },
+      "oracle_class": "malformed_input_rejection"
+    },
+    {
+      "id": "DER_negative_r",
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3006020180020101",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "expected": {
+        "valid": false,
+        "reason": "signature_encoding"
+      },
+      "oracle_class": "malformed_input_rejection"
+    },
+    {
+      "id": "DER_nonminimal_r",
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "300702020001020101",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "expected": {
+        "valid": false,
+        "reason": "signature_encoding"
+      },
+      "oracle_class": "malformed_input_rejection"
+    },
+    {
+      "id": "DER_bad_tag",
+      "oracle_input": {
+        "z": "0000000000000000000000000000000000000000000000000000000000000001",
+        "der": "3144022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798022079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
+        "Q_compressed": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      "expected": {
+        "valid": false,
+        "reason": "signature_encoding"
+      },
+      "oracle_class": "malformed_input_rejection"
+    }
+  ]
+}

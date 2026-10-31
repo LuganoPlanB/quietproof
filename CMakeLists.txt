@@ -18,6 +18,7 @@ option(QUIETPROOF_BUILD_CLI "Build the native command-line application" ${_quiet
 option(QUIETPROOF_BUILD_RPC "Build the native Bitcoin Core RPC library" ${_quietproof_native_default})
 option(QUIETPROOF_BUILD_WASM "Build the WASI browser reactor" OFF)
 option(QUIETPROOF_BUILD_GUI "Build the native Nuklear/SDL2 prover application" OFF)
+option(QUIETPROOF_BUILD_SIGNATURE_MODE "Build and install the Bitcoin ECDSA constraint component" OFF)
 if(QUIETPROOF_BUILD_GUI AND (NOT QUIETPROOF_BUILD_RPC OR CMAKE_SYSTEM_NAME STREQUAL "WASI"))
   message(FATAL_ERROR "QUIETPROOF_BUILD_GUI requires a native build with QUIETPROOF_BUILD_RPC=ON")
 endif()
@@ -46,6 +47,20 @@ target_include_directories(quietproof INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/longfellow-zk-quietproof>)
 target_link_libraries(quietproof INTERFACE ${LONGFELLOW_ZK_TARGET})
+
+if(QUIETPROOF_BUILD_SIGNATURE_MODE)
+  # The reviewed relation uses complete formulas from the base SDK only.
+  add_library(quietproof-signature INTERFACE)
+  add_library(LongfellowZKQuietProof::signature ALIAS quietproof-signature)
+  set_target_properties(quietproof-signature PROPERTIES EXPORT_NAME signature)
+  target_link_libraries(quietproof-signature INTERFACE LongfellowZKQuietProof::quietproof)
+  install(TARGETS quietproof-signature EXPORT LongfellowZKQuietProofSignatureTargets)
+  install(EXPORT LongfellowZKQuietProofSignatureTargets
+    FILE LongfellowZKQuietProofSignatureTargets.cmake NAMESPACE LongfellowZKQuietProof::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LongfellowZKQuietProof)
+  install(FILES include/circuit/bitcoin_ecdsa.h include/circuit/bitcoin_ecdsa_witness.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/longfellow-zk-quietproof/circuit)
+endif()
 
 if(QUIETPROOF_BUILD_RPC)
   find_package(CURL 7.62 REQUIRED)
@@ -110,7 +125,9 @@ if(QUIETPROOF_BUILD_WASM)
 endif()
 
 install(TARGETS quietproof EXPORT LongfellowZKQuietProofTargets)
-install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/longfellow-zk-quietproof)
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/longfellow-zk-quietproof
+  PATTERN "bitcoin_ecdsa.h" EXCLUDE
+  PATTERN "bitcoin_ecdsa_witness.h" EXCLUDE)
 install(EXPORT LongfellowZKQuietProofTargets
   FILE LongfellowZKQuietProofTargets.cmake NAMESPACE LongfellowZKQuietProof::
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LongfellowZKQuietProof)
@@ -133,6 +150,13 @@ install(DIRECTORY spec/
 
 if(BUILD_TESTING)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  add_test(NAME quietproof-signature-vectors-test COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_signature_vectors.py
+    --check ${CMAKE_CURRENT_SOURCE_DIR}/spec/signature-vectors.json)
+  add_test(NAME quietproof-signature-reference-test COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/signature_vectors_test.py)
+  set_tests_properties(quietproof-signature-vectors-test quietproof-signature-reference-test
+    PROPERTIES TIMEOUT 30 LABELS "signature-reference")
   if(QUIETPROOF_ENABLE_CORE32_SIGNING_TEST)
     set(QUIETPROOF_CORE32_DIR "" CACHE PATH "Directory containing verified stock Core 32.1 bitcoind and bitcoin-cli")
     foreach(program IN ITEMS bitcoind bitcoin-cli)
@@ -147,6 +171,11 @@ if(BUILD_TESTING)
     target_compile_features(quietproof-signing-oracle PRIVATE cxx_std_20)
     target_link_libraries(quietproof-signing-oracle PRIVATE libsecp256k1::secp256k1)
     add_test(NAME quietproof-signing-oracle-test COMMAND quietproof-signing-oracle --self-test)
+    add_test(NAME quietproof-signature-oracle-test COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_signature_vectors.py
+      --check ${CMAKE_CURRENT_SOURCE_DIR}/spec/signature-vectors.json
+      --oracle $<TARGET_FILE:quietproof-signing-oracle>)
+    set_tests_properties(quietproof-signature-oracle-test PROPERTIES TIMEOUT 60 LABELS "signature-reference")
     add_test(NAME quietproof-signing-regtest-test COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/bitcoin_core_signing_regtest.py
       --core32 "${QUIETPROOF_CORE32_DIR}" --oracle $<TARGET_FILE:quietproof-signing-oracle>)
@@ -161,6 +190,7 @@ if(BUILD_TESTING)
       --work ${CMAKE_CURRENT_BINARY_DIR}/package-test
       --prefix-path "${CMAKE_PREFIX_PATH}"
       --rpc-enabled "${QUIETPROOF_BUILD_RPC}"
+      --signature-enabled "${QUIETPROOF_BUILD_SIGNATURE_MODE}"
       --generator "${CMAKE_GENERATOR}")
   option(QUIETPROOF_ENABLE_POKC_SAGE_TEST
     "Run the Sage 10.6 reference model (requires Sage or Docker)" OFF)
@@ -170,6 +200,20 @@ if(BUILD_TESTING)
     target_link_libraries(${target} PRIVATE LongfellowZKQuietProof::quietproof)
     add_test(NAME ${target} COMMAND ${target} ${ARGN})
   endfunction()
+  if(QUIETPROOF_BUILD_SIGNATURE_MODE)
+    add_executable(quietproof-ecdsa-prototype tests/quietproof/bitcoin_ecdsa_test.cc)
+    target_link_libraries(quietproof-ecdsa-prototype PRIVATE LongfellowZKQuietProof::signature)
+    add_test(NAME quietproof-ecdsa-constraint-test COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/bitcoin_ecdsa_corpus_test.py
+      --prototype $<TARGET_FILE:quietproof-ecdsa-prototype>)
+    add_test(NAME quietproof-ecdsa-advice-test COMMAND quietproof-ecdsa-prototype --mutations)
+    set_tests_properties(quietproof-ecdsa-constraint-test quietproof-ecdsa-advice-test
+      PROPERTIES TIMEOUT 180 LABELS "signature-reference")
+    add_test(NAME quietproof-ecdsa-prototype-proof-test COMMAND quietproof-ecdsa-prototype
+      --proof ${CMAKE_CURRENT_BINARY_DIR}/tests/results/ecdsa-prototype.proof)
+    set_tests_properties(quietproof-ecdsa-prototype-proof-test
+      PROPERTIES TIMEOUT 1800 RUN_SERIAL TRUE LABELS "signature-reference;proof-heavy")
+  endif()
   if(QUIETPROOF_BUILD_RPC)
     add_executable(quietproof-rpc-test tests/quietproof/bitcoin_rpc_test.cc)
     target_include_directories(quietproof-rpc-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
