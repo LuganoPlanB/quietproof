@@ -64,6 +64,11 @@ endif()
 
 option(QUIETPROOF_ENABLE_BITCOIN_REGTEST_TEST
   "Run isolated proof-heavy workflows against explicitly supplied Core 28 and 30" OFF)
+option(QUIETPROOF_ENABLE_CORE32_SIGNING_TEST
+  "Run the isolated stock Core 32.1 signing qualification (test-only oracle)" OFF)
+if(QUIETPROOF_ENABLE_CORE32_SIGNING_TEST AND (NOT BUILD_TESTING OR CMAKE_SYSTEM_NAME STREQUAL "WASI"))
+  message(FATAL_ERROR "Core 32 signing qualification requires native BUILD_TESTING=ON")
+endif()
 if(QUIETPROOF_ENABLE_BITCOIN_REGTEST_TEST AND NOT QUIETPROOF_BUILD_RPC)
   message(FATAL_ERROR "Live regtest requires QUIETPROOF_BUILD_RPC")
 endif()
@@ -128,6 +133,27 @@ install(DIRECTORY spec/
 
 if(BUILD_TESTING)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  if(QUIETPROOF_ENABLE_CORE32_SIGNING_TEST)
+    set(QUIETPROOF_CORE32_DIR "" CACHE PATH "Directory containing verified stock Core 32.1 bitcoind and bitcoin-cli")
+    foreach(program IN ITEMS bitcoind bitcoin-cli)
+      if(NOT EXISTS "${QUIETPROOF_CORE32_DIR}/${program}")
+        message(FATAL_ERROR "Signing regtest requires QUIETPROOF_CORE32_DIR containing ${program}")
+      endif()
+    endforeach()
+    # Deliberately confined to test executables, never exported or installed.
+    # Core 32.1's verified source bundles this exact public API version.
+    find_package(libsecp256k1 0.8.1 EXACT CONFIG REQUIRED)
+    add_executable(quietproof-signing-oracle tests/signing_oracle.cc)
+    target_compile_features(quietproof-signing-oracle PRIVATE cxx_std_20)
+    target_link_libraries(quietproof-signing-oracle PRIVATE libsecp256k1::secp256k1)
+    add_test(NAME quietproof-signing-oracle-test COMMAND quietproof-signing-oracle --self-test)
+    add_test(NAME quietproof-signing-regtest-test COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/bitcoin_core_signing_regtest.py
+      --core32 "${QUIETPROOF_CORE32_DIR}" --oracle $<TARGET_FILE:quietproof-signing-oracle>)
+    set_tests_properties(quietproof-signing-oracle-test PROPERTIES TIMEOUT 10 LABELS "signature-reference")
+    set_tests_properties(quietproof-signing-regtest-test PROPERTIES
+      TIMEOUT 300 RUN_SERIAL TRUE LABELS "bitcoin-core32;signature-reference")
+  endif()
   add_test(NAME quietproof-package-test
     COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/cmake/package_test.py
