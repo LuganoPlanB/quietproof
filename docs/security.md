@@ -46,3 +46,39 @@ system, circuit implementation, parameter generation, nonce-store atomicity,
 Bitcoin provider/snapshot/finality policy, and any bridge lock and mint
 system.  No row in this document turns those external assumptions into a
 cryptographic guarantee.
+
+## Signature-possession mode: specified, not implemented
+
+The [signature-possession claim contract](../spec/quietproof-signature-v1.md)
+defines a future, explicitly selected mode. The implemented key-knowledge
+matrix above retains its meaning and evidence. The following requirements are
+design/review obligations; they are **not claims of tested signing or circuit
+support**.
+
+| Claim or boundary | Required enforcing component | Limitation and qualification obligation |
+| --- | --- | --- |
+| The prover knows a request-bound ECDSA signature under a compressed key hashing to `h`. | New arithmetic circuit with public `h` and independently derived `z`, private `Q,r,s`, and complete point/encoding/signature constraints. | Does not prove private-scalar knowledge, wallet operation, exclusive control or legal ownership. Native prevalidation and transcript binding alone are insufficient. |
+| The signature authorises the verifier's exact expected request. | Retained independent request, canonical profile, wallet adapter, digest derivation and proof transcript. | Fresh nonce binds the request; neither a new proof nor a prover timestamp establishes signing time. |
+| Core retains the private scalar. | Trusted adapter constructs/checks the fixed zero-valued virtual transaction before wallet RPC. | No arbitrary raw transaction/digest, funding, broadcast, automatic unlock, script-kind substitution or key-export fallback. Stock Core 32.1 signing remains to be qualified. |
+| Delegation discloses only the intended witness capability. | Private local/native receipt export/import and handling. | Receipt holder learns `Q` and signature and can re-prove the same request within expiry/replay policy. Receipts must never be published, uploaded for public verification or embedded in proofs/logs. |
+| Public proof hides the signature and `Q`. | Proof system and circuit privacy. | Real outpoints, hashes, amounts and request fields remain public/linkable; provider queries expose outpoints, and prior spends/key reuse may already reveal `Q`. No anonymity promise. |
+| The reported quantity consists of real qualified unspent outputs. | Verifier/provider checks exact scripts, amounts, network, snapshot/confirmations and checked sum; final expiry and atomic nonce consumption. | Synthetic zero value never contributes. Provider failure is inconclusive; historical/current states differ. Spendability also needs maturity checks; funds are not reserved or an atomic mempool snapshot. No solvency/all-holdings claim. |
+| The signature cannot authorise a real spend under normal hash/ECDSA assumptions. | Fixed synthetic transaction shape and independently derived signing digest. | Must be qualified with digest reasoning and transplant negatives with valid-spend positive controls. Version-zero relay rejection alone does not establish this invariant. |
+
+Both modes preserve independent chain and replay policy boundaries. An honest
+local prover and a delegated receipt holder can satisfy the same signature
+claim. A stale or changed request must fail authorisation; a spent output must
+fail the funds claim even when its signature proof is valid; provider failure
+must remain inconclusive. These are required review/qualification cases, not
+new passing-test assertions.
+
+| Compatibility surface | Required result |
+| --- | --- |
+| Existing scalar/multisignature APIs, request/proof bytes, circuit identities and golden vectors | Preserve their existing meaning and behaviour. |
+| Mode selection and capability | Explicit new-mode selection; specified build flag `QUIETPROOF_BUILD_SIGNATURE_MODE` defaults OFF; disabled support rejects new-mode use explicitly. |
+| Private-key export and signing | Separate workflows; no fallback between them. |
+| Bridge, browser and native GUI | New mode has no bridge authorisation or native GUI signing workflow; planned browser work is request creation/public verification only. Existing workflows remain unchanged. |
+
+See the claim contract for the wallet/prover/verifier information boundaries,
+receipt disclosure rules and complete scope. This addition supplies no
+production codec, circuit, wallet adapter or signing qualification evidence.

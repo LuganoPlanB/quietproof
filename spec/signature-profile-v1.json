@@ -1,0 +1,864 @@
+{
+  "format": "quietproof-signature-profile-v1",
+  "status": "public specification fixtures; no signer or production implementation",
+  "generator": "scripts/generate_signature_profile.py (stdlib hashlib, direct byte construction)",
+  "provenance": {
+    "bips_revision": "5aadddb511a5dcfe4599531bd8ae5e5b96d0f793",
+    "bip0322_sha256": "bdf1e930211356666e11d4961acff7a1675a280fba7b57377b48a1fb2f1b45b9",
+    "bip0143_sha256": "62bc71351563e68baeb12643c68355d217953ae9eb6a6e68b2b0323275b6beec",
+    "core_version": "32.1",
+    "core_source_archive_sha256": "a5f2f61e32cf7f790641c9ec306a3c88ca7b5a556946956b1f35ffd7e27813f9"
+  },
+  "public_test_sec": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+  "vectors": [
+    {
+      "name": "p2pkh",
+      "request": {
+        "network": 3,
+        "verifier": "auditor.example",
+        "purpose": "proof-of-funds",
+        "signing_kind": 1,
+        "nonce": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+        "user_message_utf8": "public specification fixture; never wallet funds",
+        "not_before": 1800000000,
+        "expires_at": 1800000600,
+        "snapshot": null,
+        "claims": [
+          {
+            "txid_display": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+            "vout": 16909060,
+            "amount_sats": 123456,
+            "script_kind": 0,
+            "program": "751e76e8199196d454941c45d1b3a323f1433bd6"
+          },
+          {
+            "txid_display": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+            "vout": 7,
+            "amount_sats": 654321,
+            "script_kind": 1,
+            "program": "751e76e8199196d454941c45d1b3a323f1433bd6"
+          }
+        ],
+        "bip322_message_hash": "d54cf103d606b0a71820bfe9572e9a9c295f9dc1eb0da0f72a91109a27a7f223"
+      },
+      "request_hex": "51505331030301000101000f61756469746f722e6578616d706c65000e70726f6f662d6f662d66756e64730102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20d54cf103d606b0a71820bfe9572e9a9c295f9dc1eb0da0f72a91109a27a7f223000000006b49d200000000006b49d45800000002000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f01020304000000000001e24000751e76e8199196d454941c45d1b3a323f1433bd6202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000007000000000009fbf101751e76e8199196d454941c45d1b3a323f1433bd6",
+      "request_size": 257,
+      "d": "7435e21c62a75e3d72e33ad059a57d893982ea645d6c0905e271a258519acbf4",
+      "application_message_ascii": "quietproof:signature:v1:7435e21c62a75e3d72e33ad059a57d893982ea645d6c0905e271a258519acbf4",
+      "application_message_hex": "717569657470726f6f663a7369676e61747572653a76313a37343335653231633632613735653364373265333361643035396135376438393339383265613634356436633039303565323731613235383531396163626634",
+      "application_message_hash": "e29916960a48a7d8943bef0d9136366d3f3fc7f9828c3d08b30fd7bbc25531ed",
+      "selected_script_pubkey": "76a914751e76e8199196d454941c45d1b3a323f1433bd688ac",
+      "script_code": "76a914751e76e8199196d454941c45d1b3a323f1433bd688ac",
+      "to_spend_hex": "00000000010000000000000000000000000000000000000000000000000000000000000000ffffffff220020e29916960a48a7d8943bef0d9136366d3f3fc7f9828c3d08b30fd7bbc25531ed000000000100000000000000001976a914751e76e8199196d454941c45d1b3a323f1433bd688ac00000000",
+      "to_spend_txid_raw": "268faa905a7f7a757fb7fbfacf75356eb2671603fdde06c65dcd237b5df0625d",
+      "to_spend_txid_display": "5d62f05d7b23cd5dc606defd031667b26e3575cffafbb77f757a7f5a90aa8f26",
+      "to_sign_unsigned_hex": "0000000001268faa905a7f7a757fb7fbfacf75356eb2671603fdde06c65dcd237b5df0625d000000000000000000010000000000000000016a00000000",
+      "to_sign_input_outpoint_wire": "268faa905a7f7a757fb7fbfacf75356eb2671603fdde06c65dcd237b5df0625d00000000",
+      "sighash_preimage_hex": "0000000001268faa905a7f7a757fb7fbfacf75356eb2671603fdde06c65dcd237b5df0625d000000001976a914751e76e8199196d454941c45d1b3a323f1433bd688ac00000000010000000000000000016a0000000001000000",
+      "z": "6f00b1ad8ea1508106aa5c0819f41c93c5d138fb7f97ddb50cd1c3db2aebda1f",
+      "bip143_components": null,
+      "fields": [
+        {
+          "field": "magic",
+          "offset": 0,
+          "size": 4
+        },
+        {
+          "field": "statement_version",
+          "offset": 4,
+          "size": 1
+        },
+        {
+          "field": "network",
+          "offset": 5,
+          "size": 1
+        },
+        {
+          "field": "mode",
+          "offset": 6,
+          "size": 1
+        },
+        {
+          "field": "profile",
+          "offset": 7,
+          "size": 2
+        },
+        {
+          "field": "signing_kind",
+          "offset": 9,
+          "size": 1
+        },
+        {
+          "field": "verifier.length",
+          "offset": 10,
+          "size": 2
+        },
+        {
+          "field": "verifier",
+          "offset": 12,
+          "size": 15
+        },
+        {
+          "field": "purpose.length",
+          "offset": 27,
+          "size": 2
+        },
+        {
+          "field": "purpose",
+          "offset": 29,
+          "size": 14
+        },
+        {
+          "field": "nonce",
+          "offset": 43,
+          "size": 32
+        },
+        {
+          "field": "bip322_message_hash",
+          "offset": 75,
+          "size": 32
+        },
+        {
+          "field": "not_before",
+          "offset": 107,
+          "size": 8
+        },
+        {
+          "field": "expires_at",
+          "offset": 115,
+          "size": 8
+        },
+        {
+          "field": "snapshot_present",
+          "offset": 123,
+          "size": 1
+        },
+        {
+          "field": "bridge_present",
+          "offset": 124,
+          "size": 1
+        },
+        {
+          "field": "claim_count",
+          "offset": 125,
+          "size": 2
+        },
+        {
+          "field": "claims[0].txid_display",
+          "offset": 127,
+          "size": 32
+        },
+        {
+          "field": "claims[0].vout",
+          "offset": 159,
+          "size": 4
+        },
+        {
+          "field": "claims[0].amount_sats",
+          "offset": 163,
+          "size": 8
+        },
+        {
+          "field": "claims[0].script_kind",
+          "offset": 171,
+          "size": 1
+        },
+        {
+          "field": "claims[0].program",
+          "offset": 172,
+          "size": 20
+        },
+        {
+          "field": "claims[1].txid_display",
+          "offset": 192,
+          "size": 32
+        },
+        {
+          "field": "claims[1].vout",
+          "offset": 224,
+          "size": 4
+        },
+        {
+          "field": "claims[1].amount_sats",
+          "offset": 228,
+          "size": 8
+        },
+        {
+          "field": "claims[1].script_kind",
+          "offset": 236,
+          "size": 1
+        },
+        {
+          "field": "claims[1].program",
+          "offset": 237,
+          "size": 20
+        }
+      ],
+      "field_mutations": [
+        {
+          "field": "magic",
+          "offset": 0,
+          "size": 4,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "aa94bac87db8bedf9782d83acd3c2392cfc278d6089f5f782625cebf6ea53315",
+          "z": "f290ce539225072c2492fca40fcc7b2b6874d7c0cb61a596020d00876f99d494"
+        },
+        {
+          "field": "statement_version",
+          "offset": 4,
+          "size": 1,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "4e4421b5486c7c7904550aed8905cc239f85af9eb8ba874b2eacd3f001f3c572",
+          "z": "c6ba29ce27650bbf5ffa8210e99d53074f89d51fae659c0f5caf3800c6d7c156"
+        },
+        {
+          "field": "network",
+          "offset": 5,
+          "size": 1,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "4e3929abd2ae2ecb156b3ae981a6020b6ff7f2efd48bfbb2fb23cb3041975092",
+          "z": "1f611cea374eec53508a1ec63239cf6684987784a6cdd5901e765d382f0e9b79"
+        },
+        {
+          "field": "mode",
+          "offset": 6,
+          "size": 1,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "fb78c432decca7eb007c68a1856a2ec3703a80c6e223f6a89d9959c7cbe629f3",
+          "z": "3ab02115a97ba33b15d28bfd3000069dc43b7c761848b78ab3ef8dedabb6ce4a"
+        },
+        {
+          "field": "profile",
+          "offset": 7,
+          "size": 2,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "8c1a62ffc924780282a09cd2dfd2e5c5de5ab1d5bf9cd4b3e4ec1efc89061489",
+          "z": "01f3ac3754575df482dc845d1f46eb1d2f8c0d63a269268d0ae7a95403a6c2d0"
+        },
+        {
+          "field": "signing_kind",
+          "offset": 9,
+          "size": 1,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "f7d4b87e3e7e49aff045460439378fa95897e97242eef008e35d2314d10a26ec",
+          "z": "687a1ff41ac2a8f69b3d19405bfa6187ac8630e67faf946ea69ade7fb2e40b88"
+        },
+        {
+          "field": "verifier.length",
+          "offset": 10,
+          "size": 2,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "c9ee373ea6d333c48ee681bc2b4e17485341d862188615e8af80c2a99c3266d7",
+          "z": "16553b9b1fb9335f6c9caf3d7b5d6dc6f068b11f0cd143377287f77b79ede90e"
+        },
+        {
+          "field": "verifier",
+          "offset": 12,
+          "size": 15,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "53c12225a2b3555dedb19a783308e83678adc4f77add76a06d147cc980508267",
+          "z": "8de0daebe9d896d99d8c3e3babf5cfa0def004129d92451d4a8e6b3b4b234fce"
+        },
+        {
+          "field": "purpose.length",
+          "offset": 27,
+          "size": 2,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "feb6ee829a24a25f81eae97f878d407d6f9acf4f4b4f180b52f370b82fb49157",
+          "z": "842601652496d23c5e81a78db048d1b576ed2ef4e738f4c580d44554832f8c22"
+        },
+        {
+          "field": "purpose",
+          "offset": 29,
+          "size": 14,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "0878b354733caf461febc98605f48ee599898775bebef0715e4962663a6c3602",
+          "z": "a07d255e03d9c3903323f2a7273390b3796fd8bf11b51c947439c0a521e54351"
+        },
+        {
+          "field": "nonce",
+          "offset": 43,
+          "size": 32,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "1d7adb682d8e8af3405b453ca28abd895d038d24228a926669708c539ec30c33",
+          "z": "440b2f8eff280da74c8aea6848bc37b5e0c8d2cee66543de7e15432290ace6f1"
+        },
+        {
+          "field": "bip322_message_hash",
+          "offset": 75,
+          "size": 32,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "1c66eab2f48c7a890731068b2a6fbdbcda39699bc246d5a416d99f68071da0f8",
+          "z": "26197b20ecc8078ade2cc87a82d4003a10c4e8a275c67c920cd30bcc2782ffdd"
+        },
+        {
+          "field": "not_before",
+          "offset": 107,
+          "size": 8,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "7c7100ef2c1e3a4f63ac75d2ae3d77714ec723ba39b447864a69db88888abdd1",
+          "z": "982bd37bc421350d63b7760ff4b80dfba8e9c07a21dccdbf03fbc1a903bc1143"
+        },
+        {
+          "field": "expires_at",
+          "offset": 115,
+          "size": 8,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "b5875879b9b3409910c86020b06a728048445f3a2629880c6a018d34de9d6c83",
+          "z": "506e3018d2dfa660518850d0afe80c30414789520c56f9047319064826c945f2"
+        },
+        {
+          "field": "snapshot_present",
+          "offset": 123,
+          "size": 1,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "f1b375f787a7e57b621940e413e2bb8d736ca41df112383aa65fe06c3bb551f1",
+          "z": "e66af89f734ba6a61886d3e1cd10b26ba1fb9c63ad338d344fde74f137a7371d"
+        },
+        {
+          "field": "bridge_present",
+          "offset": 124,
+          "size": 1,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "06b327ec57400b361c529a5cc02e141e520a9bc56cc5467bf6f609007ce889ae",
+          "z": "903570b154772ff7e151dda011f314a5469f9b1176d89bc277f47a30c11db22a"
+        },
+        {
+          "field": "claim_count",
+          "offset": 125,
+          "size": 2,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "ea996824bc13814bc126a5ad96192a369eae25d7f84a535e3ab9d052a69cbf3f",
+          "z": "ccf779fe7be9349e9d38bf5cefef6036a3fe69cfa0c5bc6e3b35dc4ed5cebf15"
+        },
+        {
+          "field": "claims[0].txid_display",
+          "offset": 127,
+          "size": 32,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "23606c59752c31522a66d0f5501ceba1f1d6213d6eddb8ad58bd0eb3c2406b91",
+          "z": "af122362520af521930b0286cb0ee392e01283fc46675d80859c440631fa245e"
+        },
+        {
+          "field": "claims[0].vout",
+          "offset": 159,
+          "size": 4,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "ba618a3c0e7ed8883b0bd75ae8f9f3cff3b3c02b7190adb4af1f3de2575d5e94",
+          "z": "355c076d83d5b3d1dfad3d587caadd3d48ce50e67dd2acabacbe8e0ed4bf6f92"
+        },
+        {
+          "field": "claims[0].amount_sats",
+          "offset": 163,
+          "size": 8,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "0bc80706fa6daeb89b328e92cf550f3cd4ee1ea6d57f476f44d2647877917f0b",
+          "z": "04d79eed1a6c3e430c520471c732e79d9e9968f1250a0580e60a190d10157198"
+        },
+        {
+          "field": "claims[0].script_kind",
+          "offset": 171,
+          "size": 1,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "7fab7206a7027ce0084becaed32e02dbd3b35f98ae4fac3a4ed2901ae1f8d87e",
+          "z": "32097aa2d6281d0579907a1c5ff6799112dd0b981aed9b2f7acbed56b2f61e00"
+        },
+        {
+          "field": "claims[0].program",
+          "offset": 172,
+          "size": 20,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "279f84b3c644cf96d03e62f55f25357b9ffa1cc4ab3882bbedec2b461688b7c5",
+          "z": "5a85adb91efd6e82a0f5bf411939c8dd9fb0723bf54f25f53f92bee234bdda6f"
+        },
+        {
+          "field": "claims[1].txid_display",
+          "offset": 192,
+          "size": 32,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "1ed264ea9d21ed491c3c80b507c5b9c5be222b895bd9fc07588bbe42442b88c2",
+          "z": "8639881643889970385c3e2ab5331b3c6993f4be3c0bd8e648e5e7f38b147221"
+        },
+        {
+          "field": "claims[1].vout",
+          "offset": 224,
+          "size": 4,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "201fad44bbb0e5464e7d1fee7afb5416cf78fda37dd6456dd67e45005643da38",
+          "z": "88cde1d185dfaa8cfd4ba1e74082d06e836e42bff6edffef68da5043a582303d"
+        },
+        {
+          "field": "claims[1].amount_sats",
+          "offset": 228,
+          "size": 8,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "b74b7630125371d71429d5c8a757e0b1e5c8d21fca5105fd20fafd8bc80900e7",
+          "z": "6d2c6e9154671c9a96d6aa28b2a04d11e4d5c1d55e3f7a9bf2031171e5b1ea36"
+        },
+        {
+          "field": "claims[1].script_kind",
+          "offset": 236,
+          "size": 1,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "721619ae62d33016b7003ba4324b6f393d4927f7a46fd5cea08ed018e0be183a",
+          "z": "62822f52fa15952e19ccd8ac6abed17f610c3a3d05468ed53e1fc0d58179c06b"
+        },
+        {
+          "field": "claims[1].program",
+          "offset": 237,
+          "size": 20,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "76727dafce0d7b0ba58a3262635a0f2d7060a8d70376ea23650241f1dd7efe19",
+          "z": "2233444d51820d46bb9792b36586805d957e751afe64081003c8a890d090368c"
+        }
+      ],
+      "byte_mutation_count": 257,
+      "byte_mutation_result_sha256": "d3857b66b59b201564d2267f49a6fc34978f6f8157d3ba0fd4765c70c3ab6900",
+      "valid_selected_kind_change": {
+        "d": "f7d4b87e3e7e49aff045460439378fa95897e97242eef008e35d2314d10a26ec",
+        "z": "cfe12ede7edfdefd62ca529425f652a43e48976159050ccc45ba983861cefca6"
+      }
+    },
+    {
+      "name": "p2wpkh",
+      "request": {
+        "network": 3,
+        "verifier": "auditor.example",
+        "purpose": "proof-of-funds",
+        "signing_kind": 0,
+        "nonce": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+        "user_message_utf8": "public specification fixture; never wallet funds",
+        "not_before": 1800000000,
+        "expires_at": 1800000600,
+        "snapshot": {
+          "hash_display": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+          "height": 321
+        },
+        "claims": [
+          {
+            "txid_display": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+            "vout": 16909060,
+            "amount_sats": 123456,
+            "script_kind": 0,
+            "program": "751e76e8199196d454941c45d1b3a323f1433bd6"
+          },
+          {
+            "txid_display": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+            "vout": 7,
+            "amount_sats": 654321,
+            "script_kind": 1,
+            "program": "751e76e8199196d454941c45d1b3a323f1433bd6"
+          }
+        ],
+        "bip322_message_hash": "d54cf103d606b0a71820bfe9572e9a9c295f9dc1eb0da0f72a91109a27a7f223"
+      },
+      "request_hex": "51505331030301000100000f61756469746f722e6578616d706c65000e70726f6f662d6f662d66756e64730102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20d54cf103d606b0a71820bfe9572e9a9c295f9dc1eb0da0f72a91109a27a7f223000000006b49d200000000006b49d45801404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f00000141000002000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f01020304000000000001e24000751e76e8199196d454941c45d1b3a323f1433bd6202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f00000007000000000009fbf101751e76e8199196d454941c45d1b3a323f1433bd6",
+      "request_size": 293,
+      "d": "e6c2a1f56da7305104be13d5a07b706e2887bf132a5fb630b48f50fd9bab9815",
+      "application_message_ascii": "quietproof:signature:v1:e6c2a1f56da7305104be13d5a07b706e2887bf132a5fb630b48f50fd9bab9815",
+      "application_message_hex": "717569657470726f6f663a7369676e61747572653a76313a65366332613166353664613733303531303462653133643561303762373036653238383762663133326135666236333062343866353066643962616239383135",
+      "application_message_hash": "ccaab4510a1e9e1fb14b6000a8cdadf5c7fa289cc51e8f8dd5343f42a72f2d2e",
+      "selected_script_pubkey": "0014751e76e8199196d454941c45d1b3a323f1433bd6",
+      "script_code": "76a914751e76e8199196d454941c45d1b3a323f1433bd688ac",
+      "to_spend_hex": "00000000010000000000000000000000000000000000000000000000000000000000000000ffffffff220020ccaab4510a1e9e1fb14b6000a8cdadf5c7fa289cc51e8f8dd5343f42a72f2d2e00000000010000000000000000160014751e76e8199196d454941c45d1b3a323f1433bd600000000",
+      "to_spend_txid_raw": "1ebe89e5c7271016a5a66b25493372e44f2734229c4a363a22ad8fbdcf976740",
+      "to_spend_txid_display": "406797cfbd8fad223a364a9c2234274fe4723349256ba6a5161027c7e589be1e",
+      "to_sign_unsigned_hex": "00000000011ebe89e5c7271016a5a66b25493372e44f2734229c4a363a22ad8fbdcf976740000000000000000000010000000000000000016a00000000",
+      "to_sign_input_outpoint_wire": "1ebe89e5c7271016a5a66b25493372e44f2734229c4a363a22ad8fbdcf97674000000000",
+      "sighash_preimage_hex": "00000000ec384d7d329a5d688227201468e0c1745ecfd22ea1f204e5f4b795fa849b7a378cb9012517c817fead650287d61bdd9c68803b6bf9c64133dcab3e65b5a50cb91ebe89e5c7271016a5a66b25493372e44f2734229c4a363a22ad8fbdcf976740000000001976a914751e76e8199196d454941c45d1b3a323f1433bd688ac0000000000000000000000000e8538c66c434675836e2198aceb9a0bb62f3778a505eba907d843d312712b6d0000000001000000",
+      "z": "64634229305bdde2e69beb1029520003c36f728b850b9620b521a58e46117db7",
+      "bip143_components": {
+        "hash_prevouts": "ec384d7d329a5d688227201468e0c1745ecfd22ea1f204e5f4b795fa849b7a37",
+        "hash_sequence": "8cb9012517c817fead650287d61bdd9c68803b6bf9c64133dcab3e65b5a50cb9",
+        "hash_outputs": "0e8538c66c434675836e2198aceb9a0bb62f3778a505eba907d843d312712b6d"
+      },
+      "fields": [
+        {
+          "field": "magic",
+          "offset": 0,
+          "size": 4
+        },
+        {
+          "field": "statement_version",
+          "offset": 4,
+          "size": 1
+        },
+        {
+          "field": "network",
+          "offset": 5,
+          "size": 1
+        },
+        {
+          "field": "mode",
+          "offset": 6,
+          "size": 1
+        },
+        {
+          "field": "profile",
+          "offset": 7,
+          "size": 2
+        },
+        {
+          "field": "signing_kind",
+          "offset": 9,
+          "size": 1
+        },
+        {
+          "field": "verifier.length",
+          "offset": 10,
+          "size": 2
+        },
+        {
+          "field": "verifier",
+          "offset": 12,
+          "size": 15
+        },
+        {
+          "field": "purpose.length",
+          "offset": 27,
+          "size": 2
+        },
+        {
+          "field": "purpose",
+          "offset": 29,
+          "size": 14
+        },
+        {
+          "field": "nonce",
+          "offset": 43,
+          "size": 32
+        },
+        {
+          "field": "bip322_message_hash",
+          "offset": 75,
+          "size": 32
+        },
+        {
+          "field": "not_before",
+          "offset": 107,
+          "size": 8
+        },
+        {
+          "field": "expires_at",
+          "offset": 115,
+          "size": 8
+        },
+        {
+          "field": "snapshot_present",
+          "offset": 123,
+          "size": 1
+        },
+        {
+          "field": "snapshot.hash_display",
+          "offset": 124,
+          "size": 32
+        },
+        {
+          "field": "snapshot.height",
+          "offset": 156,
+          "size": 4
+        },
+        {
+          "field": "bridge_present",
+          "offset": 160,
+          "size": 1
+        },
+        {
+          "field": "claim_count",
+          "offset": 161,
+          "size": 2
+        },
+        {
+          "field": "claims[0].txid_display",
+          "offset": 163,
+          "size": 32
+        },
+        {
+          "field": "claims[0].vout",
+          "offset": 195,
+          "size": 4
+        },
+        {
+          "field": "claims[0].amount_sats",
+          "offset": 199,
+          "size": 8
+        },
+        {
+          "field": "claims[0].script_kind",
+          "offset": 207,
+          "size": 1
+        },
+        {
+          "field": "claims[0].program",
+          "offset": 208,
+          "size": 20
+        },
+        {
+          "field": "claims[1].txid_display",
+          "offset": 228,
+          "size": 32
+        },
+        {
+          "field": "claims[1].vout",
+          "offset": 260,
+          "size": 4
+        },
+        {
+          "field": "claims[1].amount_sats",
+          "offset": 264,
+          "size": 8
+        },
+        {
+          "field": "claims[1].script_kind",
+          "offset": 272,
+          "size": 1
+        },
+        {
+          "field": "claims[1].program",
+          "offset": 273,
+          "size": 20
+        }
+      ],
+      "field_mutations": [
+        {
+          "field": "magic",
+          "offset": 0,
+          "size": 4,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "6c6921c5877017fd42d99ebf7718375defa664c5d354de53b901a97125fd8037",
+          "z": "e32ad1e6e6739c2d3e7e6878709371f2d498d66112fb293b60a597522f8ef1e8"
+        },
+        {
+          "field": "statement_version",
+          "offset": 4,
+          "size": 1,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "7c73c3bc1c5993edfb0723e53ac3377ce5f20d40b9696f7353efc8d22a372899",
+          "z": "f6dae4c8a072c2861ba38f664b85246536d07cf6092ce742ed96109cfdd6e9e1"
+        },
+        {
+          "field": "network",
+          "offset": 5,
+          "size": 1,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "b4bddbda9b96757fb0abadf8a169fad1155dbc99e8c96ed14ec3e3d2190ab694",
+          "z": "80a3d63cf70011075dd3d6e84f9b5e18c50d1f4f740bbfa4d164103ea4e68910"
+        },
+        {
+          "field": "mode",
+          "offset": 6,
+          "size": 1,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "321d1f7c81db2d3f9d29afbee8f78d91642c1e70f8ec473bca665a40f4a41c54",
+          "z": "14146d36650fe874d6e630481e56926be118210ebc9c3358b4ef529d1050a6b7"
+        },
+        {
+          "field": "profile",
+          "offset": 7,
+          "size": 2,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "546289cb058eda57e9be924491c283bf77ecb8c207e9fc179365bb08d09c2c6b",
+          "z": "d23848365eb801382f9399c26915e4c4a479ef0b10d1d8f12c3effbaeaca0e4b"
+        },
+        {
+          "field": "signing_kind",
+          "offset": 9,
+          "size": 1,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "b9e36a29a4be01430bec3f4f20f778397d8fb4ebc8197b62b57ca75e83834b3e",
+          "z": "2aaa8274808fa475dfd0045d8c7f746e90f6e20d9f12ac1e32b707db116bb078"
+        },
+        {
+          "field": "verifier.length",
+          "offset": 10,
+          "size": 2,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "483c292676442791f2faba04ba5acb079de91ac0cff9a89773334652be770ab9",
+          "z": "c555dc4e5a56792ea7c3fbf67afd3b851d9c2c6b9c0acf17ef8844700e0f10d1"
+        },
+        {
+          "field": "verifier",
+          "offset": 12,
+          "size": 15,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "070f758da608fa3eb25b1c2de754d8b9bdc529b69c8540d03c11e66886da0c9c",
+          "z": "ab2f89289a61c590cade5cdc03bb71aff8e2bc139f130e745a0c9bc6fabc06f2"
+        },
+        {
+          "field": "purpose.length",
+          "offset": 27,
+          "size": 2,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "6072d30a329efea337554545cf2a9886cc9158086a3a2a9b7e04cea8f0c1ae61",
+          "z": "7e6473ad9c4fbe2788c96087291f6fcbbac28e11f0efee6a39ec035f793298b1"
+        },
+        {
+          "field": "purpose",
+          "offset": 29,
+          "size": 14,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "d4f2b5784a7f4262bffecc48bb39a4b6dda6f381135cae856ece7656e1935364",
+          "z": "7f22986c9da7c587f4b89c1db7c2413db6e40559b7dce5aea0ed5ff7cdfbc709"
+        },
+        {
+          "field": "nonce",
+          "offset": 43,
+          "size": 32,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "87935b5a726ff887f68a207f69cf790976937e1639d7481992d795d4a7e9567c",
+          "z": "f1b742493965556f6b4afb2c345cbd1f373f2903aacbc3cf91bc2cc0f149feb7"
+        },
+        {
+          "field": "bip322_message_hash",
+          "offset": 75,
+          "size": 32,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "acaf769c4ecad2fd6fcb406bbdff09b00f354dd4f97587de6a735ca8a6ed152a",
+          "z": "5fa6f3ecfb8a7d14e707385c05679112fd06b416f33b180a5ac30d53f09ea01b"
+        },
+        {
+          "field": "not_before",
+          "offset": 107,
+          "size": 8,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "d917665d43f27b70540898c6f6d3e0237bb74f87a14a7be904ccd1080ee4abc4",
+          "z": "228c93ffed40e27c0fe8580a8cb6fc687d6e147c462058535c56afca95e33252"
+        },
+        {
+          "field": "expires_at",
+          "offset": 115,
+          "size": 8,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "19c9ed5a3a2b47e5bb2a9ef34ce5a94e9394efc922f604d9aaa08f7dc75ca3ac",
+          "z": "29dcef10bb56d4d3c0731da71dc471547de00b927e121db023d9b122fe7e757c"
+        },
+        {
+          "field": "snapshot_present",
+          "offset": 123,
+          "size": 1,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "792a58a06950c1bcd673b5d2888c63989b3467dcb273ba12e2c633818a78ff3e",
+          "z": "f43a451f4f81c69c633dc417789994f9d638056c65d46dec06740d7e3dbc3689"
+        },
+        {
+          "field": "snapshot.hash_display",
+          "offset": 124,
+          "size": 32,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "03374e70fd1e5fdb1e1ea9bf134e6577b9e08ad90fdac9dda05fc7e9816a7bf1",
+          "z": "cdd548eb8d1cff7d21900d6341de34d3df427d0c2e11ba393559f71ad57c4c74"
+        },
+        {
+          "field": "snapshot.height",
+          "offset": 156,
+          "size": 4,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "8441df095e3922c655cf4f04f8eee0bf9f4bee379d3d873e42433c7d62dad7d0",
+          "z": "09605f68d56ef9391b690b449f3483a33ffc1f86f63f118cfa6dfef186e47719"
+        },
+        {
+          "field": "bridge_present",
+          "offset": 160,
+          "size": 1,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "a82619be8ea78c7b50a99a7cdc1d88fc3f6ae09545962818659dc02784a20925",
+          "z": "5dfab1fb703e7cc905e49260d350e9b1b65d1f7f32461c642c9f52b874e01af0"
+        },
+        {
+          "field": "claim_count",
+          "offset": 161,
+          "size": 2,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "3e245bfd7a098b4de3db7df0e96e5c8b5a045b4cdaeef5dd2f3ba79c656eb970",
+          "z": "c054dc85483ef29bc5aecbc01a705ac3cea07df5bb2127fce9c93e20494d7661"
+        },
+        {
+          "field": "claims[0].txid_display",
+          "offset": 163,
+          "size": 32,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "783ad6a177bcaf47578f6156b9d202e46a3edb50a6a049767e5e9f849423d17c",
+          "z": "961d3e0b7d4c4b641637984a17421c9ee64bff14e9b0092b20c209fa9d736a2b"
+        },
+        {
+          "field": "claims[0].vout",
+          "offset": 195,
+          "size": 4,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "8e4e7a33527c7dad412d72dbc93df9e4f5d2d3ebf983ca4bf8fd2234d8a090f1",
+          "z": "d9fa0362a3a08fb6edd49da627d2d9b558c7feffb68670b0daf66bb3af705305"
+        },
+        {
+          "field": "claims[0].amount_sats",
+          "offset": 199,
+          "size": 8,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "bcd24012392965d83a64793adef084b3b55458547ba22fb8f8cf05370eaad952",
+          "z": "7484ba8571aaeae9cdb608835f9d4ea320a310006e816593c9b66d7600e425a4"
+        },
+        {
+          "field": "claims[0].script_kind",
+          "offset": 207,
+          "size": 1,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "061a80b2c2a3d5feff784095395489b02a3bbc1dc933d67a9462b5b034849938",
+          "z": "3d86bc160d93a94d244e1de3e305089d291621e5c7c4360b8f7c7ec172f7ef9b"
+        },
+        {
+          "field": "claims[0].program",
+          "offset": 208,
+          "size": 20,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "466e670614a09892a1eae2d5a70ddcfb91010b5628e96668e9833b25623d1398",
+          "z": "3b46edcc05039cae18e43f9fdc7c00b9c2b5a60009493328ee0947cc44cded74"
+        },
+        {
+          "field": "claims[1].txid_display",
+          "offset": 228,
+          "size": 32,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "fdc28e29fbc7127122e38345905909e67ac9ea8b0040a18b85e14609f4c147c8",
+          "z": "e7fdfbc86def7f3427393d662895abd152014f802fc4896c01aa294960368800"
+        },
+        {
+          "field": "claims[1].vout",
+          "offset": 260,
+          "size": 4,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "6ca836b9d1844e53d6303928aa31abaa0b4eb61e2b4153023439e5fa1adf5fb1",
+          "z": "3973330812a13a2dfd0da5c25ccf7aea7d8aa6f5a18c5ff574ba9ed1f3820c17"
+        },
+        {
+          "field": "claims[1].amount_sats",
+          "offset": 264,
+          "size": 8,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "48c05588d79d703a04a852cb9ac9a68cbebd227b42ea7a094ee49545d143b10a",
+          "z": "bff4ea2e519a2f9d66fda2de0218c9ed6c555909c2d2a7b105fe8756560bfaa7"
+        },
+        {
+          "field": "claims[1].script_kind",
+          "offset": 272,
+          "size": 1,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "4c6e9eeed4b820a3d794d70187823be1d4db5954323b89432b5709019ebb0310",
+          "z": "788ff42dbd0ac2bc00653a0eea6495acc1d5856d3b1eb8c250f8f7176730726b"
+        },
+        {
+          "field": "claims[1].program",
+          "offset": 273,
+          "size": 20,
+          "mutation": "xor first byte with 01; digest sensitivity only",
+          "d": "ae6bd58ba85b1a16ef3b19956f961780d1c66984ef6365326cf60ba1ded60e8c",
+          "z": "7cb0862ef1a10a22d9dc7114d589276c7dd72045e46a9a5fc58fe9137864cf67"
+        }
+      ],
+      "byte_mutation_count": 293,
+      "byte_mutation_result_sha256": "a1920d866e603633be756ed4ee9e738579b4b043e9cc1eaa328b6c843ad503a1",
+      "valid_selected_kind_change": {
+        "d": "b9e36a29a4be01430bec3f4f20f778397d8fb4ebc8197b62b57ca75e83834b3e",
+        "z": "45af01a1a77278320dadbe8d5613abd7a8f8a36c124122dc449bb11fb67cc062"
+      }
+    }
+  ]
+}

@@ -192,3 +192,44 @@ This oracle can reveal mathematical, boundary, padding, endian, and
 serialization disagreements. It cannot establish that every required C++
 wire is constrained, prove the Longfellow proof system sound, or replace
 adversarial witness tests and independent review.
+
+## Separate signature-possession relation (specification only)
+
+The implemented PoKC v1 scalar relation and its identity described above remain
+unchanged. The [signature-possession specification](spec/quietproof-signature-v1.md)
+defines a separate future circuit; this section does not describe implemented
+or qualified signature support.
+
+Its public inputs are the exact compressed-key HASH160 `h[20]` and ECDSA digest
+`z[32]`, derived independently from the verifier's retained expected canonical
+request. Private inputs are the compressed public key `Q`, signature scalars
+`r,s` and constrained advice. It must prove that `Q` is finite, on-curve and
+canonically encoded, `HASH160(SEC_compressed(Q)) = h`, and a strict low-S ECDSA
+signature verifies for `z`. A digest bound only through the transcript cannot
+replace `z` as a constrained public input. Host witness construction does not
+replace these constraints.
+
+| Meaning | Existing PoKC key-knowledge relation | Specified signature relation |
+| --- | --- | --- |
+| Secret knowledge | Nonzero private scalar `x`, with `P=xG`. | Authorised request signature and `Q`; no knowledge of `x` required. |
+| Public circuit bytes | Compressed-key HASH160. | Compressed-key HASH160 and request-derived ECDSA digest. |
+| Delegation | Existing private-key workflow. | A receipt holder can prove the same authorised request without the scalar; holder learns signature and `Q`. |
+| Identity and selection | Existing circuit, proof bytes, APIs and defaults. | Separate explicit mode/profile/circuit/transcript; never interpreted as PoKC v1 or used for bridge authorisation. |
+
+The wallet retains the scalar and signs only a checked, fixed zero-valued
+synthetic transaction. Real outpoints remain committed request fields, never
+transaction inputs; synthetic amounts never enter the real-output sum.
+Non-spending needs digest analysis and transplant negatives with valid-spend
+controls, not merely version-zero relay rejection. No signing failure may
+trigger key export, a free digest, funding or broadcast.
+
+A private receipt is an authorisation capability, not a public proof. It must
+not be published, uploaded to a public verifier, or embedded in a proof or
+public log. Public proofs hide `Q` and the signature under the proof system's
+assumptions; public outpoints, amounts and hashes remain linkable and may
+already expose `Q` through earlier spends. Neither this relation nor a fresh
+proof establishes signing time, ownership, exclusive control, reserved funds,
+solvency or all holdings. Independent real-output checks, qualified chain
+policy, final expiry checking and atomic nonce consumption remain outer
+verification duties. The native GUI gains no signature workflow in this
+specification; existing key-knowledge workflows remain operational.
