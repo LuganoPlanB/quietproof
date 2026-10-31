@@ -24,10 +24,13 @@ inline const char* QuietProofVerifyResultName(QuietProofVerifyResult r) { switch
 inline int QuietProofVerifyExitCode(QuietProofVerifyResult r) { switch(r) { case QuietProofVerifyResult::kValidCurrent: return 0; case QuietProofVerifyResult::kValidHistorical: return 1; case QuietProofVerifyResult::kSpentAtSnapshot: return 3; case QuietProofVerifyResult::kStaleSnapshot: return 4; case QuietProofVerifyResult::kStateInconclusive: return 5; case QuietProofVerifyResult::kBridgeRejected: return 6; case QuietProofVerifyResult::kMalformedStatement: return 65; case QuietProofVerifyResult::kUnsupported: return 66; case QuietProofVerifyResult::kInvalidProof: return 67; } return 67; }
 struct QuietProofVerification { QuietProofVerifyResult result = QuietProofVerifyResult::kMalformedStatement; std::vector<QuietProofChainEvidence> claims; uint64_t total_sats = 0; };
 struct QuietProofVerifierConfig { QuietProofReplayPolicy policy; std::function<bool(const QuietProofEnvelopeV1&)> verify_proof; std::function<bool(const QuietProofEnvelopeV1&)> supports; std::function<bool(const QuietProofStatementV1&)> bridge_authorized; QuietProofChainProvider* provider = nullptr; uint64_t min_confirmations = 0; uint64_t minimum_total_sats = 0; };
-inline QuietProofVerification VerifyQuietProof(const std::vector<uint8_t>& bytes, const QuietProofVerifierConfig& config) {
+inline QuietProofVerification VerifyQuietProofWithReason(
+    const std::vector<uint8_t>& bytes, const QuietProofVerifierConfig& config,
+    const char** reason) {
+  if (reason) *reason = nullptr;
   QuietProofEnvelopeV1 envelope;
   QuietProofDecodeError decode_error = QuietProofDecodeError::kMalformed;
-  if (!DecodeQuietProofEnvelope(bytes, &envelope, &decode_error)) {
+  if (!DecodeQuietProofEnvelopeWithReason(bytes, &envelope, &decode_error, reason)) {
     return {decode_error == QuietProofDecodeError::kUnsupported
                 ? QuietProofVerifyResult::kUnsupported
                 : QuietProofVerifyResult::kMalformedStatement,
@@ -79,6 +82,12 @@ inline QuietProofVerification VerifyQuietProof(const std::vector<uint8_t>& bytes
   if (envelope.statement.has_bridge_binding && (!config.bridge_authorized || !config.bridge_authorized(envelope.statement))) { out.result = QuietProofVerifyResult::kBridgeRejected; return out; }
   if (QuietProofConsumeNonce(envelope.statement, config.policy) != QuietProofAuthorization::kAuthorized) return {QuietProofVerifyResult::kInvalidProof, out.claims};
   out.result = historical ? QuietProofVerifyResult::kValidHistorical : QuietProofVerifyResult::kValidCurrent; return out;
+}
+
+// Keep the original result aggregate and function type exactly intact.
+inline QuietProofVerification VerifyQuietProof(
+    const std::vector<uint8_t>& bytes, const QuietProofVerifierConfig& config) {
+  return VerifyQuietProofWithReason(bytes, config, nullptr);
 }
 }  // namespace proofs
 #endif

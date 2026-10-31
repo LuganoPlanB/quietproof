@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """CLI defaults remain concrete transcript fields and exact policy expectations."""
 import hashlib
+import argparse
 import json
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -10,7 +12,13 @@ import tempfile
 import time
 import unittest
 
-BINARY = sys.argv.pop(1)
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('binary')
+parser.add_argument('--rpc-enabled', choices=('ON', 'OFF'), required=True)
+args = parser.parse_args()
+BINARY = args.binary
+RPC_ENABLED = args.rpc_enabled == 'ON'
+sys.argv = [sys.argv[0]]
 CLAIM = '01' + '00' * 31 + ':0:7:' + '04' + '00' * 19
 
 
@@ -31,6 +39,99 @@ class ContextTest(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.request = self.root / 'request.qpr'
+
+    def test_native_unavailable_preserves_old_input_precedence(self):
+        native = ('{"error":"native_unavailable","message":"Native Bitcoin Core RPC '
+                  'support is unavailable in this build"}\n')
+        malformed = ('{"claims_checked":0,"exit_code":65,"result":"malformed_statement",'
+                     '"total_sats":0}\n')
+        inputs = [self.root / 'missing.qpf']
+        for name, data in [('old-v1.qpf', b'QPE1\x01'), ('old-v2.qpf', b'QPE1\x02'),
+                           ('ordinary.qpf', b'ordinary invalid data')]:
+            path = self.root / name
+            path.write_bytes(data)
+            inputs.append(path)
+        if not RPC_ENABLED:
+            # A large old input must be rejected without full read/allocation.
+            sparse = self.root / 'large-old.qpf'
+            with sparse.open('wb') as stream:
+                stream.write(b'QPE1\x02')
+                stream.truncate(256 * 1024 * 1024)
+            inputs.append(sparse)
+            fifo = self.root / 'ordinary-fifo.qpf'
+            os.mkfifo(fifo, 0o600)  # No writer: an eager full read would block.
+            inputs.append(fifo)
+        nonce = self.root / 'nonces'
+        for path in inputs:
+            with self.subTest(path=path.name):
+                result = subprocess.run([BINARY, 'verify', str(path), '--nonce-store', str(nonce)],
+                                        text=True, capture_output=True, timeout=10)
+                self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                 (65, malformed, '') if RPC_ENABLED else (64, '', native))
+                self.assertFalse(nonce.exists())
+        # Network validation preceded the original RPC-OFF gate; numeric policy
+        # validation followed it. Keep both precedences and exact usage output.
+        usage = subprocess.run([BINARY, 'verify'], text=True, capture_output=True, timeout=10)
+        for options in (['--network', 'not-a-network'], ['--unknown-option', '1']):
+            result = subprocess.run([BINARY, 'verify', str(inputs[0]), '--nonce-store', str(nonce), *options],
+                                    text=True, capture_output=True, timeout=10)
+            self.assertEqual((result.returncode, result.stdout, result.stderr),
+                             (usage.returncode, usage.stdout, usage.stderr))
+        result = subprocess.run([BINARY, 'verify', str(inputs[0]), '--nonce-store', str(nonce),
+                                 '--min-confirmations', 'invalid'], text=True, capture_output=True, timeout=10)
+        self.assertEqual((result.returncode, result.stdout, result.stderr),
+                         (usage.returncode, usage.stdout, usage.stderr) if RPC_ENABLED else (64, '', native))
+
+    def test_private_receipt_rejected_before_provider(self):
+        # Deliberately private-looking sentinel; filename cannot select a parser.
+        proof = self.root / 'renamed-receipt.qpf'
+        sentinel = 'PRIVATE-WITNESS-MUST-NOT-BE-ECHOED'
+        proof.write_bytes(b'QPA1' + sentinel.encode())
+        minimal = self.root / 'receipt-magic-only.qpf'
+        minimal.write_bytes(b'QPA1')
+        large = self.root / 'large-private.qpf'
+        with large.open('wb') as stream:
+            stream.write(b'QPA1')
+            stream.truncate(256 * 1024 * 1024)
+        tripwire = self.root / 'provider-called'
+        provider = self.root / 'bitcoin-cli'
+        provider.write_text('#!/bin/sh\ntouch "' + str(tripwire) + '"\nexit 1\n')
+        provider.chmod(0o700)
+        nonce = self.root / 'nonces'
+        for path in (proof, minimal, large):
+            for args in ([], ['--bitcoin-cli', str(provider)]):
+                result = subprocess.run([BINARY, 'verify', str(path),
+                                         '--nonce-store', str(nonce), *args],
+                                        text=True, capture_output=True, timeout=10)
+                self.assertEqual(result.returncode, 65, result.stderr)
+                self.assertEqual(json.loads(result.stdout)['result'], 'malformed_statement')
+                warning = ('--bitcoin-cli selects the deprecated legacy backend; '
+                           'use native Bitcoin Core RPC for new integrations.\n') if args else ''
+                self.assertEqual(result.stderr, warning + 'private_receipt_input\n')
+                self.assertNotIn(sentinel, result.stdout + result.stderr)
+                self.assertFalse(tripwire.exists())
+                self.assertFalse(nonce.exists())
+
+    def test_v3_format_never_selects_signature_acceptance(self):
+        frozen = Path(__file__).resolve().parents[2] / 'spec/signature-profile-v1.json'
+        statement = bytes.fromhex(json.loads(frozen.read_text())['vectors'][0]['request_hex'])
+        # Synthetic circuit identity/proof: transport fixture only, unapproved.
+        proof = self.root / 'v3.qpf'
+        proof.write_bytes(b'QPE1\x03' + struct.pack('>I', len(statement)) + statement +
+                          struct.pack('>QBHH', 1800000100, 1, 1, 1) +
+                          bytes(range(1, 33)) + struct.pack('>IIII', 1, 4, 128, 1) + b'\x01')
+        tripwire = self.root / 'provider-called'
+        provider = self.root / 'bitcoin-cli'
+        provider.write_text('#!/bin/sh\ntouch "' + str(tripwire) + '"\nexit 1\n')
+        provider.chmod(0o700)
+        nonce = self.root / 'nonces'
+        for args in ([], ['--bitcoin-cli', str(provider)]):
+            result = subprocess.run([BINARY, 'verify', str(proof), '--nonce-store', str(nonce), *args],
+                                    text=True, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 66, result.stderr)
+            self.assertEqual(json.loads(result.stdout)['result'], 'unsupported')
+            self.assertFalse(tripwire.exists())
+            self.assertFalse(nonce.exists())
 
     def create(self, *args):
         return subprocess.run([
@@ -262,6 +363,31 @@ class ContextTest(unittest.TestCase):
         self.assertEqual(info['script_kinds'], ['p2pkh'])
         self.assertEqual(info['request_created_at'], request['request_created_at'])
         self.assertEqual(info['proof_created_at'], proof_time)
+
+    def test_signature_request_never_reads_key_or_contacts_wallet(self):
+        fixture = json.loads((Path(__file__).resolve().parents[2] /
+                              'spec/signature-profile-v1.json').read_text())
+        original = bytes.fromhex(fixture['vectors'][0]['request_hex'])
+        for mutate, expected, diagnostic in [
+                (None, 66, 'signature_mode_disabled'),
+                ((6, 0), 65, 'invalid or unsupported signature request'),
+                ((8, 2), 66, 'invalid or unsupported signature request'),
+                ((9, 2), 66, 'invalid or unsupported signature request')]:
+            wire = bytearray(original)
+            if mutate:
+                wire[mutate[0]] = mutate[1]
+            self.request.write_bytes(wire)
+            output = self.root / 'never-created.qpf'
+            for wallet in ([], ['--rpc-wallet', 'must-not-contact', '--address', 'invalid']):
+                with self.subTest(mutate=mutate, wallet=bool(wallet)):
+                    result = subprocess.run([BINARY, 'prove', '--request', str(self.request),
+                                             '--output', str(output), *wallet],
+                                            input='', text=True, capture_output=True, timeout=10)
+                    self.assertEqual(result.returncode, expected, result.stderr)
+                    self.assertIn(diagnostic, result.stderr)
+                    self.assertNotIn('key input', result.stderr.lower())
+                    self.assertFalse(result.stdout)
+                    self.assertFalse(output.exists())
 
 
 if __name__ == '__main__':
