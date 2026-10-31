@@ -159,8 +159,8 @@ inline bool EncodeQuietProofSignatureEnvelope(
   return true;
 }
 
-// Capability-dependent operations stay TU-local. No production signature
-// circuit is approved before L5, so this cannot currently report support.
+// Capability-dependent operations stay TU-local. Support is metadata-only;
+// the dedicated verifier additionally requires allowance and expected request.
 static inline bool QuietProofSignatureEnvelopeSupported(
     const std::vector<uint8_t>& bytes, QuietProofSignatureEnvelopeError* error = nullptr) {
   QuietProofSignatureEnvelopeMetadataV3 metadata;

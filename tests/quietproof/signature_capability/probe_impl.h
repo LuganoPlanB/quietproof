@@ -7,6 +7,7 @@
 #include "quietproof/signature_digest.h"
 #include "quietproof/signature_authorisation.h"
 #include "quietproof/signature_envelope.h"
+#include "poksig/prover.h"
 
 // This test helper must also stay local; otherwise the test itself would
 // introduce the same ODR defect it is meant to detect in the public header.
@@ -68,6 +69,17 @@ static SignatureCapabilityProbe RunSignatureProbe() {
       !PoKSigTranscriptSeed(request,wire,100,&seed,&envelope_error) && seed[0]==17 &&
       envelope_error==(result.capability ? QuietProofSignatureEnvelopeError::kUnapprovedCircuit :
           QuietProofSignatureEnvelopeError::kSignatureModeDisabled) && public_encoded==result.capability;
+  PoKSigProofV1 proof{wire};
+  PoKSigError proof_error;
+  result.envelope_capability_checked=result.envelope_capability_checked &&
+      !PoKSigVerifyProof(request,proof,100,{true},&proof_error) && proof_error==(result.capability ?
+          PoKSigError::kUnapprovedCircuit : PoKSigError::kSignatureModeDisabled);
+  proof.bytes={17};
+  result.receipt_capability_checked=result.receipt_capability_checked &&
+      !PoKSigProve(request,authorization,&proof,{true},&proof_error) && proof.bytes==std::vector<uint8_t>{17} &&
+      proof_error==(result.capability ? PoKSigError::kInvalidAuthorization : PoKSigError::kSignatureModeDisabled) &&
+      !PoKSigProveReceipt(request,receipt,&proof,{true},&proof_error) && proof.bytes==std::vector<uint8_t>{17} &&
+      proof_error==(result.capability ? PoKSigError::kInvalidAuthorization : PoKSigError::kSignatureModeDisabled);
   result.unchanged_or_valid_output = result.capability ?
       QuietProofSignatureStatementValid(public_output) && QuietProofSignatureStatementValid(sourced_output) &&
           sourced_output.not_before == 100 && sourced_output.expires_at == 400 &&

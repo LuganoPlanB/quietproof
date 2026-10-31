@@ -1,7 +1,10 @@
 #include "quietproof/challenge.h"
 #include "quietproof/bitcoin_core.h"
+#include "poksig/prover.h"
 int main() {
   using namespace proofs;
+  PoKSigProofV1 signature_output{{17}};
+  if (PoKSigProveReceipt({}, {}, &signature_output, {true}) || signature_output.bytes != std::vector<uint8_t>{17}) return 7;
   proofs::QuietProofChallengeOptions options;
   if (static_cast<unsigned>(options.network) != 0xff) return 1;
   options.network = QuietProofNetwork::kRegtest;
