@@ -38,6 +38,8 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--version', required=True)
     parser.add_argument('--jobs', type=int, default=2)
+    parser.add_argument('--signature-mode', action='store_true',
+                        help='Build and test the optional ECDSA constraints (no signature CLI yet)')
     args = parser.parse_args()
     if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', args.version):
         parser.error('--version must be a stable semantic version without v')
@@ -89,6 +91,7 @@ def main():
         f'-DCMAKE_PREFIX_PATH={prefix};{musl}', '-DCURL_USE_STATIC_LIBS=TRUE',
         f'-DQUIETPROOF_VERSION={args.version}', '-DBUILD_TESTING=ON',
         '-DQUIETPROOF_BUILD_CLI=ON', '-DQUIETPROOF_BUILD_RPC=ON',
+        '-DQUIETPROOF_BUILD_SIGNATURE_MODE=' + ('ON' if args.signature_mode else 'OFF'),
         '-DQUIETPROOF_BUILD_WASM=OFF')
     run('cmake', '--build', build, '--parallel', args.jobs)
     # Package consumers need their own toolchain setup; proof-heavy and live
@@ -114,6 +117,7 @@ def main():
                 'sourceDirty': bool(output('git', '-C', ROOT, 'status', '--porcelain', '--untracked-files=no')),
                 'longfellowCommit': pin, 'compiler': output(cxx, '--version').splitlines()[0],
                 'rpc': True, 'static': True,
+                'signatureConstraintsBuilt': args.signature_mode,
                 'binarySha256': hashlib.sha256(binary.read_bytes()).hexdigest()}
     (stage / 'release.json').write_text(json.dumps(manifest, indent=2) + '\n')
     destination.mkdir(parents=True, exist_ok=True)

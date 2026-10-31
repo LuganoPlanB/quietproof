@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 project(QuietProofRpcConsumer LANGUAGES CXX)
 find_package(LongfellowZKQuietProof CONFIG REQUIRED COMPONENTS rpc)
+if(TARGET LongfellowZKQuietProof::signature OR TARGET LongfellowZKECDSA::ecdsa OR
+   TARGET libsecp256k1::secp256k1)
+  message(FATAL_ERROR "RPC-only lookup loaded a signature or oracle dependency")
+endif()
 if(EXPECT_STATIC_CURL)
   get_target_property(curl_location CURL::libcurl IMPORTED_LOCATION_RELEASE)
   if(NOT curl_location)

@@ -82,6 +82,13 @@ lookup; there is no `bitcoin.conf` parsing or automatic endpoint fallback.
 `-DQUIETPROOF_BUILD_RPC=OFF` removes curl and retains the manual/offline and
 explicit legacy paths.
 
+`-DQUIETPROOF_BUILD_SIGNATURE_MODE=ON` additionally builds and installs the
+experimental Bitcoin ECDSA constraint component. It defaults to OFF and uses
+the same pinned base SDK. Installed CMake consumers must request the `signature`
+component and link `LongfellowZKQuietProof::signature`; an ordinary package lookup
+loads only the base target. See the [constraint and package contract](spec/signature-ecdsa-constraints.md).
+This component does not yet add a signature proof command or browser mode.
+
 ## Try an isolated regtest workflow
 
 Follow the [getting-started guide](docs/guide/getting-started.md) to start a
