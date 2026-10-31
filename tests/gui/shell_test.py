@@ -95,6 +95,9 @@ with tempfile.TemporaryDirectory(prefix='quietproof-display-') as directory:
         state, _, _ = run(f'pointer-{density}x', ['--pixel-scale', str(density)],
                           [f'click {400 * density} {35 * density}'])
         assert state['view'] == 'settings', (density, state)
+        state, _, _ = run(f'control-pointer-{density}x', ['--pixel-scale', str(density)],
+                          ['control 1', 'control 5', 'control 7', 'control 11'])
+        assert (state['view'], state['theme'], state['font']) == ('request', 'light', 0), (density, state)
 
 print(f'GUI shell: {checks} rendered checks passed; 72 matrix captures, keyboard, scrolling, '
       'HiDPI pointer coordinates and nonsecret preferences')

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=QuietProof Prover
+Comment=Review a Bitcoin proof request and prove wallet key control
+Exec=quietproof-prover-gui
+TryExec=quietproof-prover-gui
+Icon=quietproof-prover
+Terminal=false
+Categories=Utility;Finance;
+StartupNotify=false

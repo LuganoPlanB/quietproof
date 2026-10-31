@@ -150,7 +150,8 @@ std::vector<TestEvent> ReadTestEvents(const std::filesystem::path& path) {
   return events;
 }
 
-void InjectTestEvent(const TestEvent& test, bool down, Uint32 window_id, const ShellState& state) {
+void InjectTestEvent(const TestEvent& test, bool down, Uint32 window_id,
+                     SDL_Renderer* renderer, const ShellState& state) {
   SDL_Event event{};
   if (test.private_synthetic) {
     if (!down) return;
@@ -178,9 +179,12 @@ void InjectTestEvent(const TestEvent& test, bool down, Uint32 window_id, const S
     event.key.keysym.mod=test.control_modifier ? KMOD_CTRL : test.shift ? KMOD_SHIFT : KMOD_NONE;
   } else {
     const auto bounds = state.controls[test.control];
-    const int x = test.control ? static_cast<int>(bounds.x+bounds.w/2) : test.x;
-    const int y = test.control ? static_cast<int>(bounds.y+bounds.h/2) : test.y;
+    int x = test.x, y = test.y;
     if (test.control && (bounds.w<=0 || bounds.h<=0)) throw std::runtime_error("Rendering control unavailable");
+    // SDL filters queued pointer events from window to renderer coordinates.
+    // Control bounds are logical; literal click events already use window pixels.
+    if (test.control) SDL_RenderLogicalToWindow(renderer,bounds.x+bounds.w/2,
+                                                bounds.y+bounds.h/2,&x,&y);
     if (down) {
       SDL_Event motion{};
       motion.type=SDL_MOUSEMOTION;
@@ -301,7 +305,7 @@ int Run(const Options& options) {
           if (!options.smoke_test || !state.save_dialog || test.destination.size()>=state.save_path.size()) throw std::runtime_error("Rendering destination precondition unavailable");
           SDL_strlcpy(state.save_path.data(),test.destination.c_str(),state.save_path.size()); state.InvalidateSaveDestination();
         }
-      } else InjectTestEvent(test,down,SDL_GetWindowID(window.get()),state);
+      } else InjectTestEvent(test,down,SDL_GetWindowID(window.get()),renderer.get(),state);
     }
     nk_input_begin(nuklear.context);
     SDL_Event event;
@@ -556,6 +560,10 @@ int Run(const Options& options) {
     std::cout << "GUI smoke: " << frames << " frames; orderly SDL_QUIT; font="
               << (native_font ? "Inter" : "builtin") << '\n';
   if (options.smoke_test) {
+    SDL_RendererInfo renderer_info{};
+    if (SDL_GetRendererInfo(renderer.get(), &renderer_info) != 0) SdlError("Read renderer identity");
+    std::cout << "GUI assets: font=" << (native_font ? path.lexically_normal().string() : "builtin")
+              << " renderer=" << (renderer_info.name ? renderer_info.name : "unknown") << '\n';
     std::cout << "GUI wallet: prompt=" << private_prompt_before_close
               << " masked=" << private_mask_before_close << " cleared=" << (state.wallet_input->Size() == 0)
               << " busy=" << state.wallet_busy << " focus=" << private_focus_before_close
