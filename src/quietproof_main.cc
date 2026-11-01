@@ -20,6 +20,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <csignal>
 #include <exception>
 #include <fcntl.h>
 #include <fstream>
@@ -41,6 +42,8 @@
 #include "quietproof/bitcoin_rpc.h"
 #endif
 #include "quietproof/challenge.h"
+#include "quietproof/signature_challenge.h"
+#include "poksig/prover.h"
 #include "quietproof/envelope.h"
 #include "quietproof/nonce_store.h"
 #include "pokc/prover.h"
@@ -80,6 +83,13 @@ void PrintUsage(std::ostream& output) {
       << "    Native RPC is default; --bitcoin-cli /ABSOLUTE/PATH explicitly "
          "selects the deprecated legacy verifier.\n"
       << "  quietproof inspect FILE\n"
+      << "Signature mode (optional build capability; defaults remain key-knowledge):\n"
+      << "  quietproof challenge create --proof-mode signature-possession --signing-kind p2pkh|p2wpkh [CHALLENGE OPTIONS]\n"
+      << "  quietproof authorize --proof-mode signature-possession --request REQUEST --receipt-output PRIVATE.qpa --rpc-wallet NAME [RPC OPTIONS]\n"
+      << "  quietproof prove --proof-mode signature-possession --request REQUEST --output PUBLIC.qpf (--receipt-input PRIVATE.qpa | --rpc-wallet NAME [RPC OPTIONS])\n"
+      << "  Signature mode never exports private keys or unlocks wallets. Unlock separately before signing.\n"
+      << "  .qpa is a private authorisation capability: its holder learns the signature/public key and can delegate proving for this request.\n"
+      << "  .qpf is public. Signature possession does not establish private-key knowledge, exclusive control, reserved funds or signing time.\n"
       << "  quietproof --version\n"
       << "Claims: TXID:VOUT:SATOSHIS:PROGRAM implies p2wpkh; "
          "TXID:VOUT:SATOSHIS:SCRIPT_KIND:KEY_HASH accepts p2wpkh or p2pkh.\n"
@@ -487,14 +497,24 @@ int Utxos(int argc, char** argv) {
 #endif
 }
 
+#include "signature_cli.h"
+
 int ChallengeCreate(int argc, char** argv) {
   std::set<std::string> allowed = {
       "--network", "--verifier", "--purpose", "--message", "--claim",
-      "--output", "--expires-in"};
+      "--output", "--expires-in", "--proof-mode", "--signing-kind"};
   allowed.insert(kRpcOptions.begin(), kRpcOptions.end());
   allowed.insert(kDiscoveryOptions.begin(), kDiscoveryOptions.end());
   Options options;
   if (!ParseOptions(argc, argv, 3, allowed, &options)) return Usage();
+  std::string mode, signing_kind;
+  if (!One(options, "--proof-mode", &mode, false) ||
+      (!mode.empty() && mode != "key-knowledge" && mode != "signature-possession") ||
+      !One(options, "--signing-kind", &signing_kind, false)) return Usage();
+  const bool signature_mode = mode == "signature-possession";
+  if ((!signature_mode && options.count("--signing-kind")) ||
+      (signature_mode && signing_kind != "p2pkh" && signing_kind != "p2wpkh")) return Usage();
+  if (signature_mode && !proofs::kQuietProofSignatureModeEnabled) return SignatureUnavailable();
   std::string network_name, verifier, purpose, message, output_path,
       lifetime_text;
   verifier = kDefaultVerifier;
@@ -546,6 +566,27 @@ int ChallengeCreate(int argc, char** argv) {
       parsed_claims.push_back(claim);
     }
   }
+  if (signature_mode) {
+    proofs::QuietProofSignatureChallengeOptions selected;
+    selected.request = challenge_options;
+    selected.signing_kind = signing_kind == "p2pkh" ? proofs::QuietProofScriptKind::kP2pkh
+                                                     : proofs::QuietProofScriptKind::kP2wpkh;
+    proofs::QuietProofSignatureStatementV3 statement;
+    std::vector<uint8_t> request;
+    if (!proofs::CreateQuietProofSignatureChallenge(parsed_claims, selected, &statement) ||
+        !proofs::EncodeQuietProofSignatureStatement(statement, &request)) {
+      std::cerr << "invalid signature challenge options or claims\n";
+      return kData;
+    }
+    ShowSignatureRequest(statement);
+    if (!WriteSignatureFile(output_path, request)) return kIoError;
+    auto result = SignatureRequestSummary(statement);
+    result["result"] = "challenge_created";
+    result["request"] = output_path;
+    result["proof_mode"] = "signature-possession";
+    std::cout << result.dump() << '\n';
+    return 0;
+  }
   proofs::QuietProofStatementV1 statement;
   proofs::QuietProofChallengeError error;
   if (!proofs::CreateQuietProofChallenge(parsed_claims, challenge_options,
@@ -579,9 +620,14 @@ int ChallengeCreate(int argc, char** argv) {
 int Prove(int argc, char** argv) {
   Options options;
   auto allowed = kRpcOptions;
-  allowed.insert({"--request", "--output", "--rpc-wallet", "--address", "--network"});
+  allowed.insert({"--request", "--output", "--rpc-wallet", "--address", "--network", "--proof-mode", "--receipt-input"});
   if (!ParseOptions(argc, argv, 2, allowed, &options))
     return Usage();
+  std::string mode;
+  if (!One(options, "--proof-mode", &mode, false) ||
+      (!mode.empty() && mode != "key-knowledge" && mode != "signature-possession")) return Usage();
+  if (mode == "signature-possession") return SignatureOperation(options, false);
+  if (options.count("--receipt-input")) return Usage();
   std::string request_path, output_path;
   if (!One(options, "--request", &request_path) ||
       !One(options, "--output", &output_path)) return Usage();
@@ -869,6 +915,7 @@ int QuietProofMain(int argc, char** argv) {
       std::string(argv[2]) == "create") return ChallengeCreate(argc, argv);
   if (argc >= 2 && std::string(argv[1]) == "utxos") return Utxos(argc, argv);
   if (argc >= 2 && std::string(argv[1]) == "prove") return Prove(argc, argv);
+  if (argc >= 2 && std::string(argv[1]) == "authorize") return SignatureAuthorize(argc, argv);
   if (argc >= 3 && std::string(argv[1]) == "verify") return Verify(argc, argv);
   if (argc == 3 && std::string(argv[1]) == "inspect") return Inspect(argv[2]);
   return Usage();
