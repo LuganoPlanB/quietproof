@@ -1,13 +1,16 @@
 # QuietProof signature-possession v1
 
-Status: **specification only; signature mode is not implemented or qualified**.
+Status: **implemented optional profile; local qualification has explicit limits**.
 This document specifies an additive, explicitly selected mode. It does not
 change the implemented [key-knowledge protocol](quietproof-v1.md), its proof
 meaning, APIs, wire bytes, circuit identities, defaults or GUI behaviour.
 Sections 7 through 11 freeze the signing profile and public byte fixtures.
 Sections 12 through 15 freeze envelope dispatch, transcript and private receipt
-rules. This document supplies no production codec or evidence that Core signing
-works.
+rules. Production codecs, native wallet/receipt/proof verification and public
+WASM/browser support implement this contract. Stock Core32.1 isolated regtest
+and retained current-source cohorts support the documented scope. Original L5.3
+integrated malicious fresh-proof/advice attacks were user-waived and remain
+unexecuted/unqualified; no external audit or universal formal theorem is claimed.
 
 ## 1. Claim and scope
 
@@ -34,7 +37,8 @@ HASH160. Supported scripts are compressed-key P2PKH and native P2WPKH; one
 request may contain both kinds for that hash. The selected signing kind MUST
 occur among the request's claims and actually be available in the wallet.
 A `wpkh` descriptor does not imply a `pkh` alias or permission to change kinds.
-Stock Bitcoin Core 32.1 descriptor wallets are the first qualification target.
+Stock Bitcoin Core 32.1 descriptor wallets are the locally qualified signing
+target; other wallet/version combinations need their own evidence.
 
 Taproot, wrapped SegWit, uncompressed keys, multiple independent keys,
 multisignature signature circuits, private amounts, hardware signers, general
@@ -175,27 +179,28 @@ including verifier, purpose, network, nonce, validity times, typed claims,
 amounts, optional snapshot and user-message commitment.
 
 The fixed signature MUST NOT authorise a real spend under the normal hash and
-ECDSA assumptions. This is a qualification requirement, not a measured result
-of this specification. Digest reasoning and signature-transplant rejection
-tests with valid-spend positive controls are required; version-zero relay
-rejection alone is insufficient. Nothing on this path funds or broadcasts a
+ECDSA assumptions. The production adapter has isolated Core32 transplant-negative evidence with
+valid-spend positive controls (56 cases) and digest/shape review. This evidence
+has the recorded test scope; version-zero relay rejection alone is insufficient. Nothing on this path funds or broadcasts a
 transaction. Delegation/replay of the same authorised request remains possible
 subject to expiry and nonce policy.
 
 ## 5. Two-mode compatibility
 
-| Contract | Existing key-knowledge modes | Specified signature-possession mode |
+| Contract | Existing key-knowledge modes | Optional signature-possession mode |
 | --- | --- | --- |
 | Knowledge claim | Private scalar and existing constrained relation. | Request-bound signature and `Q`; no scalar-knowledge claim. |
 | Formats and identity | Existing statement/envelope versions, bytes, golden vectors, circuit digests and proof parameters retain their meaning. | Separate explicit mode/profile, version dispatch, circuit identity and transcript domain; no cross-mode reinterpretation. |
 | Selection | Existing APIs, CLI commands, defaults and GUI behaviour remain unchanged. | Explicit selection required; no bridge use or automatic fallback. |
-| Build capability | Base SDK remains sufficient for existing consumers. | `QUIETPROOF_BUILD_SIGNATURE_MODE` is specified to default OFF; disabled capability must reject new-mode use explicitly. |
+| Build capability | Base SDK remains sufficient for existing consumers. | `QUIETPROOF_BUILD_SIGNATURE_MODE` defaults OFF; disabled capability must reject new-mode use explicitly. |
 | Native witness path | Existing private-key workflows remain separate. | Wallet signing or local/private receipt import; no key-export fallback. |
-| Browser and GUI | Existing workflows remain operational. | Planned browser request creation/public verification only; no new native GUI signing workflow. |
+| Browser and GUI | Existing workflows remain operational. | Implemented browser request creation/public verification only; no new native GUI signing workflow. |
 
-No implementation of the new capability, version dispatch, circuit or wallet
-adapter is supplied by this document. Those components require their own
-compatibility, adversarial and end-to-end qualification before use.
+The profile is additive; the byte rules below remain frozen. See the native
+workflow and measured resource record linked from the rendered profile page.
+Native CLI `inspect` does not support v3 requests/proofs; browser bounded metadata
+inspection is separate from cryptographic verification. Public browser inputs
+are `.qpr`/`.qpf` only; private `.qpa`, proving and wallet RPC stay native.
 
 ## 6. Required claim review cases
 
@@ -463,8 +468,9 @@ python3 tests/quietproof/signature_profile_test.py
 ```
 
 The focused tests include published BIP-322 transaction/hash and BIP-143
-preimage/digest controls. These specification fixtures still require independent
-production agreement and Core signing/non-spending qualification in later work.
+preimage/digest controls. Production codec/reference tests and isolated Core32 signing/non-spending
+controls now cross-check this profile. The synthetic specification models alone
+remain insufficient evidence of production behaviour or circuit soundness.
 
 ## 12. Exact dispatch and circuit identity contract
 
@@ -513,9 +519,12 @@ I = TaggedHash("QuietProof/signature/circuit/v1",
     len(C):u64be || C)
 ```
 
-**No production value of `I` is allocated by this document.** The completed
-circuit must be qualified and its actual digest pinned by the circuit/proof
-milestone. An implementation MUST compare `I` to its locally approved exact
+No production value of `I` may be selected by an untrusted caller. The approved
+production value is pinned by `PoKSigExpectedCircuitDigest`
+in `include/poksig/proof.h` and checked by the independent circuit-identity test.
+The serialized-circuit SHA256 is
+`07d62ac962dd0f484828c4075bc64fde3575396b28946bdef52931c6f4234d51`;
+that serialization hash is distinct from the tagged identity `I`. An implementation MUST compare `I` to its locally approved exact
 digest before proof parsing/verification; a nonzero caller-supplied digest is
 not a trust anchor. Existing circuit digest algorithms and golden identities
 are unchanged. Changing the relation/layout/parameters changes its identity
@@ -680,10 +689,36 @@ mistakes must fail without consuming a nonce or invoking signing/export.
 Provider-failure/historical/current/final-expiry behaviour remains sections
 3 and 4; cryptographic success alone cannot produce a funds result.
 Production implementations and cross-build/package consumers must be tested
-against these rules before capability is offered. The specification's focused
-contract models are not evidence that any production dispatch/receipt parser
-already implements them.
+against these rules before capability is offered. The specification's focused contract models alone are not production-parser
+evidence; separate enabled/disabled production codec, CLI, envelope and receipt
+tests exercise those boundaries.
 
 Run the focused specification decision-table, transcript and receipt-framing
 models with `python3 tests/quietproof/signature_contract_test.py`. Its synthetic
 framing bodies/mock circuit metadata are not valid receipts or proof identities.
+
+## 16. Qualification and privacy limits
+
+Current local evidence distinguishes scalar key knowledge from delegatable
+request-signature knowledge. A new proof/timestamp does not establish signing
+time. Unspent checked value is not immediately spendable, reserved or solvent.
+Pruned nodes may qualify current UTXO evidence under section4 readiness; the
+bundled provider cannot supply authenticated historical/pruned-away history.
+An unvalidated active AssumeUTXO snapshot fails even with a validated background
+state. Browser explorer qualification remains trusted/non-atomic and always
+`authorizes:false`, with no validated-node or global replay claim.
+
+Owned native CLI byte buffers are cleared where implemented; parsed JSON, SDK
+advice, allocator/library copies and OS/swap may retain witness data. This is
+partial handling, not comprehensive RAM erasure. Receipts are private plaintext
+authorisation capabilities; public history and results retain only public data.
+
+The original L5.3 integrated malicious fresh-proof/advice work remains
+WAIVED/UNEXECUTED/UNQUALIFIED. Existing L3 arithmetic/advice rejection evidence
+is separate. Honest proofs, witness generation, oracle agreement and supervisor
+review do not supply that missing soundness qualification. No external crypto
+audit or universal formal theorem is claimed. Historical exploratory docs failure
+has a disclosed raw-log gap; configured runtime model assurance is not runtime
+attestation. Retained cohort evidence keeps original UTC/source/binary/config
+identities; documentation updates do not create a fresh enclosing full run.
+L9 acceptance and terminal whole-branch review remain separate gates.

@@ -24,7 +24,7 @@ business decision or establishes exclusive control, ownership or solvency.
 | Request size | One or two addresses sharing a key hash; select 1–16 exact outputs with one key fingerprint. No automatic output selection. |
 | Unsupported | P2SH, P2WSH, P2TR, uncompressed-key P2PKH and other scripts; historical snapshot and bridge verification. Metadata inspection is not acceptance. |
 | Browsers | Qualified desktop Chromium and WebKit. Firefox is unsupported and unqualified. |
-| Resources | Real proofs are roughly 45 MiB for one key and can take minutes. Measured linear allocation is about 0.95 GB; the module maximum is 2 GiB, **plus** browser, file and JavaScript memory. These are not process RSS or total-RAM requirements. |
+| Resources | Scalar proofs are roughly45MiB; signature proofs roughly47.43MiB. Both can take minutes. Measured scalar linear allocation is about0.95GB and signature max16 peaks at1,301,413,888B; the module maximum is 2 GiB, **plus** browser, file and JavaScript memory. These are not process RSS or total-RAM requirements. |
 
 Use a desktop with ample available memory and run one proof at a time. A
 390-pixel layout does not qualify a phone or a low-RAM device. Physical mobile/
@@ -60,11 +60,19 @@ The request discloses outpoints, amounts, script kinds, key fingerprints,
 verifier/purpose and a message hash. Send it through an appropriate channel and
 restrict retention: it links a counterparty to disclosed coins.
 
+Signature-enabled artifacts expose an explicit proof-mode selector and signing
+kind. Select signature possession only for the intended wallet workflow; retain
+the exact downloaded request. Scalar key knowledge remains the default. This
+mode proves signature knowledge and permits same-request delegation; neither
+mode proves signing time, exclusive control or solvency. See the
+[native signature workflow](./signature-possession).
+
 ## 2. Prove outside the browser
 
 The prover uses a compatible native QuietProof build; see
 [native build and isolated regtest tutorial](./getting-started). Replace the
-downloaded filename below with its actual path:
+downloaded filename below with its actual path. The following block is the
+existing scalar workflow:
 
 ```sh
 build/quietproof inspect request.qpr
@@ -96,10 +104,18 @@ Return the `.qpf` to the verifier. The verifier should use its retained expected
 request supplied with the proof. The proof hides the spend key and does not
 newly disclose its public key; outpoints, amounts and wallet links stay public.
 
+For a signature request use the explicitly selected native wallet or private
+receipt commands in the [signature guide](./signature-possession). Native CLI
+`inspect` does not support v3 signature requests/proofs. Browser metadata
+inspection remains available but cannot establish cryptography. Never import a
+private `.qpa`; magic is rejected locally even if renamed `.qpf`.
+
 ## 3. Import and choose independent expectations
 
 Open [Verify a proof](/verify) and select **Proof file (.qpf)**. The file ceiling
-is 134221889 bytes (128 MiB plus envelope), checked before reading. Select an
+is 134221889 bytes for both modes, checked before reading and enforced again by
+WASM. The native v3 format's larger theoretical bound does not raise this browser
+import ceiling. Select an
 **Expected policy source**:
 
 - **Exact expected .qpr request**: choose your independently retained request
@@ -112,6 +128,9 @@ is 134221889 bytes (128 MiB plus envelope), checked before reading. Select an
   Prefer your exact `.qpr` when available.
 - **Inspection only — no expected policy**: useful for untrusted metadata, not
   a verification policy.
+
+Signature proofs require an independently retained exact `.qpr`; explicit
+context alone does not supply their expected claims/nonce authority.
 
 **Inspect proof and policy** decodes metadata and checks the selected binding.
 The heading **Inspection only · cryptography not checked** means exactly that.
@@ -135,7 +154,8 @@ total (sats)** and **Maximum observation age** (1–300 seconds).
 The result shows the provider, observation window, selected limits and separate
 totals when available. A funding block is not a current chain snapshot. Coins
 can move between observations or after any check. The browser never returns the
-native verifier's strict `valid_current`/`valid_historical` authorization result.
+native verifier's strict `valid_current`/`valid_historical` authorization result;
+public reports always have `authorizes:false`.
 A separate application must supply any acceptance policy and durable replay
 control it needs.
 

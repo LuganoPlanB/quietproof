@@ -82,3 +82,30 @@ selection in `tests/wasm/browser.test.mjs`. Run `npm audit --json` against the
 locked dependency tree. Complete commands, original failures/corrections,
 environment identities, UTC captures, screenshots and hashes are retained by
 the local L6.1 review evidence manifest.
+
+## Signature-mode follow-up (2026-11-01)
+
+The preceding findings retain their original L6.1 scope/date. The optional
+signature implementation adds explicit mode capability, exact expected-v3
+request binding, public-proof verification, local receipt-magic rejection and
+separate public history/report fields. Native proving, wallet RPC and private
+authorisation receipts stay native. Provider qualification is trusted and
+non-atomic, always `authorizes:false`; it is neither validated-node acceptance
+nor a global nonce service. Native CLI v3 `inspect` remains unsupported even
+though the browser can inspect bounded public metadata.
+
+Root supervisor independently reviewed current circuit/parser/RPC/state/privacy
+boundaries and reproduced 25 successful focused commands, including 67 browser
+privacy checks. The original incomplete and failed recipes remain recorded;
+this is not one fresh enclosing full-suite result or an external crypto audit.
+The original L5.3 integrated malicious fresh-proof/advice attacks were explicitly
+waived, remain unexecuted/unqualified, and are distinct from L3 arithmetic/advice
+tests. No universal formal theorem or comprehensive SDK/allocator/OS RAM-erasure
+guarantee follows. Historical exploratory docs-command failure lacks a raw log.
+
+See [current claims and provider policy](../docs/security.md) and
+[measured signature resources](../docs/performance.md#signature-possession-measurements).
+Chromium/WebKit root/subpath, actual max16 proofs and ON/OFF lifecycles are
+provenance-bound local desktop cohorts. Repository text-size screenshots do
+not qualify browser page zoom or mobile hardware; linear memory is not RSS.
+L9 acceptance and terminal whole-branch review remain separate requirements.

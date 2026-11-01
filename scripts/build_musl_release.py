@@ -39,7 +39,7 @@ def main():
     parser.add_argument('--version', required=True)
     parser.add_argument('--jobs', type=int, default=2)
     parser.add_argument('--signature-mode', action='store_true',
-                        help='Build and test the optional ECDSA constraints (no signature CLI yet)')
+                        help='Build the explicit signature-possession CLI and constraint component')
     args = parser.parse_args()
     if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', args.version):
         parser.error('--version must be a stable semantic version without v')
@@ -91,6 +91,9 @@ def main():
         f'-DCMAKE_PREFIX_PATH={prefix};{musl}', '-DCURL_USE_STATIC_LIBS=TRUE',
         f'-DQUIETPROOF_VERSION={args.version}', '-DBUILD_TESTING=ON',
         '-DQUIETPROOF_BUILD_CLI=ON', '-DQUIETPROOF_BUILD_RPC=ON',
+        # Static executables cannot honor LD_PRELOAD; native dynamic builds
+        # retain these file-I/O fault controls in the independent full gate.
+        '-DQUIETPROOF_ENABLE_CLI_PRELOAD_TEST=OFF',
         '-DQUIETPROOF_BUILD_SIGNATURE_MODE=' + ('ON' if args.signature_mode else 'OFF'),
         '-DQUIETPROOF_BUILD_WASM=OFF')
     run('cmake', '--build', build, '--parallel', args.jobs)
@@ -104,7 +107,7 @@ def main():
         raise RuntimeError('Binary version does not match the release')
     run(binary, '--help', stdout=subprocess.DEVNULL)
 
-    name = f'quietproof-v{args.version}-linux-x86_64-musl'
+    name = f'quietproof-v{args.version}-linux-x86_64-musl' + ('-signature' if args.signature_mode else '')
     stage = work / name
     (stage / 'bin').mkdir(parents=True, exist_ok=True)
     shutil.copy2(binary, stage / 'bin/quietproof')
@@ -118,6 +121,12 @@ def main():
                 'longfellowCommit': pin, 'compiler': output(cxx, '--version').splitlines()[0],
                 'rpc': True, 'static': True,
                 'signatureConstraintsBuilt': args.signature_mode,
+                'signatureMode': args.signature_mode,
+                'qualification': {'scope': 'musl non-proof CTest; full native/browser gates are separate',
+                                  'excludedLabels': ['proof-heavy'],
+                                  'excludedTests': ['quietproof-package-test'],
+                                  'unsupportedSubcases': ['Linux LD_PRELOAD file-I/O faults (4); static executable'],
+                                  'core32': False, 'externalAudit': False},
                 'binarySha256': hashlib.sha256(binary.read_bytes()).hexdigest()}
     (stage / 'release.json').write_text(json.dumps(manifest, indent=2) + '\n')
     destination.mkdir(parents=True, exist_ok=True)

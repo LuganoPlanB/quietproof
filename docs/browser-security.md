@@ -20,6 +20,15 @@ it retains requests and check markers, never proof payloads. Other code on the
 same origin can access browser storage. Device time is untrusted, and local
 history is not global replay prevention.
 
+Signature-enabled builds also create v3 requests and inspect/verify public v3
+proofs. Users explicitly select the mode and P2PKH/P2WPKH signing kind, then
+retain the exact expected `.qpr`. Context-only expectations cannot qualify a
+signature proof. Native CLI v3 `inspect` remains unsupported; browser metadata
+inspection is a separate operation and does not establish cryptography.
+Private `.qpa` receipt magic is rejected locally regardless of filename, before
+provider requests or history persistence. Real receipts, native proving and
+wallet RPC never belong in this browser workflow.
+
 ## Inputs and runtime capabilities
 
 Request fields, proof files, saved history and explorer responses are untrusted.
@@ -123,6 +132,12 @@ with `DOCS_BASE=/quietproof/`, and set
 `QUIETPROOF_WEBKIT_EXECUTABLE` selects the qualified local WebKit launcher.
 Firefox is unsupported and unqualified. Resource/accessibility qualification
 and full adversarial round trips are separate gates from these input checks.
+Current scalar/signature desktop measurements, ON/OFF lifecycles and their
+source/module hashes are in the [performance record](./performance#signature-possession-measurements).
+The original L5.3 integrated malicious fresh-proof/advice attacks remain
+user-waived, unexecuted and unqualified; browser checks do not fill that gap.
+Repository 200% text-size captures are not browser page zoom or physical-mobile
+qualification. Measured WASM linear allocation is not process RSS or JS heap.
 See [complete packaging and local-review flags](./wasm-build#build-and-preview-the-complete-static-artifact)
 for provenance requirements and the
 [owner-confirmed theme permission](static-release.md#theme-permission).

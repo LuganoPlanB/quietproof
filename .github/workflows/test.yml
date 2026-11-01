@@ -13,6 +13,9 @@ on:
       mode:
         type: string
         default: smoke
+      source_sha:
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -24,13 +27,18 @@ concurrency:
 
 jobs:
   qualification:
-    name: ${{ inputs.mode == 'full' && 'Full proof and browser qualification' || 'Fast native, WASM and browser checks' }}
+    name: ${{ matrix.signature && 'Signature' || 'Scalar' }} ${{ inputs.mode == 'full' && 'full qualification' || 'fast checks' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: ${{ inputs.mode == 'full' && 240 || 30 }}
+    timeout-minutes: ${{ inputs.mode == 'full' && 360 || 60 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        signature: [false, true]
     steps:
       - uses: actions/checkout@v7
         with:
           path: quietproof
+          ref: ${{ inputs.source_sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/checkout@v7
@@ -57,7 +65,7 @@ jobs:
       - name: Install native build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y g++ cmake ninja-build python3 libcurl4-openssl-dev
+          sudo apt-get install --no-install-recommends -y g++ clang cmake ninja-build python3 libcurl4-openssl-dev
       - name: Install checksum-pinned WASI SDK
         run: python3 quietproof/scripts/install_wasi.py --destination "$RUNNER_TEMP/wasi-sdk"
       - name: Build and install pinned native SDK
@@ -68,12 +76,30 @@ jobs:
             -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/longfellow-prefix"
           cmake --build sdk-build --parallel 2
           cmake --install sdk-build
+      - name: Install pinned Core32 and its test-only oracle
+        if: matrix.signature
+        run: |
+          python3 quietproof/scripts/install_core32.py --destination "$RUNNER_TEMP/core32"
+          cmake -S "$RUNNER_TEMP/core32/source/bitcoin-32.1/src/secp256k1" -B oracle-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
+            -DSECP256K1_BUILD_TESTS=OFF -DSECP256K1_BUILD_BENCHMARK=OFF \
+            -DSECP256K1_BUILD_EXHAUSTIVE_TESTS=OFF \
+            -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/oracle-prefix"
+          cmake --build oracle-build --parallel 2
+          cmake --install oracle-build
       - name: Configure native RPC ON and OFF
+        env:
+          SIGNATURE_MODE: ${{ matrix.signature && 'ON' || 'OFF' }}
         run: |
           for mode in ON OFF; do
+            core=OFF
+            if [[ "$SIGNATURE_MODE" == ON && "$mode" == ON ]]; then core=ON; fi
             cmake -S quietproof -B "native-$mode" -G Ninja \
               -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
-              -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/longfellow-prefix" \
+              -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/longfellow-prefix;$RUNNER_TEMP/oracle-prefix" \
+              -DQUIETPROOF_BUILD_SIGNATURE_MODE="$SIGNATURE_MODE" \
+              -DQUIETPROOF_ENABLE_CORE32_SIGNING_TEST="$core" \
+              -DQUIETPROOF_CORE32_DIR="$RUNNER_TEMP/core32/binary/bitcoin-32.1/bin" \
               -DQUIETPROOF_BUILD_RPC="$mode"
           done
       - name: Build isolated WASI reactor
@@ -85,32 +111,113 @@ jobs:
         run: |
           npm ci
           npx playwright install --with-deps chromium webkit
+      - name: Preserve separate capability-disabled root and subpath artifacts
+        if: matrix.signature && inputs.mode == 'full'
+        working-directory: quietproof
+        run: |
+          python3 scripts/build_static.py --sdk-source ../longfellow-zk --cross-work "$RUNNER_TEMP/wasm" --base /
+          cp -a docs/.vitepress/dist "$RUNNER_TEMP/disabled-site"
+          python3 scripts/build_static.py --sdk-source ../longfellow-zk --cross-work "$RUNNER_TEMP/wasm" --base /quietproof/
+          cp -a docs/.vitepress/dist "$RUNNER_TEMP/disabled-subpath-site"
+      - name: Build signature-enabled isolated WASI reactor
+        if: matrix.signature
+        run: >-
+          python3 quietproof/scripts/build_wasm.py --sdk-source longfellow-zk
+          --work-dir "$RUNNER_TEMP/wasm-signature" --wasi-sdk "$RUNNER_TEMP/wasi-sdk" --jobs 2 --signature-mode
       - name: Run selected native, reactor and browser checks
         working-directory: quietproof
         env:
           DOCS_BASE: ${{ steps.pages.outputs.base_path && format('{0}/', steps.pages.outputs.base_path) || inputs.docs_base || '/' }}
           QUALIFICATION_MODE: ${{ inputs.mode || 'smoke' }}
-        run: >-
-          python3 scripts/qualify_static.py --sdk-source ../longfellow-zk
-          --cross-work "$RUNNER_TEMP/wasm" --native-on ../native-ON --native-off ../native-OFF
-          --evidence "$RUNNER_TEMP/qualification" --base "$DOCS_BASE" --mode "$QUALIFICATION_MODE"
+          SIGNATURE_MODE: ${{ matrix.signature && 'ON' || 'OFF' }}
+        run: |
+          cross="$RUNNER_TEMP/wasm"
+          options=()
+          if [[ "$SIGNATURE_MODE" == ON ]]; then
+            cross="$RUNNER_TEMP/wasm-signature"
+            options+=(--signature-mode)
+            if [[ "$QUALIFICATION_MODE" == full ]]; then
+              options+=(--disabled-site "$RUNNER_TEMP/disabled-site" --disabled-subpath-site "$RUNNER_TEMP/disabled-subpath-site")
+            fi
+          fi
+          python3 scripts/qualify_static.py --sdk-source ../longfellow-zk \
+            --cross-work "$cross" --native-on ../native-ON --native-off ../native-OFF \
+            --evidence "$RUNNER_TEMP/qualification" --base "$DOCS_BASE" --mode "$QUALIFICATION_MODE" "${options[@]}"
       - name: Cross-build separation contracts
+        env:
+          SIGNATURE_MODE: ${{ matrix.signature && 'ON' || 'OFF' }}
+        run: |
+          cross="$RUNNER_TEMP/wasm"
+          options=()
+          if [[ "$SIGNATURE_MODE" == ON ]]; then cross="$RUNNER_TEMP/wasm-signature"; options+=(--signature-mode); fi
+          python3 quietproof/tests/cmake/wasm_build_test.py --cross-work "$cross" \
+            --work "$RUNNER_TEMP/build-contracts" --native-prefix "$RUNNER_TEMP/longfellow-prefix" \
+            --wasi-sdk "$RUNNER_TEMP/wasi-sdk" "${options[@]}"
+      - name: Signature parser and arithmetic sanitizers
+        if: matrix.signature
         run: >-
-          python3 quietproof/tests/cmake/wasm_build_test.py --cross-work "$RUNNER_TEMP/wasm"
-          --work "$RUNNER_TEMP/build-contracts" --native-prefix "$RUNNER_TEMP/longfellow-prefix"
-          --wasi-sdk "$RUNNER_TEMP/wasi-sdk"
+          python3 quietproof/scripts/qualify_sanitizers.py --prefix "$RUNNER_TEMP/longfellow-prefix"
+          --work "$RUNNER_TEMP/sanitizers" --jobs 2
       - name: Upload smoke-checked static artifact
         uses: actions/upload-artifact@v4
         with:
-          name: quietproof-static
+          name: ${{ matrix.signature && 'quietproof-static-signature' || 'quietproof-static' }}
           path: quietproof/docs/.vitepress/dist
           if-no-files-found: error
       - name: Retain selected-gate evidence and explicit omissions
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: quietproof-qualification
+          name: ${{ matrix.signature && 'quietproof-qualification-signature' || 'quietproof-qualification' }}
           path: |
             ${{ runner.temp }}/qualification
             ${{ runner.temp }}/build-contracts/*.log
+            ${{ runner.temp }}/sanitizers/sanitizers.xml
+            ${{ runner.temp }}/sanitizers/scope.json
+            ${{ runner.temp }}/core32/quietproof-install.json
+
+  gui:
+    name: Native GUI build and installed assets
+    if: inputs.mode == 'full'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: quietproof
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: dyne/longfellow-zk
+          ref: d2b0fc515f8663e38c79a28e8900ce8438e0106e
+          path: longfellow-zk
+          persist-credentials: false
+      - name: Install native GUI build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y g++ cmake ninja-build python3 libcurl4-openssl-dev libsdl2-dev
+      - name: Build pinned SDK, dual-mode GUI and installed package
+        run: |
+          cmake -S longfellow-zk -B sdk-build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=OFF -DLONGFELLOW_ZK_BUILD_TESTING=OFF -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/sdk-prefix"
+          cmake --build sdk-build --parallel 2
+          cmake --install sdk-build
+          cmake -S quietproof -B gui-build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/sdk-prefix" -DBUILD_TESTING=ON \
+            -DQUIETPROOF_BUILD_GUI=ON -DQUIETPROOF_BUILD_SIGNATURE_MODE=ON -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/gui-prefix"
+          cmake --build gui-build --parallel 2
+          mkdir -p "$RUNNER_TEMP/gui-tmp"
+          TMPDIR="$RUNNER_TEMP/gui-tmp" ctest --test-dir gui-build --output-on-failure --no-tests=error --output-junit "$RUNNER_TEMP/gui.xml" -R '^quietproof-gui-'
+          cmake --install gui-build
+          python3 quietproof/tests/gui/install_test.py --prefix "$RUNNER_TEMP/gui-prefix" \
+            --source quietproof --evidence "$RUNNER_TEMP/gui-install" --tree-only
+      - name: Retain GUI qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quietproof-gui-qualification
+          path: |
+            ${{ runner.temp }}/gui.xml
+            ${{ runner.temp }}/gui-install
           if-no-files-found: warn
