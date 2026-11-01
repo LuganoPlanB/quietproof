@@ -193,12 +193,13 @@ serialization disagreements. It cannot establish that every required C++
 wire is constrained, prove the Longfellow proof system sound, or replace
 adversarial witness tests and independent review.
 
-## Separate signature-possession relation (specification only)
+## Separate optional signature-possession relation
 
 The implemented PoKC v1 scalar relation and its identity described above remain
 unchanged. The [signature-possession specification](spec/quietproof-signature-v1.md)
-defines a separate future circuit; this section does not describe implemented
-or qualified signature support.
+defines the separate implemented `SignaturePossessionCircuitV1` relation.
+It is enabled explicitly with `QUIETPROOF_BUILD_SIGNATURE_MODE=ON`; the base
+SDK is sufficient and scalar defaults/identities remain unchanged.
 
 Its public inputs are the exact compressed-key HASH160 `h[20]` and ECDSA digest
 `z[32]`, derived independently from the verifier's retained expected canonical
@@ -209,7 +210,7 @@ signature verifies for `z`. A digest bound only through the transcript cannot
 replace `z` as a constrained public input. Host witness construction does not
 replace these constraints.
 
-| Meaning | Existing PoKC key-knowledge relation | Specified signature relation |
+| Meaning | Existing PoKC key-knowledge relation | Optional signature relation |
 | --- | --- | --- |
 | Secret knowledge | Nonzero private scalar `x`, with `P=xG`. | Authorised request signature and `Q`; no knowledge of `x` required. |
 | Public circuit bytes | Compressed-key HASH160. | Compressed-key HASH160 and request-derived ECDSA digest. |
@@ -233,3 +234,15 @@ solvency or all holdings. Independent real-output checks, qualified chain
 policy, final expiry checking and atomic nonce consumption remain outer
 verification duties. The native GUI gains no signature workflow in this
 specification; existing key-knowledge workflows remain operational.
+
+The composition passes the same constrained canonical Q into ECDSA and fixed
+compressed-SEC/SHA-256/RIPEMD-160, with public input layout
+`[one,h[20],z[32]]` (53 elements) and 3,277 private elements. Its implementation
+is in `include/circuit/signature_possession{,_circuit,_witness}.h`; the exact
+identity is checked by `PoKSigExpectedCircuitDigest`, independently
+of witness generation. [Constraint reasoning and L3 corpus](/technical/signature-constraints)
+and [measured composed resources](/performance#signature-possession-measurements)
+have different scopes. The originally planned L5.3 integrated malicious
+fresh-proof/advice attacks were user-waived, remain unexecuted/unqualified,
+and are not supplied by honest proofs, the witness builder, L3 tests or
+supervisor review. No external audit or universal formal theorem is claimed.

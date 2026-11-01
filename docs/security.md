@@ -47,38 +47,64 @@ Bitcoin provider/snapshot/finality policy, and any bridge lock and mint
 system.  No row in this document turns those external assumptions into a
 cryptographic guarantee.
 
-## Signature-possession mode: specified, not implemented
+## Optional signature-possession mode
 
-The [signature-possession claim contract](../spec/quietproof-signature-v1.md)
-defines a future, explicitly selected mode. The implemented key-knowledge
-matrix above retains its meaning and evidence. The following requirements are
-design/review obligations; they are **not claims of tested signing or circuit
-support**.
+The [signature profile](../spec/quietproof-signature-v1.md) is implemented behind
+`QUIETPROOF_BUILD_SIGNATURE_MODE` (default OFF). Native creation, authorisation,
+proving and acceptance require explicit signature-mode selection. Browser builds
+also opt in; the native GUI retains its existing scalar workflow. There is no
+bridge authorisation in this mode. Existing scalar/multisignature bytes, circuit
+identities, commands and defaults retain their meaning.
 
-| Claim or boundary | Required enforcing component | Limitation and qualification obligation |
+| Claim or boundary | Enforcing component and evidence | Residual limitation |
 | --- | --- | --- |
-| The prover knows a request-bound ECDSA signature under a compressed key hashing to `h`. | New arithmetic circuit with public `h` and independently derived `z`, private `Q,r,s`, and complete point/encoding/signature constraints. | Does not prove private-scalar knowledge, wallet operation, exclusive control or legal ownership. Native prevalidation and transcript binding alone are insufficient. |
-| The signature authorises the verifier's exact expected request. | Retained independent request, canonical profile, wallet adapter, digest derivation and proof transcript. | Fresh nonce binds the request; neither a new proof nor a prover timestamp establishes signing time. |
-| Core retains the private scalar. | Trusted adapter constructs/checks the fixed zero-valued virtual transaction before wallet RPC. | No arbitrary raw transaction/digest, funding, broadcast, automatic unlock, script-kind substitution or key-export fallback. Stock Core 32.1 signing remains to be qualified. |
-| Delegation discloses only the intended witness capability. | Private local/native receipt export/import and handling. | Receipt holder learns `Q` and signature and can re-prove the same request within expiry/replay policy. Receipts must never be published, uploaded for public verification or embedded in proofs/logs. |
-| Public proof hides the signature and `Q`. | Proof system and circuit privacy. | Real outpoints, hashes, amounts and request fields remain public/linkable; provider queries expose outpoints, and prior spends/key reuse may already reveal `Q`. No anonymity promise. |
-| The reported quantity consists of real qualified unspent outputs. | Verifier/provider checks exact scripts, amounts, network, snapshot/confirmations and checked sum; final expiry and atomic nonce consumption. | Synthetic zero value never contributes. Provider failure is inconclusive; historical/current states differ. Spendability also needs maturity checks; funds are not reserved or an atomic mempool snapshot. No solvency/all-holdings claim. |
-| The signature cannot authorise a real spend under normal hash/ECDSA assumptions. | Fixed synthetic transaction shape and independently derived signing digest. | Must be qualified with digest reasoning and transplant negatives with valid-spend positive controls. Version-zero relay rejection alone does not establish this invariant. |
+| Knowledge of a request-bound low-S ECDSA signature and compressed Q hashing to h | `BitcoinEcdsaCircuit` and `SignaturePossessionCircuitV1`: public h/z, raw p/n ranges, e=0, guarded r+n branch, complete projective arithmetic, canonical same-Q SEC/HASH160. L3 corpus62 and advice2096 rejection cases; composed honest proofs and independent supervisor source review. | Signature knowledge permits delegation; no scalar knowledge, signing-time or exclusive-control claim. Original L5.3 integrated malicious fresh-proof/advice attacks were user-waived, remain unexecuted/unqualified. Honest proofs/native prechecks do not fill that gap. |
+| Exact expected-request authorisation and mode isolation | Canonical v3 request, independently derived digest, pinned circuit identity, separate transcript/domain, strict codec/envelope/receipt checks. Verifier requires retained expected bytes. | Proof metadata or an accompanying replacement request cannot supply the verifier's authority. Native CLI inspect does not support v3; browser metadata inspection does not verify cryptography. |
+| Wallet retains the private scalar and signing does not spend the claims | Production adapter constructs/rechecks fixed zero-valued virtual transactions before/after stock Core32.1 signing. Isolated Core tests include 56 transplant negatives with valid-spend positive controls and 89 malformed deliveries. | Normal hash/ECDSA assumptions still apply. Version-zero relay rejection alone is insufficient. No arbitrary raw transaction/digest, funding, broadcast, automatic unlock, kind switch or key-export fallback. |
+| Receipt delegation and privacy | Native CLI `.qpa` imports are regular current-owner owner-only files, bounded to 4096 bytes; new private outputs are owner-only and never overwrite. Browser rejects receipt magic before provider work. | A receipt exposes Q/signature and permits repeated proving for the same request within expiry/replay policy. It is not encrypted; never publish/upload/log it. Public proofs still expose outpoints, amounts, hashes and context. Prior spends/key reuse can disclose Q. |
+| Real qualified unspent quantity | `VerifyQuietProofSignature` checks exact real scripts/amounts/network, checked sum, confirmations and selected state policy after cryptography. Synthetic zero values never contribute. | Unspent quantity is not spendability, reservation, an atomic mempool snapshot, all holdings or solvency. Missing coinbase metadata leaves maturity unknown; immature coinbase is separately labelled. |
+| Final expiry and replay | Injectable completion-time clock plus required final acceptance store; native file store locks, rechecks owner/type/permissions, checks time and replay under lock, appends/fsyncs before success. Tests include nonce25 and expiry during expensive work. | Device/system time is trusted locally, not a signing timestamp. Distributed services need an equally atomic shared store. Write/fsync failure never accepts and may require a fresh nonce/request. |
 
-Both modes preserve independent chain and replay policy boundaries. An honest
-local prover and a delegated receipt holder can satisfy the same signature
-claim. A stale or changed request must fail authorisation; a spent output must
-fail the funds claim even when its signature proof is valid; provider failure
-must remain inconclusive. These are required review/qualification cases, not
-new passing-test assertions.
+### Chain trust and provider policy
 
-| Compatibility surface | Required result |
-| --- | --- |
-| Existing scalar/multisignature APIs, request/proof bytes, circuit identities and golden vectors | Preserve their existing meaning and behaviour. |
-| Mode selection and capability | Explicit new-mode selection; specified build flag `QUIETPROOF_BUILD_SIGNATURE_MODE` defaults OFF; disabled support rejects new-mode use explicitly. |
-| Private-key export and signing | Separate workflows; no fallback between them. |
-| Bridge, browser and native GUI | New mode has no bridge authorisation or native GUI signing workflow; planned browser work is request creation/public verification only. Existing workflows remain unchanged. |
+Default native signature policy `kValidatedCurrentNode` requires IBD false and
+Core32's **last (active)** `getchainstates.chainstates` entry to match the observed
+tip and have boolean `validated:true`. AssumeUTXO's validated background state
+cannot qualify an unvalidated active snapshot. Readiness brackets exact output
+lookups, all at one common tip. Missing/malformed readiness is inconclusive.
+`gettxout(...,true)` accounts for known mempool spends; null cannot distinguish
+spent from missing. Pruning does not itself disqualify current UTXO evidence if
+these checks pass, but the bundled current-tip provider supplies no authenticated
+historical snapshot or pruned-away transaction history.
 
-See the claim contract for the wallet/prover/verifier information boundaries,
-receipt disclosure rules and complete scope. This addition supplies no
-production codec, circuit, wallet adapter or signing qualification evidence.
+Maximum tip age: mainnet7200s, testnet3/testnet4/signet86400s, regtest3600s;
+a tip over7200s in the future also fails. `--max-tip-age` sets independent local
+policy. These are freshness observations, not a promise of fully current peers.
+`kRecordedHistoricalSnapshot` is an explicit API policy with matching request
+snapshot block hash and height and historical provider; a snapshot field cannot silently
+select it. `kQualifiedCurrentProvider` remains inconclusive for native acceptance
+and does not consume a nonce.
+
+The browser uses trusted non-atomic explorer observations. Its qualified result
+always has `authorizes:false`; it neither validates a node nor consumes a global
+nonce. Local history is editable origin-local convenience, not durable global
+replay prevention. Chain/provider errors cannot become a funds acceptance.
+
+### Review and memory limits
+
+Native proving, wallet RPC and real private receipts stay out of the browser.
+Owned CLI byte buffers are cleared where implemented; parsed JSON, SDK advice,
+allocator copies, OS/swap and library internals may retain witness data. There
+is no comprehensive API/SDK RAM-erasure or memory-remanence guarantee. Public
+browser request/check history adds separate linkability and same-origin risks;
+no proof payload is persisted in that history.
+
+Local supervisor review and current-provenance tests found no material finding
+within their recorded scope. They do not supply an external cryptographic audit,
+a universal formal theorem or the waived integrated-attack qualification.
+Historical exploratory docs-command failure lacks a retained raw log. Optional
+legacy Core28/30 skips, sanitizer prebuilt-SDK exclusion, musl test exclusions,
+unobserved GitHub-hosted jobs and physical-device/RSS limits remain disclosed in
+the qualification evidence; no new enclosing full-suite run is implied by
+reusing exact-source cohorts. L9 acceptance and terminal whole-branch review are
+separate gates.

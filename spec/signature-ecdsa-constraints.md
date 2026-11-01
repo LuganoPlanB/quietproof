@@ -1,9 +1,11 @@
 # Bitcoin ECDSA constraint qualification
 
-This document describes the local ECDSA relation and its test prototype. It is
-not a production proof format or circuit identity. HASH160 composition, request
-codecs, packaging and browser execution are separate milestones. Native witness
-generation is not part of the soundness argument.
+This document describes the local ECDSA relation and its retained L3 prototype
+evidence. Production HASH160 composition, request codecs, packages and browser
+verification are implemented separately; see the signature profile and measured
+resource record. Native witness generation is not part of the soundness argument.
+The original L5.3 integrated malicious fresh-proof/advice attacks remain
+user-waived, unexecuted and unqualified; L3 tests do not fill that coverage gap.
 
 ## Reuse decision and domains
 
@@ -41,7 +43,7 @@ p-n = 0x14551231950b75fc4402da1722fc9baee
 Input zero is Longfellow's mandatory constant one. Inputs 1–32 are the exact
 big-endian digest bytes encoded with `BitPluckerEncoder<Field,8>`; the circuit
 plucker constrains their eight-bit domain. The prototype has 33 public inputs.
-`h[20]` belongs to the later composed relation. `verify()` returns the constrained
+`h[20]` belongs to the separate production composed relation. `verify()` returns the constrained
 compressed Q representation for that composition; it exposes no secret scalar.
 
 The 1,805 private inputs use the following single shared allocation layout.
@@ -153,9 +155,8 @@ does not authorize a sibling SDK fix or a production cap change.
 composing it with ECDSA. Its approximate incremental cost is 1,472 private
 inputs and 2,044,254 quadratic terms. The additive estimate, after sharing the
 257 Q.x/parity inputs, is roughly 2.20 million encoded columns, 1,953 layers and
-a 2^22 CRT transform—the largest supported transform order. Exact composition
-and compiler sharing must be measured in L5; the estimate is not a pinned
-composed circuit or proof identity.
+a 2^22 CRT transform—the largest supported transform order. This is the historical L3 projection; actual composition is now implemented
+and separately pinned/measured. The estimate is not a composed proof identity.
 
 At seven Ligero rows, the projected main commitment matrix is about 494 MB.
 Each padded `CRT256` vector uses 9 eight-byte residues per element: about
@@ -165,8 +166,9 @@ before Reed–Solomon arrays, the circuit, proof, and runtime overhead. This is 
 concrete memory risk near the unchanged 2 GiB WASM ceiling, not measured browser
 success. Linear proof-size scaling suggests about 49 MB before the much deeper
 sumcheck transcript; actual composed proof bytes must still meet 128 MiB.
-These estimates support trying the native composition while requiring L5/L8
-measurements before any release or browser-feasibility claim.
+These historical estimates are not browser observations. Actual composed
+measurements are documented in `docs/performance.md`, including max16 lifecycle
+linear allocation; do not infer RSS from either estimate or linear-memory data.
 
 ## Reproduction
 
@@ -181,7 +183,7 @@ BUILD/quietproof-ecdsa-prototype --hash-metrics
 
 This is focused L3.2 evidence. Complete BASE/NATIVE package and old-proof gates
 remain mandatory at parent acceptance; actual HASH160 composition and WASM
-verification are not implied by these tests.
+verification have their own retained evidence and are not implied by L3 tests.
 
 ## Optional installed component
 
@@ -227,7 +229,9 @@ UTC/exit/hash record in the test work directory's `results.json`.
 
 Native musl packaging accepts `--signature-mode` and records
 `signatureConstraintsBuilt` in `release.json`. This opts into building and testing
-the constraints; the packaged CLI still exposes its existing scalar/multisig
-commands. The option is explicitly OFF by default, including when a release work
-directory is reused. WASI build-script propagation and signature application
-APIs are later milestones.
+the constraints; the packaged CLI additionally exposes the explicitly selected signature
+authorize/prove/verify workflow while preserving scalar/multisig commands. The option is explicitly OFF by default, including when a release work
+directory is reused. WASI `scripts/build_wasm.py --signature-mode` and static
+`scripts/qualify_static.py --signature-mode` propagate the explicit capability.
+Both default OFF. See the native workflow and browser guide for actual CLI
+capabilities; native CLI v3 inspect remains unsupported.

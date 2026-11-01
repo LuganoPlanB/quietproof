@@ -13,6 +13,7 @@ import shutil
 import signal
 import subprocess
 import threading
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -150,6 +151,25 @@ def main():
             raise RuntimeError(f'{name} failed; see {path}')
         if counts and (counts.get('fail', 0) or counts.get('cancelled', 0) or not counts.get('pass')):
             raise RuntimeError(f'{name} did not execute a passing suite')
+        if name in ('native-on', 'native-off') and args.mode == 'full':
+            report = args.evidence / (name + '.xml')
+            cases = list(ET.parse(report).getroot().iter('testcase'))
+            check['tests'] = [{'name': c.attrib['name'], 'status':
+                'skipped' if c.find('skipped') is not None else
+                'failed' if c.find('failure') is not None or c.find('error') is not None else 'passed'} for c in cases]
+            check['junitSha256'] = hashlib.sha256(report.read_bytes()).hexdigest()
+            save()
+            if len(cases) != counts.get('total') or sum(c['status'] == 'skipped' for c in check['tests']) != counts.get('skipped'):
+                raise RuntimeError(f'{name}: JUnit/log test counts disagree')
+            optional = {'quietproof-regtest-rpc-test'}
+            if not cases or any(c['status'] != 'passed' and c['name'] not in optional for c in check['tests']):
+                raise RuntimeError(f'{name}: required test failed or skipped; see JUnit report')
+            if args.signature_mode and name == 'native-on':
+                required = {'quietproof-signing-regtest-test', 'quietproof-signature-oracle-test',
+                    'quietproof-signature-rpc-core-test', 'quietproof-signature-receipt-core-test',
+                    'quietproof-signature-cli-core-test', 'quietproof-signature-funds-regtest-test'}
+                if not required <= {c['name'] for c in check['tests'] if c['status'] == 'passed'}:
+                    raise RuntimeError('full signature qualification requires enabled Core32 end-to-end/reference tests')
 
     def packaged_build(base, name):
         command = ['python3', 'scripts/build_static.py', '--cross-work', cross,
@@ -239,25 +259,26 @@ def main():
         if old.exists():
             shutil.copytree(old, args.evidence / 'previous-wasm-real')
         native_build = ['cmake', '--build', native, '--parallel', '2']
-        if args.mode == 'smoke':
-            native_build += ['--target', 'quietproof-cli', 'quietproof-rpc-test',
-                             'compressed-key-sha256-test', 'key-ownership-test', 'ripemd160-test',
-                             'quietproof-protocol-test', 'quietproof-challenge-test',
-                             'quietproof-browser-codec-test', 'quietproof-integration-test',
-                             'quietproof-browser-context-linkage-test',
-                             'pokc-sage-test', 'quietproof-progress-test', 'p2sh-multisig-test']
-            if args.signature_mode:
-                native_build += [f'quietproof-browser-context-{variant}-{first}-first-test'
-                    for variant in ['debug', 'optimized'] for first in ['disabled', 'enabled']]
+        # CTest's non-proof set includes parser/capability/reference executables.
+        # Build the registered targets, rather than a drifting partial allowlist.
         run('native-on-build', native_build)
-        run('native-off-build', ['cmake', '--build', offline, '--target', 'quietproof-cli', '--parallel', '2'])
-        native_tests = ['ctest', '--test-dir', native, '--output-on-failure', '--no-tests=error',
-                        '--parallel', '1', '--timeout', '1800', '-E', '^quietproof-regtest-rpc-test$']
+        offline_build = ['cmake', '--build', offline, '--parallel', '2']
         if args.mode == 'smoke':
-            native_tests += ['-LE', 'proof-heavy']
+            offline_build += ['--target', 'quietproof-cli']
+        run('native-off-build', offline_build)
+        native_tests = ['ctest', '--test-dir', native, '--output-on-failure', '--no-tests=error',
+                        '--parallel', '1']
+        if args.mode == 'smoke':
+            native_tests += ['-LE', 'proof-heavy', '-E', '^quietproof-regtest-rpc-test$']
+        else:
+            native_tests += ['--output-junit', args.evidence / 'native-on.xml']
         run('native-on', native_tests)
-        run('native-off', ['ctest', '--test-dir', offline, '--output-on-failure', '--no-tests=error',
-                          '--parallel', '1', '--timeout', '600', '-R', '^quietproof-(package-test|cli-test|cli-rpc-test|prove-feedback-test)$'])
+        offline_tests = ['ctest', '--test-dir', offline, '--output-on-failure', '--no-tests=error', '--parallel', '1']
+        if args.mode == 'smoke':
+            offline_tests += ['--timeout', '600', '-R', '^quietproof-(package-test|cli-test|cli-rpc-test|prove-feedback-test)$']
+        else:
+            offline_tests += ['--output-junit', args.evidence / 'native-off.xml']
+        run('native-off', offline_tests)
         if args.mode == 'full':
             run('fixtures', [native / 'quietproof-browser-fixtures', args.evidence / 'fixtures'])
             if args.signature_mode:

@@ -75,15 +75,21 @@ jobs:
           noVersionBumpBehavior: patch
 
   qualify-manual:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: version
+    if: github.event_name != 'pull_request'
     uses: ./.github/workflows/test.yml
     with:
       mode: full
+      source_sha: ${{ needs.version.outputs.sha }}
 
   musl:
     needs: version
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        signature: [false, true]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -108,12 +114,15 @@ jobs:
           CC: ${{ steps.musl.outputs.CC }}
           CXX: ${{ steps.musl.outputs.CXX }}
           RELEASE_VERSION: ${{ needs.version.outputs.version }}
-        run: >-
-          python3 quietproof/scripts/build_musl_release.py --sdk-source longfellow-zk
-          --work "$RUNNER_TEMP/musl-release" --output dist --version "$RELEASE_VERSION" --jobs 2
+          SIGNATURE_MODE: ${{ matrix.signature && 'ON' || 'OFF' }}
+        run: |
+          options=()
+          if [[ "$SIGNATURE_MODE" == ON ]]; then options+=(--signature-mode); fi
+          python3 quietproof/scripts/build_musl_release.py --sdk-source longfellow-zk \
+            --work "$RUNNER_TEMP/musl-release" --output dist --version "$RELEASE_VERSION" --jobs 2 "${options[@]}"
       - uses: actions/upload-artifact@v4
         with:
-          name: quietproof-linux-x86_64-musl
+          name: ${{ matrix.signature && 'quietproof-linux-x86_64-musl-signature' || 'quietproof-linux-x86_64-musl' }}
           path: dist/*
           if-no-files-found: error
 
@@ -122,8 +131,7 @@ jobs:
     if: >-
       always() && github.event_name != 'pull_request' &&
       needs.version.result == 'success' && needs.musl.result == 'success' &&
-      (needs.qualify-manual.result == 'success' ||
-       (github.event_name == 'workflow_run' && needs.qualify-manual.result == 'skipped'))
+      needs.qualify-manual.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -135,7 +143,8 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
-          name: quietproof-linux-x86_64-musl
+          pattern: quietproof-linux-x86_64-musl*
+          merge-multiple: true
           path: dist
       - name: Tag tested commit and publish assets
         env:

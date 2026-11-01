@@ -1,0 +1,1384 @@
+{
+  "schema": 1,
+  "title": "Retained L8 browser resource observations; not new L9.3 executions",
+  "candidateHead": "c3be863b643d32654728dc415ab3b44f6a5fe17e",
+  "historicalStartHead": "6b66a20621ba4747245d9da830d22b732214ab83",
+  "sourceBinding": "Exact source hashes below bind measured bytes; historical working tree became accepted candidate. Later CMake packaging-only edits have independent L9.1 recipe equivalence.",
+  "environment": {
+    "platform": "linux",
+    "release": "6.12.113+deb13-amd64",
+    "architecture": "x64",
+    "cpu": "AMD Ryzen 7 PRO 8700GE w/ Radeon 780M Graphics",
+    "logicalCPUs": 16,
+    "hostMemoryBytes": 66422718464,
+    "node": "v24.22.2"
+  },
+  "playwright": "1.61.1",
+  "reports": [
+    {
+      "path": ".gestalt/signature/evidence/l8/l83/g2-resources-on-report.json",
+      "sha256": "101d6506e2c222b0b253c4085282df0db47382d7ab93d0971061edb933bdebb5",
+      "bytes": 36871
+    },
+    {
+      "path": ".gestalt/signature/evidence/l8/l83/g2-resources-off-report.json",
+      "sha256": "b039b03321301d4bf4d58f12f0cf558fae5e02360ee7ec07fe119894f79b3693",
+      "bytes": 15991
+    }
+  ],
+  "buildProvenance": {
+    "path": ".gestalt/signature/l83-cross-on/build-provenance.json",
+    "sha256": "ef77edcdca087827ef7b59db483ec3fc2ceb9858c7c218ed17384227c2c88eea",
+    "record": {
+      "compilerVersion": "clang version 23.1.0-wasi-sdk (https://github.com/llvm/llvm-project 895aa2c896ada719451be2e3673c83da8ddf1141)",
+      "pins": {
+        "longfellowCommit": "d2b0fc515f8663e38c79a28e8900ce8438e0106e",
+        "themeCommit": "a7fde3404a5e2b32bf57b4bcb99337479c5c75b2",
+        "wasiArchive": "wasi-sdk-34.0-x86_64-linux.tar.gz",
+        "wasiSha256": "b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4",
+        "wasiUrl": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz",
+        "wasiVersion": "34.0"
+      },
+      "reactorSha256": "2c35f1fa6a6394931930111cd91f367bf06e047eb1b9e4d457fd1bf33c8357b0",
+      "signatureMode": true,
+      "sourceFiles": {
+        "CMakeLists.txt": "d2885cfe7c0326c4744f8acad5bd65a92dd716f44ea4e3bdf57cbdfefd20b3c9",
+        "cmake/toolchains/wasi.cmake": "dba70ab2bac0d44c565c7d8180792bd84ec333d50443229f166a97bfd0c730bf",
+        "include/circuit/bitcoin_ecdsa.h": "f80e9d25f255af1f1d4765781cc4c09d352c370987daa52a4eef9feceab5dd21",
+        "include/circuit/bitcoin_ecdsa_witness.h": "45a5f18f9a862e035d0d79b630ef1a9770f50a41e5693eef054be8557325b3ee",
+        "include/circuit/compressed_key_sha256.h": "2ea36c2546f321f6d18ee7dcde90e63fff69a324bb49875460c36d3816e54f96",
+        "include/circuit/compressed_key_sha256_witness.h": "2166e2d3ce22fc3a624c56e977ad930b4ccc706a11fc73d7e8e4282d82ff482e",
+        "include/circuit/hash160.h": "c9d073c92f0b2fe814d28bfe30a87471560fb1d95e72b350fbfc6ea7a5ec4bb6",
+        "include/circuit/key_ownership.h": "fca4b3e7294dbf537ccbac435aa13346eda2447c88e565a4262f0a2467eaacc9",
+        "include/circuit/key_ownership_witness.h": "2c8e5aa8e1122a82f323f8bd7d2482c5e6a2e902a9b2ed6bfa51b9a952e264c5",
+        "include/circuit/p2sh_multisig.h": "3f0f1286a5d1df50f82c4c80f4ae746a59e668a62e094351947e64ffdcb78975",
+        "include/circuit/p2sh_multisig_witness.h": "4351643e48fc11aab53fdc8b4f1b67ab7e49155062c609060a505839a8236514",
+        "include/circuit/pokc_circuit.h": "392e9cde50171ea557f174d330834b44f2ee6b2419b440fee38633ca8d61bdcd",
+        "include/circuit/pokc_witness.h": "7a29bf842a7aae4b7e399f8711fe16a3a2d8078ffefec91e6ccd5f671b9256a8",
+        "include/circuit/signature_possession.h": "431f2a9a52adb77ced8f8b8e8d3d3a39224ef28fc71a8cb4c93c25bf8eb7e5af",
+        "include/circuit/signature_possession_circuit.h": "6304e5667a5700a066aae8210bee3f96830f356764f4f7bfd40e3f63dac0cc47",
+        "include/circuit/signature_possession_witness.h": "40456caa5d2af441766258c4a20008aed0fc921eab974dab90f7ea3c5816705c",
+        "include/pokc/crt_guard.h": "d4a1656318cf21901b2a5ee1d0c0c9d918d13ac4066556e6474a3c47636ea21d",
+        "include/pokc/p2sh_multisig.h": "f86a26e25aa2e23d6255d7f516ec8590dff5d00734ad7537946e36018ea77406",
+        "include/pokc/proof.h": "1f918d9449ca7a938913b3c559456e64e5b720ef4781144961345273b4a52b90",
+        "include/pokc/prover.h": "e78f443479d0f482e59c6487cc582d515f8f65d995b10db38af4ab5a0e426472",
+        "include/pokc/verifier.h": "da99367e5290c38ad38a35446f4caec23316e7e78880209245eeba59a9d81ca8",
+        "include/poksig/proof.h": "1ca2d4d7e3f66f6a11b3cf1fde906aa7f5416317d9a6de67376039e2cbcffef6",
+        "include/poksig/prover.h": "903ff5597638d6cdd8f205242690d420452429030beeb41b9ec0f0290ac14d8f",
+        "include/poksig/verifier.h": "2a1234a50a5b59653aef3ce49be200c77e5fbbfde8bf7e5e460180abf7d35dcf",
+        "include/quietproof/acceptance.h": "9e39db8b357bce74840d625a5ff9e744cea2710ecd063e573c4a92592ca943c9",
+        "include/quietproof/bitcoin_core.h": "f623112ae08804ef36d464ff1d598bd55367f999b142b43ad9d225db6081346a",
+        "include/quietproof/bitcoin_rpc.h": "81be1c042d2e9cf0805b134f71c6d89405c52487041f5f97f1c5f90ce0794c31",
+        "include/quietproof/browser.h": "212a6651998e1b95c59a4950e72c60d6118a54c7e97a74f1715cdcaefdb797a9",
+        "include/quietproof/browser_verifier.h": "31b67567a05045e51f39251496fc7a084226ca4ce7ba25ffffa8b4b08d00c5c3",
+        "include/quietproof/chain_state.h": "7051e07387a157bb7daf5d134d54386b731054526f5baaa7e5918719e10b5030",
+        "include/quietproof/challenge.h": "ccca392ed22641ca2ed78adfd50615eded7ee7951a14e7a640efa0a2cc602068",
+        "include/quietproof/detail/bitcoin_core_parse.h": "58bac30739e565fea8b8088f924815c84ae6a3b0993861f486bee8eee0c28c9c",
+        "include/quietproof/encoding.h": "5cc185ac9303f55cb55da5dd548abb10a54126b4d4e25d2e952d3dbc1ffac707",
+        "include/quietproof/envelope.h": "9ef4fb648697cb67c817523dff397175c9514db8f28284781fd82a6a7baae421",
+        "include/quietproof/nonce_store.h": "77243b51bbb350bf5a90c3a6576c0199880582f28d1a65c04c640e71839bb7c4",
+        "include/quietproof/signature_authorisation.h": "ee7fa4e682aa6d0c4e4d95a2576d2a1fc48bb99b4eeda04e18b899b832a21b5f",
+        "include/quietproof/signature_challenge.h": "636778544ff77ceaddddcc6299021b6ffd49243e5442041fd03060ebc6c20a47",
+        "include/quietproof/signature_digest.h": "9abaac57bdc794e28d4699d4a67b971ebaf291220ef93ce794dd7f82b16ee739",
+        "include/quietproof/signature_envelope.h": "0ed9e4a2544b44206c8772ee0cd887be11f0acb708df86c3c1bf070fdc7317cc",
+        "include/quietproof/signature_profile.h": "919882cd42a35ec12eab4acae21a24781e03ec285420e887eea3289fb2cdadb7",
+        "include/quietproof/signature_verifier.h": "30fef1f9543b72bbfd8db00de8a5303c38c346ca95ef00953c72664685426b5e",
+        "include/quietproof/statement.h": "5ca281743dd7445bd144d46b26ab424448bf24b77733981050b6efbc59ad8f8b",
+        "include/quietproof/verifier.h": "e7406ca22ca9ddda2691a5d900b7a31f2a36fe7b296cb3c8b55d6821b09c0396",
+        "scripts/build-pins.json": "a55d44335dfb67e06cbc271a21f200e997b821edc6fa2683679f9c9348ce77b0",
+        "scripts/build_wasm.py": "5ac6ceb71b6eab4f35edca13be82d2a18c6193c6d76cdb1f6d9fb2b51d8810cc",
+        "src/wasm/reactor.cc": "3f7189f96f254e388c63e8ac1b4d3bed96a086a2e10b27ad1d1c02bbcdbb04b7"
+      },
+      "toolchainFiles": {
+        "bin/clang": "061f88b9f4c48f3742434c2513d5038ab7fa4dc27abff5cb13b5eaedcb51d6ea",
+        "bin/wasm-ld": "ec1daef61bc84256bf7c4a8491b3ea9abcc7163d9aaf6aa8e8bc6faa18f99043",
+        "share/cmake/wasi-sdk-p1.cmake": "6c99aa92231dbe32c0cba01974e3f4c8814454f13c5bc2dd5a7f5b7439cd5237"
+      },
+      "verifiedArchive": {
+        "longfellowCommit": "d2b0fc515f8663e38c79a28e8900ce8438e0106e",
+        "themeCommit": "a7fde3404a5e2b32bf57b4bcb99337479c5c75b2",
+        "wasiArchive": "wasi-sdk-34.0-x86_64-linux.tar.gz",
+        "wasiSha256": "b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4",
+        "wasiUrl": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz",
+        "wasiVersion": "34.0"
+      },
+      "wasiVersionFile": "34.0\nwasi-libc: 2e6fb9d8ee0c\nllvm: 895aa2c896ad\nllvm-version: 23.1.0\nconfig: f992bcc08219\n"
+    }
+  },
+  "wasm": [
+    {
+      "signatureMode": true,
+      "path": "/home/gestalt-planb/gestalt/zk-workspace/.gestalt/signature/l83-cross-on/quietproof-build/quietproof.wasm",
+      "sha256": "2c35f1fa6a6394931930111cd91f367bf06e047eb1b9e4d457fd1bf33c8357b0",
+      "bytes": 1736785,
+      "gzip9Bytes": 470123,
+      "brotliBytes": 365555
+    },
+    {
+      "signatureMode": false,
+      "path": "/home/gestalt-planb/gestalt/zk-workspace/.gestalt/signature/l83-cross-off/quietproof-build/quietproof.wasm",
+      "sha256": "54327e9805ff18c851d4542e652cdb7601da01bc59467be3d95ecba5a9665210",
+      "bytes": 1703496,
+      "gzip9Bytes": 459902,
+      "brotliBytes": 358099
+    }
+  ],
+  "sources": [
+    {
+      "path": "/home/gestalt-planb/gestalt/zk-workspace/quietproof/web/wasm/asset.mjs",
+      "sha256": "8d3fd42848bc81216f8dd9d9413e22d0de931d7a032c122fdea156fa50349a96"
+    },
+    {
+      "path": "/home/gestalt-planb/gestalt/zk-workspace/quietproof/web/wasm/codec.mjs",
+      "sha256": "88eb793ce2fdcc0e5d381db80a48af1a0d0878a2b9f8aee0ec35d2970a52f54a"
+    },
+    {
+      "path": "/home/gestalt-planb/gestalt/zk-workspace/quietproof/web/wasm/runtime.mjs",
+      "sha256": "11a6364e49e02f3b429fa4a6dd469cc12d8b48140ea9eff12fe6ac3ecf7d8094"
+    },
+    {
+      "path": "/home/gestalt-planb/gestalt/zk-workspace/quietproof/web/wasm/worker.mjs",
+      "sha256": "61614a84a1c418e95916c7119284b22a78d09e6bce4ad83c59a27eee68e1c019"
+    },
+    {
+      "path": "/home/gestalt-planb/gestalt/zk-workspace/quietproof/tests/wasm/feasibility.mjs",
+      "sha256": "de9d0212b275e1d2b9b93a993a4e69be74219a470b498c00c58bb5e0ca0e2266"
+    },
+    {
+      "path": "/home/gestalt-planb/gestalt/zk-workspace/quietproof/tests/wasm/measured-worker.mjs",
+      "sha256": "89e8b99daf13830caeae1a2f3ed8ae4bd98cc54ce912552468d60ebfc55f64b5"
+    },
+    {
+      "path": "/home/gestalt-planb/gestalt/zk-workspace/quietproof/tests/wasm/resources.mjs",
+      "sha256": "52b7492a6653a02a3968c0f814fec22c808fd9cf86ffaa510847415830d9284d"
+    },
+    {
+      "path": "/home/gestalt-planb/gestalt/zk-workspace/quietproof/package.json",
+      "sha256": "3ebab2b01bcd2329a0991656a17ca1d82e3c82f8623dcda04ed280fd91453b66"
+    },
+    {
+      "path": "/home/gestalt-planb/gestalt/zk-workspace/quietproof/package-lock.json",
+      "sha256": "966d37a273d6413b16877ca816af06cf5e48eb5d15cea3829bfaab3fff700b3c"
+    }
+  ],
+  "fixtures": {
+    "one-key": {
+      "provenance": {
+        "generator": "tests/wasm/proof_fixtures.cc",
+        "publicDisposableScalars": [
+          1
+        ],
+        "network": "mainnet",
+        "statementVersion": 1,
+        "createdAt": 1793519136,
+        "expiresAt": 1793605536,
+        "envelopeBytes": 46879508,
+        "requestBytes": 199,
+        "nativeVerified": true
+      },
+      "files": [
+        {
+          "path": "/home/gestalt-planb/gestalt/zk-workspace/.gestalt/signature/evidence/l8/l83/web-full-run04/fixtures/one-key.qpr",
+          "bytes": 199,
+          "sha256": "10926adcb209003ae1d3218b09e64ddb34f9eeec948cb6bb48db879ef414fbc1"
+        },
+        {
+          "path": "/home/gestalt-planb/gestalt/zk-workspace/.gestalt/signature/evidence/l8/l83/web-full-run04/fixtures/one-key.qpf",
+          "bytes": 46879508,
+          "sha256": "4fc34365fe0da7bfa0f40c8d33086dfdbdc78f9800184a2e613904e85d45b673"
+        }
+      ]
+    },
+    "signature-p2pkh": {
+      "provenance": {
+        "generator": "tests/wasm/signature_fixtures.py",
+        "nativeVerified": true,
+        "witnessExported": false,
+        "createdAt": 1793519254,
+        "expiresAt": 1793540783,
+        "envelopeBytes": 49727346,
+        "claimCount": 1,
+        "proofMode": "signature-possession"
+      },
+      "files": [
+        {
+          "path": "/home/gestalt-planb/gestalt/zk-workspace/.gestalt/signature/evidence/l8/l83/web-full-run04/fixtures/signature-p2pkh.qpr",
+          "bytes": 192,
+          "sha256": "c1f1185d04fc55b82a05fffa7d13ca2ad3136d396859492ba96db4f857303ffd"
+        },
+        {
+          "path": "/home/gestalt-planb/gestalt/zk-workspace/.gestalt/signature/evidence/l8/l83/web-full-run04/fixtures/signature-p2pkh.qpf",
+          "bytes": 49727346,
+          "sha256": "4b487e2b8cb95a4ad5e385583da454db4651bc74099e8cc23b55daf5c3044471"
+        }
+      ]
+    },
+    "signature-p2wpkh": {
+      "provenance": {
+        "generator": "tests/wasm/signature_fixtures.py",
+        "nativeVerified": true,
+        "witnessExported": false,
+        "createdAt": 1793519325,
+        "expiresAt": 1793540783,
+        "envelopeBytes": 49727698,
+        "claimCount": 1,
+        "proofMode": "signature-possession"
+      },
+      "files": [
+        {
+          "path": "/home/gestalt-planb/gestalt/zk-workspace/.gestalt/signature/evidence/l8/l83/web-full-run04/fixtures/signature-p2wpkh.qpr",
+          "bytes": 192,
+          "sha256": "9fc35783cf77cf5b5211c91511ec9a1cfe06f232f2d964cf27712f7e2ca43bfa"
+        },
+        {
+          "path": "/home/gestalt-planb/gestalt/zk-workspace/.gestalt/signature/evidence/l8/l83/web-full-run04/fixtures/signature-p2wpkh.qpf",
+          "bytes": 49727698,
+          "sha256": "d1ef93a7cf7241c46d1ba58bfb18e6337fac5e89c65a3e53deb3dba6b9a3624a"
+        }
+      ]
+    },
+    "signature-mixed": {
+      "provenance": {
+        "generator": "tests/wasm/signature_fixtures.py",
+        "nativeVerified": true,
+        "witnessExported": false,
+        "createdAt": 1793519396,
+        "expiresAt": 1793540783,
+        "envelopeBytes": 49728563,
+        "claimCount": 2,
+        "proofMode": "signature-possession"
+      },
+      "files": [
+        {
+          "path": "/home/gestalt-planb/gestalt/zk-workspace/.gestalt/signature/evidence/l8/l83/web-full-run04/fixtures/signature-mixed.qpr",
+          "bytes": 257,
+          "sha256": "d2b7631f5b1eb9a4b1a5a21164f167b64d31e510885b74ffa92ef95856c87195"
+        },
+        {
+          "path": "/home/gestalt-planb/gestalt/zk-workspace/.gestalt/signature/evidence/l8/l83/web-full-run04/fixtures/signature-mixed.qpf",
+          "bytes": 49728563,
+          "sha256": "dac6855a0d8ab80fb7ec17e345edec66e7cac7c3000ed244639dbe029425a84d"
+        }
+      ]
+    },
+    "signature-max16": {
+      "provenance": {
+        "generator": "tests/wasm/signature_fixtures.py",
+        "nativeVerified": true,
+        "witnessExported": false,
+        "createdAt": 1793519467,
+        "expiresAt": 1793540996,
+        "envelopeBytes": 49729089,
+        "claimCount": 16,
+        "proofMode": "signature-possession"
+      },
+      "files": [
+        {
+          "path": "/home/gestalt-planb/gestalt/zk-workspace/.gestalt/signature/evidence/l8/l83/web-full-run04/fixtures/signature-max16.qpr",
+          "bytes": 1167,
+          "sha256": "8f98f473cd1c9527963afada30f19ca3df8453e8eebb993cac15cc9cfab1459d"
+        },
+        {
+          "path": "/home/gestalt-planb/gestalt/zk-workspace/.gestalt/signature/evidence/l8/l83/web-full-run04/fixtures/signature-max16.qpf",
+          "bytes": 49729089,
+          "sha256": "b5409c399fb25d5e8bf616d2120d8670c9bda99e72160b18df5a6e86461d2b5b"
+        }
+      ]
+    }
+  },
+  "budgets": {
+    "localAssetLoadMs": 10000,
+    "initializeMs": 10000,
+    "prepareMs": 10000,
+    "verifyMs": {
+      "one-key": 100000,
+      "signature-p2pkh": 240000,
+      "signature-p2wpkh": 240000,
+      "signature-mixed": 240000,
+      "signature-max16": 240000
+    },
+    "linearMemoryBytes": 2013265920,
+    "repeatGrowthBytes": 16777216,
+    "heartbeatGapMs": 2000,
+    "cancellationSettleMs": 2000
+  },
+  "memoryScope": "Linear memory high-water allocation observed after synchronous calls; WASM memory never shrinks. Not process RSS or JS heap.",
+  "copyScope": "Sender detachment is observed per transferred proof; implementation copy inventory is documented separately. Engine-internal physical copies are not measurable here.",
+  "cohorts": [
+    {
+      "signatureMode": true,
+      "engine": "chromium",
+      "version": "149.0.7827.55",
+      "observedAt": "2026-11-01T12:30:53.370Z",
+      "completedAt": "2026-11-01T12:49:40.822Z",
+      "key": "one-key",
+      "claimCount": 1,
+      "resourceDepth": "full",
+      "status": "passed",
+      "records": [
+        {
+          "label": "load",
+          "loadMs": 11.599999994039536,
+          "initializeMs": 3.9000000059604645,
+          "senderDetached": true
+        },
+        {
+          "label": "cold",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 18.400000005960464,
+          "verifyMs": 74671.5,
+          "preparedLinearMemoryBytes": 141754368,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 954400768,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 1,
+          "proofMode": "key-knowledge"
+        },
+        {
+          "label": "repeat",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 10.199999988079071,
+          "verifyMs": 72924.09999999404,
+          "preparedLinearMemoryBytes": 954400768,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 954400768,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 1,
+          "proofMode": "key-knowledge"
+        },
+        {
+          "label": "changed-proof",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 10.299999982118607,
+          "verifyMs": 3255.800000011921,
+          "preparedLinearMemoryBytes": 954400768,
+          "cryptography": "invalid",
+          "peakObservedLinearMemoryBytes": 954400768,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": null,
+          "proofMode": null
+        },
+        {
+          "label": "reset",
+          "retainedLinearMemoryBytes": 954400768
+        },
+        {
+          "label": "load",
+          "loadMs": 19.69999998807907,
+          "initializeMs": 4.200000017881393,
+          "senderDetached": true
+        },
+        {
+          "label": "hard-cancel",
+          "cancellationObservationMs": 200.2000000178814,
+          "heartbeatTicksDuringComputeAndCancel": 21,
+          "lateResponses": 0
+        },
+        {
+          "label": "load",
+          "loadMs": 9.400000005960464,
+          "initializeMs": 6,
+          "senderDetached": true
+        },
+        {
+          "label": "fresh-after-cancel",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 20.900000005960464,
+          "verifyMs": 73435.29999998212,
+          "preparedLinearMemoryBytes": 141754368,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 954400768,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 1,
+          "proofMode": "key-knowledge"
+        },
+        {
+          "label": "controlled-low-memory-load",
+          "loadMs": 26.69999998807907,
+          "initializeMs": 5.4000000059604645,
+          "senderDetached": true
+        },
+        {
+          "label": "controlled-low-memory",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 18.19999998807907,
+          "verifyMs": 6049.9000000059605,
+          "preparedLinearMemoryBytes": 141754368,
+          "cryptography": "pending",
+          "failureMemoryBytes": 519897088
+        },
+        {
+          "label": "controlled-low-memory-failure",
+          "name": "Error",
+          "message": "WorkerResetError: WASM computation trapped; recreate the worker.",
+          "linearMemoryBytes": 519897088
+        },
+        {
+          "label": "load",
+          "loadMs": 21.599999994039536,
+          "initializeMs": 5.4000000059604645,
+          "senderDetached": true
+        },
+        {
+          "label": "fresh-after-low-memory",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 20.200000017881393,
+          "verifyMs": 73603.90000000596,
+          "preparedLinearMemoryBytes": 141754368,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 954400768,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 1,
+          "proofMode": "key-knowledge"
+        }
+      ]
+    },
+    {
+      "signatureMode": true,
+      "engine": "chromium",
+      "version": "149.0.7827.55",
+      "observedAt": "2026-11-01T12:30:53.370Z",
+      "completedAt": "2026-11-01T12:49:40.822Z",
+      "key": "signature-p2pkh",
+      "claimCount": 1,
+      "resourceDepth": "verification",
+      "status": "passed",
+      "records": [
+        {
+          "label": "load",
+          "loadMs": 8.5,
+          "initializeMs": 3.800000011920929,
+          "senderDetached": true
+        },
+        {
+          "label": "cold",
+          "inputBytes": 49727346,
+          "senderDetached": true,
+          "prepareMs": 12.099999994039536,
+          "verifyMs": 118387.70000001788,
+          "preparedLinearMemoryBytes": 100532224,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 1299709952,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 1,
+          "proofMode": "signature-possession"
+        }
+      ]
+    },
+    {
+      "signatureMode": true,
+      "engine": "chromium",
+      "version": "149.0.7827.55",
+      "observedAt": "2026-11-01T12:30:53.370Z",
+      "completedAt": "2026-11-01T12:49:40.822Z",
+      "key": "signature-p2wpkh",
+      "claimCount": 1,
+      "resourceDepth": "verification",
+      "status": "passed",
+      "records": [
+        {
+          "label": "load",
+          "loadMs": 19.19999998807907,
+          "initializeMs": 4.300000011920929,
+          "senderDetached": true
+        },
+        {
+          "label": "cold",
+          "inputBytes": 49727698,
+          "senderDetached": true,
+          "prepareMs": 14.300000011920929,
+          "verifyMs": 118364.09999999404,
+          "preparedLinearMemoryBytes": 100532224,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 1299709952,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 1,
+          "proofMode": "signature-possession"
+        }
+      ]
+    },
+    {
+      "signatureMode": true,
+      "engine": "chromium",
+      "version": "149.0.7827.55",
+      "observedAt": "2026-11-01T12:30:53.370Z",
+      "completedAt": "2026-11-01T12:49:40.822Z",
+      "key": "signature-mixed",
+      "claimCount": 2,
+      "resourceDepth": "verification",
+      "status": "passed",
+      "records": [
+        {
+          "label": "load",
+          "loadMs": 22.799999982118607,
+          "initializeMs": 7.700000017881393,
+          "senderDetached": true
+        },
+        {
+          "label": "cold",
+          "inputBytes": 49728563,
+          "senderDetached": true,
+          "prepareMs": 15.699999988079071,
+          "verifyMs": 117470.80000001192,
+          "preparedLinearMemoryBytes": 100532224,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 1299709952,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 2,
+          "proofMode": "signature-possession"
+        }
+      ]
+    },
+    {
+      "signatureMode": true,
+      "engine": "chromium",
+      "version": "149.0.7827.55",
+      "observedAt": "2026-11-01T12:30:53.370Z",
+      "completedAt": "2026-11-01T12:49:40.822Z",
+      "key": "signature-max16",
+      "claimCount": 16,
+      "resourceDepth": "full",
+      "status": "passed",
+      "records": [
+        {
+          "label": "load",
+          "loadMs": 10.800000011920929,
+          "initializeMs": 3.899999976158142,
+          "senderDetached": true
+        },
+        {
+          "label": "cold",
+          "inputBytes": 49729089,
+          "senderDetached": true,
+          "prepareMs": 15.900000005960464,
+          "verifyMs": 115068.09999999404,
+          "preparedLinearMemoryBytes": 100532224,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 1299709952,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 16,
+          "proofMode": "signature-possession"
+        },
+        {
+          "label": "repeat",
+          "inputBytes": 49729089,
+          "senderDetached": true,
+          "prepareMs": 12.400000005960464,
+          "verifyMs": 113753.29999998212,
+          "preparedLinearMemoryBytes": 1299709952,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 1301413888,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 16,
+          "proofMode": "signature-possession"
+        },
+        {
+          "label": "changed-proof",
+          "inputBytes": 49729089,
+          "senderDetached": true,
+          "prepareMs": 11.799999982118607,
+          "verifyMs": 3774.600000023842,
+          "preparedLinearMemoryBytes": 1301413888,
+          "cryptography": "invalid",
+          "peakObservedLinearMemoryBytes": 1301413888,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": null,
+          "proofMode": null
+        },
+        {
+          "label": "reset",
+          "retainedLinearMemoryBytes": 1301413888
+        },
+        {
+          "label": "load",
+          "loadMs": 27.69999998807907,
+          "initializeMs": 5.300000011920929,
+          "senderDetached": true
+        },
+        {
+          "label": "hard-cancel",
+          "cancellationObservationMs": 200.40000000596046,
+          "heartbeatTicksDuringComputeAndCancel": 20,
+          "lateResponses": 0
+        },
+        {
+          "label": "load",
+          "loadMs": 8.600000023841858,
+          "initializeMs": 8.399999976158142,
+          "senderDetached": true
+        },
+        {
+          "label": "fresh-after-cancel",
+          "inputBytes": 49729089,
+          "senderDetached": true,
+          "prepareMs": 16.099999994039536,
+          "verifyMs": 115113.30000001192,
+          "preparedLinearMemoryBytes": 100532224,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 1299709952,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 16,
+          "proofMode": "signature-possession"
+        },
+        {
+          "label": "controlled-low-memory-load",
+          "loadMs": 24.400000005960464,
+          "initializeMs": 5,
+          "senderDetached": true
+        },
+        {
+          "label": "controlled-low-memory",
+          "inputBytes": 49729089,
+          "senderDetached": true,
+          "prepareMs": 16.799999982118607,
+          "verifyMs": 3958,
+          "preparedLinearMemoryBytes": 100532224,
+          "cryptography": "pending",
+          "failureMemoryBytes": 507707392
+        },
+        {
+          "label": "controlled-low-memory-failure",
+          "name": "Error",
+          "message": "WorkerResetError: WASM computation trapped; recreate the worker.",
+          "linearMemoryBytes": 507707392
+        },
+        {
+          "label": "load",
+          "loadMs": 21.099999994039536,
+          "initializeMs": 4.199999988079071,
+          "senderDetached": true
+        },
+        {
+          "label": "fresh-after-low-memory",
+          "inputBytes": 49729089,
+          "senderDetached": true,
+          "prepareMs": 16.69999998807907,
+          "verifyMs": 114878.80000001192,
+          "preparedLinearMemoryBytes": 100532224,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 1299709952,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 16,
+          "proofMode": "signature-possession"
+        }
+      ]
+    },
+    {
+      "signatureMode": true,
+      "engine": "webkit",
+      "version": "26.5",
+      "observedAt": "2026-11-01T12:49:40.822Z",
+      "completedAt": "2026-11-01T13:09:36.272Z",
+      "key": "one-key",
+      "claimCount": 1,
+      "resourceDepth": "full",
+      "status": "passed",
+      "records": [
+        {
+          "label": "load",
+          "loadMs": 10,
+          "initializeMs": 15,
+          "senderDetached": true
+        },
+        {
+          "label": "cold",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 18,
+          "verifyMs": 79091,
+          "preparedLinearMemoryBytes": 141754368,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 954400768,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 1,
+          "proofMode": "key-knowledge"
+        },
+        {
+          "label": "repeat",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 10,
+          "verifyMs": 76346,
+          "preparedLinearMemoryBytes": 954400768,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 954400768,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 1,
+          "proofMode": "key-knowledge"
+        },
+        {
+          "label": "changed-proof",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 10,
+          "verifyMs": 3247,
+          "preparedLinearMemoryBytes": 954400768,
+          "cryptography": "invalid",
+          "peakObservedLinearMemoryBytes": 954400768,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": null,
+          "proofMode": null
+        },
+        {
+          "label": "reset",
+          "retainedLinearMemoryBytes": 954400768
+        },
+        {
+          "label": "load",
+          "loadMs": 11,
+          "initializeMs": 21,
+          "senderDetached": true
+        },
+        {
+          "label": "hard-cancel",
+          "cancellationObservationMs": 200,
+          "heartbeatTicksDuringComputeAndCancel": 17,
+          "lateResponses": 0
+        },
+        {
+          "label": "load",
+          "loadMs": 11,
+          "initializeMs": 9,
+          "senderDetached": true
+        },
+        {
+          "label": "fresh-after-cancel",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 18,
+          "verifyMs": 75577,
+          "preparedLinearMemoryBytes": 141754368,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 954400768,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 1,
+          "proofMode": "key-knowledge"
+        },
+        {
+          "label": "controlled-low-memory-load",
+          "loadMs": 11,
+          "initializeMs": 21,
+          "senderDetached": true
+        },
+        {
+          "label": "controlled-low-memory",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 20,
+          "verifyMs": 5968,
+          "preparedLinearMemoryBytes": 141754368,
+          "cryptography": "pending",
+          "failureMemoryBytes": 519897088
+        },
+        {
+          "label": "controlled-low-memory-failure",
+          "name": "Error",
+          "message": "WorkerResetError: WASM computation trapped; recreate the worker.",
+          "linearMemoryBytes": 519897088
+        },
+        {
+          "label": "load",
+          "loadMs": 11,
+          "initializeMs": 19,
+          "senderDetached": true
+        },
+        {
+          "label": "fresh-after-low-memory",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 18,
+          "verifyMs": 75459,
+          "preparedLinearMemoryBytes": 141754368,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 954400768,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 1,
+          "proofMode": "key-knowledge"
+        }
+      ]
+    },
+    {
+      "signatureMode": true,
+      "engine": "webkit",
+      "version": "26.5",
+      "observedAt": "2026-11-01T12:49:40.822Z",
+      "completedAt": "2026-11-01T13:09:36.272Z",
+      "key": "signature-p2pkh",
+      "claimCount": 1,
+      "resourceDepth": "verification",
+      "status": "passed",
+      "records": [
+        {
+          "label": "load",
+          "loadMs": 11,
+          "initializeMs": 22,
+          "senderDetached": true
+        },
+        {
+          "label": "cold",
+          "inputBytes": 49727346,
+          "senderDetached": true,
+          "prepareMs": 14,
+          "verifyMs": 123931,
+          "preparedLinearMemoryBytes": 100532224,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 1299709952,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 1,
+          "proofMode": "signature-possession"
+        }
+      ]
+    },
+    {
+      "signatureMode": true,
+      "engine": "webkit",
+      "version": "26.5",
+      "observedAt": "2026-11-01T12:49:40.822Z",
+      "completedAt": "2026-11-01T13:09:36.272Z",
+      "key": "signature-p2wpkh",
+      "claimCount": 1,
+      "resourceDepth": "verification",
+      "status": "passed",
+      "records": [
+        {
+          "label": "load",
+          "loadMs": 11,
+          "initializeMs": 27,
+          "senderDetached": true
+        },
+        {
+          "label": "cold",
+          "inputBytes": 49727698,
+          "senderDetached": true,
+          "prepareMs": 14,
+          "verifyMs": 123623,
+          "preparedLinearMemoryBytes": 100532224,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 1299709952,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 1,
+          "proofMode": "signature-possession"
+        }
+      ]
+    },
+    {
+      "signatureMode": true,
+      "engine": "webkit",
+      "version": "26.5",
+      "observedAt": "2026-11-01T12:49:40.822Z",
+      "completedAt": "2026-11-01T13:09:36.272Z",
+      "key": "signature-mixed",
+      "claimCount": 2,
+      "resourceDepth": "verification",
+      "status": "passed",
+      "records": [
+        {
+          "label": "load",
+          "loadMs": 12,
+          "initializeMs": 27,
+          "senderDetached": true
+        },
+        {
+          "label": "cold",
+          "inputBytes": 49728563,
+          "senderDetached": true,
+          "prepareMs": 16,
+          "verifyMs": 123821,
+          "preparedLinearMemoryBytes": 100532224,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 1299709952,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 2,
+          "proofMode": "signature-possession"
+        }
+      ]
+    },
+    {
+      "signatureMode": true,
+      "engine": "webkit",
+      "version": "26.5",
+      "observedAt": "2026-11-01T12:49:40.822Z",
+      "completedAt": "2026-11-01T13:09:36.272Z",
+      "key": "signature-max16",
+      "claimCount": 16,
+      "resourceDepth": "full",
+      "status": "passed",
+      "records": [
+        {
+          "label": "load",
+          "loadMs": 11,
+          "initializeMs": 27,
+          "senderDetached": true
+        },
+        {
+          "label": "cold",
+          "inputBytes": 49729089,
+          "senderDetached": true,
+          "prepareMs": 17,
+          "verifyMs": 123440,
+          "preparedLinearMemoryBytes": 100532224,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 1299709952,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 16,
+          "proofMode": "signature-possession"
+        },
+        {
+          "label": "repeat",
+          "inputBytes": 49729089,
+          "senderDetached": true,
+          "prepareMs": 14,
+          "verifyMs": 122852,
+          "preparedLinearMemoryBytes": 1299709952,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 1301413888,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 16,
+          "proofMode": "signature-possession"
+        },
+        {
+          "label": "changed-proof",
+          "inputBytes": 49729089,
+          "senderDetached": true,
+          "prepareMs": 11,
+          "verifyMs": 4018,
+          "preparedLinearMemoryBytes": 1301413888,
+          "cryptography": "invalid",
+          "peakObservedLinearMemoryBytes": 1301413888,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": null,
+          "proofMode": null
+        },
+        {
+          "label": "reset",
+          "retainedLinearMemoryBytes": 1301413888
+        },
+        {
+          "label": "load",
+          "loadMs": 11,
+          "initializeMs": 27,
+          "senderDetached": true
+        },
+        {
+          "label": "hard-cancel",
+          "cancellationObservationMs": 200,
+          "heartbeatTicksDuringComputeAndCancel": 17,
+          "lateResponses": 0
+        },
+        {
+          "label": "load",
+          "loadMs": 10,
+          "initializeMs": 10,
+          "senderDetached": true
+        },
+        {
+          "label": "fresh-after-cancel",
+          "inputBytes": 49729089,
+          "senderDetached": true,
+          "prepareMs": 18,
+          "verifyMs": 125190,
+          "preparedLinearMemoryBytes": 100532224,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 1299709952,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 16,
+          "proofMode": "signature-possession"
+        },
+        {
+          "label": "controlled-low-memory-load",
+          "loadMs": 13,
+          "initializeMs": 27,
+          "senderDetached": true
+        },
+        {
+          "label": "controlled-low-memory",
+          "inputBytes": 49729089,
+          "senderDetached": true,
+          "prepareMs": 18,
+          "verifyMs": 4158,
+          "preparedLinearMemoryBytes": 100532224,
+          "cryptography": "pending",
+          "failureMemoryBytes": 507707392
+        },
+        {
+          "label": "controlled-low-memory-failure",
+          "name": "Error",
+          "message": "WorkerResetError: WASM computation trapped; recreate the worker.",
+          "linearMemoryBytes": 507707392
+        },
+        {
+          "label": "load",
+          "loadMs": 11,
+          "initializeMs": 21,
+          "senderDetached": true
+        },
+        {
+          "label": "fresh-after-low-memory",
+          "inputBytes": 49729089,
+          "senderDetached": true,
+          "prepareMs": 18,
+          "verifyMs": 124425,
+          "preparedLinearMemoryBytes": 100532224,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 1299709952,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 16,
+          "proofMode": "signature-possession"
+        }
+      ]
+    },
+    {
+      "signatureMode": false,
+      "engine": "chromium",
+      "version": "149.0.7827.55",
+      "observedAt": "2026-11-01T13:09:38.483Z",
+      "completedAt": "2026-11-01T13:14:29.082Z",
+      "key": "one-key",
+      "claimCount": 1,
+      "resourceDepth": "full",
+      "status": "passed",
+      "records": [
+        {
+          "label": "load",
+          "loadMs": 10.799999982118607,
+          "initializeMs": 2.800000011920929,
+          "senderDetached": true
+        },
+        {
+          "label": "cold",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 17.200000017881393,
+          "verifyMs": 70332.59999999404,
+          "preparedLinearMemoryBytes": 141754368,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 954400768,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 1,
+          "proofMode": "key-knowledge"
+        },
+        {
+          "label": "repeat",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 10.800000011920929,
+          "verifyMs": 68204.5,
+          "preparedLinearMemoryBytes": 954400768,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 954400768,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 1,
+          "proofMode": "key-knowledge"
+        },
+        {
+          "label": "changed-proof",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 10.300000011920929,
+          "verifyMs": 3117.9000000059605,
+          "preparedLinearMemoryBytes": 954400768,
+          "cryptography": "invalid",
+          "peakObservedLinearMemoryBytes": 954400768,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": null,
+          "proofMode": null
+        },
+        {
+          "label": "reset",
+          "retainedLinearMemoryBytes": 954400768
+        },
+        {
+          "label": "load",
+          "loadMs": 20.700000017881393,
+          "initializeMs": 5.199999988079071,
+          "senderDetached": true
+        },
+        {
+          "label": "hard-cancel",
+          "cancellationObservationMs": 200.30000001192093,
+          "heartbeatTicksDuringComputeAndCancel": 21,
+          "lateResponses": 0
+        },
+        {
+          "label": "load",
+          "loadMs": 8.400000005960464,
+          "initializeMs": 4.300000011920929,
+          "senderDetached": true
+        },
+        {
+          "label": "fresh-after-cancel",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 17,
+          "verifyMs": 70442.20000001788,
+          "preparedLinearMemoryBytes": 141754368,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 954400768,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 1,
+          "proofMode": "key-knowledge"
+        },
+        {
+          "label": "controlled-low-memory-load",
+          "loadMs": 22.5,
+          "initializeMs": 5.5,
+          "senderDetached": true
+        },
+        {
+          "label": "controlled-low-memory",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 17.19999998807907,
+          "verifyMs": 5873.199999988079,
+          "preparedLinearMemoryBytes": 141754368,
+          "cryptography": "pending",
+          "failureMemoryBytes": 519897088
+        },
+        {
+          "label": "controlled-low-memory-failure",
+          "name": "Error",
+          "message": "WorkerResetError: WASM computation trapped; recreate the worker.",
+          "linearMemoryBytes": 519897088
+        },
+        {
+          "label": "load",
+          "loadMs": 18.900000005960464,
+          "initializeMs": 6.5,
+          "senderDetached": true
+        },
+        {
+          "label": "fresh-after-low-memory",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 18.399999976158142,
+          "verifyMs": 71400.60000002384,
+          "preparedLinearMemoryBytes": 141754368,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 954400768,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 1,
+          "proofMode": "key-knowledge"
+        }
+      ]
+    },
+    {
+      "signatureMode": false,
+      "engine": "webkit",
+      "version": "26.5",
+      "observedAt": "2026-11-01T13:14:29.082Z",
+      "completedAt": "2026-11-01T13:19:41.569Z",
+      "key": "one-key",
+      "claimCount": 1,
+      "resourceDepth": "full",
+      "status": "passed",
+      "records": [
+        {
+          "label": "load",
+          "loadMs": 9,
+          "initializeMs": 12,
+          "senderDetached": true
+        },
+        {
+          "label": "cold",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 19,
+          "verifyMs": 75828,
+          "preparedLinearMemoryBytes": 141754368,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 954400768,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 1,
+          "proofMode": "key-knowledge"
+        },
+        {
+          "label": "repeat",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 12,
+          "verifyMs": 73891,
+          "preparedLinearMemoryBytes": 954400768,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 954400768,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 1,
+          "proofMode": "key-knowledge"
+        },
+        {
+          "label": "changed-proof",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 11,
+          "verifyMs": 3291,
+          "preparedLinearMemoryBytes": 954400768,
+          "cryptography": "invalid",
+          "peakObservedLinearMemoryBytes": 954400768,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": null,
+          "proofMode": null
+        },
+        {
+          "label": "reset",
+          "retainedLinearMemoryBytes": 954400768
+        },
+        {
+          "label": "load",
+          "loadMs": 11,
+          "initializeMs": 22,
+          "senderDetached": true
+        },
+        {
+          "label": "hard-cancel",
+          "cancellationObservationMs": 201,
+          "heartbeatTicksDuringComputeAndCancel": 17,
+          "lateResponses": 0
+        },
+        {
+          "label": "load",
+          "loadMs": 12,
+          "initializeMs": 9,
+          "senderDetached": true
+        },
+        {
+          "label": "fresh-after-cancel",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 18,
+          "verifyMs": 75273,
+          "preparedLinearMemoryBytes": 141754368,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 954400768,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 1,
+          "proofMode": "key-knowledge"
+        },
+        {
+          "label": "controlled-low-memory-load",
+          "loadMs": 10,
+          "initializeMs": 23,
+          "senderDetached": true
+        },
+        {
+          "label": "controlled-low-memory",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 17,
+          "verifyMs": 5918,
+          "preparedLinearMemoryBytes": 141754368,
+          "cryptography": "pending",
+          "failureMemoryBytes": 519897088
+        },
+        {
+          "label": "controlled-low-memory-failure",
+          "name": "Error",
+          "message": "WorkerResetError: WASM computation trapped; recreate the worker.",
+          "linearMemoryBytes": 519897088
+        },
+        {
+          "label": "load",
+          "loadMs": 11,
+          "initializeMs": 19,
+          "senderDetached": true
+        },
+        {
+          "label": "fresh-after-low-memory",
+          "inputBytes": 46879508,
+          "senderDetached": true,
+          "prepareMs": 17,
+          "verifyMs": 76383,
+          "preparedLinearMemoryBytes": 141754368,
+          "cryptography": "valid",
+          "peakObservedLinearMemoryBytes": 954400768,
+          "policy": "matched",
+          "explorer": "unavailable",
+          "authorizes": false,
+          "claimCount": 1,
+          "proofMode": "key-knowledge"
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "Linear-memory high-water allocation is not process RSS/JS heap.",
+    "Fresh worker is not cold OS/engine caches.",
+    "Root/subpath and UI states are separate completed cohorts, not one fresh full process.",
+    "Repository text zoom is not browser page zoom or physical device qualification.",
+    "Integrated L5.3 malicious fresh-proof/advice attacks remain waived/unexecuted/unqualified."
+  ]
+}

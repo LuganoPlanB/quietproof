@@ -88,7 +88,16 @@ the same pinned base SDK. Installed CMake consumers must request the `signature`
 component and link `LongfellowZKQuietProof::signature`; an ordinary package lookup
 loads only the base target. See the [constraint and package contract](spec/signature-ecdsa-constraints.md).
 It enables explicit native signature-possession commands; browser support is
-qualified separately. Existing command defaults remain key knowledge.
+qualified separately. Existing command defaults remain key knowledge. See the
+[complete signature workflow](docs/guide/signature-possession.md), including
+verification with the independently retained `expected.qpr`.
+
+| Boundary | Default key knowledge | Optional signature possession |
+| --- | --- | --- |
+| Witness | Private scalar; existing PoKC relation. | Signature and compressed public key for the exact request; no scalar knowledge required. |
+| Delegation | Existing protected-key workflow. | A private `.qpa` holder can re-prove the same authorised request. |
+| Build/selection | Existing APIs, commands, GUI and wire identities. | Explicit `QUIETPROOF_BUILD_SIGNATURE_MODE=ON` and `--proof-mode signature-possession`; OFF rejects unsupported operations. |
+| Freshness | Request, chain and replay policy. | Same outer duties; a new proof or timestamp does not establish signing time. |
 
 Create a request by adding `--proof-mode signature-possession --signing-kind
 p2wpkh` (or `p2pkh`) to `challenge create`. The selected kind must occur among
@@ -105,6 +114,11 @@ build/quietproof authorize --proof-mode signature-possession \
   --request request.qpr --receipt-output authorisation.qpa --rpc-wallet wallet-name
 build/quietproof prove --proof-mode signature-possession \
   --request request.qpr --receipt-input authorisation.qpa --output delegated.qpf
+
+# Verifier uses its own retained request, not a replacement from the prover.
+build/quietproof verify delegated.qpf --proof-mode signature-possession \
+  --expected-request expected.qpr --network signet --verifier example.org \
+  --purpose proof-of-funds --nonce-store ./signature-nonces
 ```
 
 Use explicit local RPC options when the node is outside the default local cookie
@@ -120,6 +134,12 @@ proof separately. Signature possession does not establish private-key knowledge,
 exclusive control, reserved funds or signing time. Current-funds acceptance still
 requires expected-request, chain-state and replay policy; creating a proof alone
 does not establish that acceptance.
+
+Native CLI `inspect` does not support v3 signature requests/proofs; the browser's
+bounded metadata inspection is a separate capability. Only public `.qpr` and
+`.qpf` files belong in the browser: native proving, wallet RPC and private
+receipts remain native. See [state trust and privacy](docs/security.md) and
+[measured signature resources](docs/performance.md#signature-possession-measurements).
 
 ## Try an isolated regtest workflow
 
@@ -263,6 +283,11 @@ mixed outputs; duplicate outpoints cannot count twice.
 > QuietProof proves challenge-bound key knowledge. It does not prove exclusive ownership, legal title, solvency, liabilities, or that funds are locked or will remain unspent.
 
 ## Current metrics
+
+The scalar observations below retain their original labels and values.
+Separate [signature-possession measurements](docs/performance.md#signature-possession-measurements)
+cover the current composed circuit and actual 16-output browser verification;
+they are not replacements or scalar-to-signature estimates.
 
 The following measurements were taken on 2026-08-21 at commit `315aeea812f`
 on Linux x86-64, an Intel Core i9-12900HK, Debian clang 19.1.7, C++17, and the

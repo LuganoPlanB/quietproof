@@ -212,3 +212,68 @@ Optional `QUIETPROOF_WEBKIT_EXECUTABLE` selects the qualified existing launcher.
 The UI failure/timeout tests use a controlled memory ceiling and a test-only
 50 ms substitution for the normal five-minute deadline. Normal recovery runs
 the real proof verifier. No successful result is simulated.
+
+## Signature-possession measurements
+
+The historical scalar tables above retain their original dates, labels and
+values. The following are actual composed-signature observations from accepted
+L8 cohorts on 2026-11-01, not additive ECDSA/HASH160 estimates. They are reused
+with original UTC and exact source/module/fixture/configuration hashes; this
+documentation change did not execute or recompile those measurements.
+The [machine-readable measurement record](/references/signature-resources-2026-11-01.json)
+contains each lifecycle record, source hashes, full build provenance, proof/request
+hashes, host and engine identities and exact original times. Retained ON report
+SHA256 is `101d6506e2c222b0b253c4085282df0db47382d7ab93d0971061edb933bdebb5`.
+
+The host was Linux x86_64 kernel 6.12.113+deb13-amd64, AMD Ryzen 7 PRO 8700GE,
+16 logical CPUs, 66,422,718,464 B host RAM; Node 24.22.2/Playwright 1.61.1.
+The signature-enabled WASI 34/clang 23.1.0 reactor was 1,736,785 B, SHA256
+`2c35f1fa6a6394931930111cd91f367bf06e047eb1b9e4d457fd1bf33c8357b0`.
+It uses Release, RPC OFF and explicit signature ON, the pinned base SDK
+`d2b0fc515f8663e38c79a28e8900ce8438e0106e`, unchanged rate 4/queries 128,
+CRT/security guards and a 16 MiB initial/2 GiB maximum linear memory. Source hashes
+bind the accepted candidate `c3be863b643d32654728dc415ab3b44f6a5fe17e`;
+later packaging-only CMake changes have separately checked recipe equivalence.
+
+| Actual fixture | Claims / keys | Full envelope bytes | Chromium 149.0.7827.55 first verify | WebKit 26.5 first verify |
+| --- | ---: | ---: | ---: | ---: |
+| Signature P2PKH | 1 / 1 | 49,727,346 | 118.388s | 123.931s |
+| Signature P2WPKH | 1 / 1 | 49,727,698 | 118.364s | 123.623s |
+| Signature mixed | 2 / 1 | 49,728,563 | 117.471s | 123.821s |
+| Signature maximum | 16 / 1 | 49,729,089 | 115.068s | 123.440s |
+
+All rows ran real verification. Max16 is an actual 16-output single-key request,
+not a modeled/scaled result; more outputs do not add independent keys.
+Its same-worker repeats took 113.753 s/122.852 s (Chromium/WebKit), with peak
+observed linear allocation 1,301,413,888 B in both engines, versus 1,299,709,952 B
+on first verification. Growth was 1,703,936 B, below the unchanged 16 MiB repeat
+budget. These bytes are **not RSS, total browser memory or JS heap**. Full-file
+buffers, engine/code, OS and other processes add memory outside this measure.
+
+The ON cohort observed 10 engine/key cases: scalar and max16 each completed
+load/cold/repeat/mutation/reset/cancel/fresh-recovery/controlled 512 MiB-failure/
+production-recovery lifecycles in both engines. P2PKH/P2WPKH/mixed each received
+real verification only, not the full lifecycle. Separate OFF cohorts completed
+the scalar lifecycle in both engines with signature capability disabled. The
+OFF reactor SHA256 is
+`54327e9805ff18c851d4542e652cdb7601da01bc59467be3d95ecba5a9665210`.
+
+Regression alarms are 240 s for each signature verification, 100 s scalar, 10 s each
+asset/init/preparation, 1920 MiB linear allocation, 16 MiB repeat growth, 2 s heartbeat
+and cancellation settling. The operation deadline remains 300 s. These are local
+reference alarms, not cryptographic limits, timing guarantees or device minimums.
+The 128 MiB payload cap and 2 GiB module ceiling are unchanged. The
+native v3 format maximum is 134,221,894 B; the browser import and WASM ceiling
+remains 134,221,889 B for both modes. A native-format bound does not grant a
+larger browser allocation or accepted import size.
+
+Root/subpath Chromium/WebKit UI and history cohorts separately checked actual
+canonical requests, public result reports and max16 proofs. Completed affected
+browser-state cases were refreshed with current sources; retained unaffected
+cases preserve original UTC rather than becoming a new enclosing full run.
+The 390×844/1440×900 captures at 100%/200% repository text size are not actual
+browser page zoom, physical-mobile testing or a complete accessibility audit.
+Timeout/failure paths never reduce security parameters or supported claim caps.
+Original interrupted/failed attempts and their diagnostics remain in the local
+qualification record. The original L5.3 integrated malicious fresh-proof/advice
+attacks remain waived/unexecuted/unqualified; performance does not qualify them.

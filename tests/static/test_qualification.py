@@ -18,7 +18,7 @@ spec.loader.exec_module(qualification)
 
 
 class QualificationTests(unittest.TestCase):
-    def exercise(self, mode=None, fail_full=False, signature=False):
+    def exercise(self, mode=None, fail_full=False, signature=False, missing_core=False, required_skip=False):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / 'web/features/provider').mkdir(parents=True)
@@ -54,7 +54,20 @@ class QualificationTests(unittest.TestCase):
                                   for p in output.iterdir() if p.name != 'asset-manifest.json'}
                         (output / 'asset-manifest.json').write_text(json.dumps(hashes))
                     if command[0] == 'ctest':
-                        kwargs['stdout'].write('100% tests passed, 0 tests failed out of 2\nThe following tests did not run:\n  2 - optional-core-fixture (Skipped)\n')
+                        names = ['ordinary-test', 'quietproof-regtest-rpc-test']
+                        if required_skip:
+                            names.append('passing-control')
+                        if '--output-junit' in command:
+                            if signature and not missing_core:
+                                names += ['quietproof-signing-regtest-test', 'quietproof-signature-oracle-test',
+                                    'quietproof-signature-rpc-core-test', 'quietproof-signature-receipt-core-test',
+                                    'quietproof-signature-cli-core-test', 'quietproof-signature-funds-regtest-test']
+                            Path(command[command.index('--output-junit') + 1]).write_text('<testsuite>' + ''.join(
+                                '<testcase name="' + n + '">' + ('<skipped/>' if n == 'quietproof-regtest-rpc-test' or
+                                  (required_skip and n == 'ordinary-test') else '') + '</testcase>' for n in names) + '</testsuite>')
+                        kwargs['stdout'].write(f'100% tests passed, 0 tests failed out of {len(names)}\nThe following tests did not run:\n  2 - quietproof-regtest-rpc-test (Skipped)\n')
+                        if required_skip:
+                            kwargs['stdout'].write('  1 - ordinary-test (Skipped)\n')
                     else:
                         kwargs['stdout'].write('# tests 1\n# pass 1\n# fail 0\n')
                 def wait(self, timeout):
@@ -83,9 +96,14 @@ class QualificationTests(unittest.TestCase):
                 if fail_full:
                     with self.assertRaisesRegex(RuntimeError, 'full-browser failed'):
                         qualification.main()
+                elif missing_core or required_skip:
+                    with self.assertRaisesRegex(RuntimeError, 'requires enabled Core32|required test failed or skipped'):
+                        qualification.main()
                 else:
                     qualification.main()
             report = json.loads((root / 'evidence/qualification.json').read_text())
+            if not output.exists():
+                return commands, report, {}
             provenance = json.loads((output / 'build-provenance.json').read_text())
             hashes = json.loads((output / 'asset-manifest.json').read_text())
             self.assertEqual(hashes, {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
@@ -107,9 +125,7 @@ class QualificationTests(unittest.TestCase):
         native = next(c for c in commands if c[0] == 'ctest' and '-R' not in c)
         self.assertEqual(native[native.index('-LE') + 1], 'proof-heavy')
         build = next(c for c in commands if c[:2] == ['cmake', '--build'])
-        self.assertIn('--target', build)
-        self.assertIn('p2sh-multisig-test', build)
-        self.assertFalse({'pokc-test', 'quietproof-browser-verifier-test', 'quietproof-browser-fixtures'} & set(build))
+        self.assertNotIn('--target', build, 'build all registered non-proof prerequisites')
         wasm = next(c for c in commands if 'tests/wasm/browser.test.mjs' in c)
         self.assertIn('--test-skip-pattern=^(real proof stages|real signature|browser time and phase failures)', wasm)
         self.assertTrue(all(entry['status'] == 'not_run_by_selected_mode' for entry in report['notRun']))
@@ -136,7 +152,11 @@ class QualificationTests(unittest.TestCase):
         self.assertNotIn('-LE', native)
         native_record = next(c for c in report['checks'] if c['command'][0] == 'ctest')
         self.assertEqual(native_record['counts'], {'total': 2, 'fail': 0, 'pass': 1, 'skipped': 1})
-        self.assertEqual(native_record['skippedTests'], ['optional-core-fixture'])
+        self.assertEqual(native_record['skippedTests'], ['quietproof-regtest-rpc-test'])
+        offline = next(c['command'] for c in report['checks'] if c['name'] == 'native-off')
+        self.assertNotIn('-R', offline)
+        self.assertNotIn('-LE', offline)
+        self.assertIn('--output-junit', offline)
         self.assertTrue(any('web/features/provider/verification.browser.test.mjs' in c for c in commands))
         self.assertTrue(any(c[:3] == ['npm', 'run', 'test:wasm'] for c in commands))
 
@@ -156,10 +176,16 @@ class QualificationTests(unittest.TestCase):
     def test_signature_smoke_builds_registered_context_contracts(self):
         commands, _, _ = self.exercise('smoke', signature=True)
         build = next(c for c in commands if c[:2] == ['cmake', '--build'])
-        self.assertIn('quietproof-browser-context-linkage-test', build)
-        for variant in ['debug', 'optimized']:
-            for first in ['enabled', 'disabled']:
-                self.assertIn(f'quietproof-browser-context-{variant}-{first}-first-test', build)
+        self.assertNotIn('--target', build, 'all registered context/parser/reference targets must exist')
+
+    def test_full_signature_missing_core32_registration_fails(self):
+        _, report, provenance = self.exercise('full', signature=True, missing_core=True)
+        self.assertEqual(report['status'], 'failed')
+        self.assertEqual(provenance.get('qualification'), None)
+
+    def test_full_required_skip_fails(self):
+        _, report, _ = self.exercise('full', required_skip=True)
+        self.assertEqual(report['status'], 'failed')
 
     def test_local_default_remains_full(self):
         self.assert_full(None)
