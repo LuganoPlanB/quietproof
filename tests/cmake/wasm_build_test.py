@@ -14,6 +14,7 @@ def main():
     parser.add_argument('--work', type=Path, required=True)
     parser.add_argument('--native-prefix', type=Path, required=True)
     parser.add_argument('--wasi-sdk', type=Path, default=Path('/opt/wasi-sdk'))
+    parser.add_argument('--signature-mode', action='store_true')
     args = parser.parse_args()
     source = Path(__file__).resolve().parents[2]
     work = args.work.resolve()
@@ -127,6 +128,11 @@ int main() { std::vector<int> values(1); return values.front(); }
         '-DCMAKE_DISABLE_FIND_PACKAGE_Threads=TRUE',
         '-DCMAKE_DISABLE_FIND_PACKAGE_CURL=TRUE'])
     ninja = (cross / 'quietproof-build/build.ninja').read_text()
+    cache = (cross / 'quietproof-build/CMakeCache.txt').read_text()
+    assert ('QUIETPROOF_BUILD_SIGNATURE_MODE:BOOL=' + ('ON' if args.signature_mode else 'OFF')) in cache
+    provenance = json.loads((cross / 'build-provenance.json').read_text())
+    assert bool(provenance.get('signatureMode', False)) == args.signature_mode
+    assert 'LongfellowZKEcdsa' not in ninja and 'libsecp256k1' not in ninja
     assert 'quietproof_main.cc' not in ninja
     assert 'bitcoin_rpc.cc' not in ninja
     assert str(cross / 'sdk-prefix/lib/liblongfellow-zk.a') in ninja

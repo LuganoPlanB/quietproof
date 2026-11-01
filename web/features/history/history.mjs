@@ -1,4 +1,5 @@
 // Browser-local convenience only. No proof payload or acceptance decision is stored.
+import { decodeInspection } from '../../wasm/codec.mjs';
 export const HISTORY_LIMITS = Object.freeze({ requests: 8, checks: 24, requestBytes: 4096, totalBytes: 65536 });
 const DATABASE = 'quietproof-local-history-v1';
 const CHANNEL = 'quietproof-local-history-v1';
@@ -7,6 +8,23 @@ const hex = /^[0-9a-f]{64}$/;
 const uint = value => typeof value === 'string' && /^(0|[1-9][0-9]{0,19})$/.test(value);
 const text = (value, maximum) => typeof value === 'string' && value.length <= maximum;
 const network = value => ['mainnet', 'signet'].includes(value);
+function publicRequest(bytes) {
+  if (!(bytes instanceof ArrayBuffer) || !bytes.byteLength || bytes.byteLength > HISTORY_LIMITS.requestBytes)
+    throw new Error('Invalid public request.');
+  // The bounded public statement codec rejects QPA1 receipts, proof envelopes,
+  // trailing payloads and unknown versions before any storage write.
+  const inspection = new Uint8Array(61 + bytes.byteLength);
+  inspection.set(new TextEncoder().encode('QWI1')); inspection.set(new Uint8Array(bytes), 61);
+  const decoded = decodeInspection(inspection.buffer);
+  if (!network(decoded.network) || !text(decoded.verifier, 256) || !text(decoded.purpose, 64) ||
+      new TextEncoder().encode(decoded.verifier).length > 256 || new TextEncoder().encode(decoded.purpose).length > 64 ||
+      /[\x00-\x1f\x7f]/.test(decoded.verifier + decoded.purpose)) throw new Error('Invalid public request context.');
+  return decoded;
+}
+function sameRequest(row, decoded) {
+  return row.nonce === decoded.nonce && row.network === decoded.network &&
+    (row.proofMode === undefined || row.proofMode === decoded.proofMode);
+}
 function validate(raw) {
   if (raw === undefined) return empty();
   if (!raw || raw.version !== 1 || typeof raw.enabled !== 'boolean' || !text(raw.epoch, 64) ||
@@ -16,17 +34,24 @@ function validate(raw) {
     if (!text(row.id, 64) || !hex.test(row.hash) || !hex.test(row.nonce) || !network(row.network) ||
         !Number.isSafeInteger(row.time) || row.time < 0) throw new Error('Invalid local history entry.');
   }
-  for (const row of raw.requests) if (!(row.bytes instanceof ArrayBuffer) || !row.bytes.byteLength ||
-      row.bytes.byteLength > HISTORY_LIMITS.requestBytes || !text(row.verifier, 256) || !uint(row.expiresAt))
-    throw new Error('Invalid saved request.');
+  for (const row of raw.requests) {
+    const decoded = publicRequest(row.bytes);
+    if (!sameRequest(row, decoded) || row.verifier !== decoded.verifier || row.expiresAt !== decoded.expiresAt)
+      throw new Error('Invalid saved request.');
+  }
   for (const row of raw.checks) if (row.cryptography !== 'valid' || row.policy !== 'matched' ||
-      !['unavailable', 'reported_unspent', 'reported_spent', 'inconclusive'].includes(row.explorer)) throw new Error('Invalid local check marker.');
+      !['unavailable', 'reported_unspent', 'reported_spent', 'inconclusive'].includes(row.explorer) ||
+      (row.proofMode !== undefined && row.proofMode !== null && !['key-knowledge', 'signature-possession'].includes(row.proofMode)) ||
+      (row.fundsQualifiedAtCheck !== undefined && typeof row.fundsQualifiedAtCheck !== 'boolean') ||
+      (row.fundsQualifiedAtCheck && row.explorer !== 'reported_unspent')) throw new Error('Invalid local check marker.');
   if (size(raw) > HISTORY_LIMITS.totalBytes || (!raw.enabled && (raw.requests.length || raw.checks.length)))
     throw new Error('Local history exceeds its limits.');
   const common = row => ({ id: row.id, hash: row.hash, nonce: row.nonce, network: row.network, time: row.time });
   return { version: 1, enabled: raw.enabled, epoch: raw.epoch,
-    requests: raw.requests.map(row => ({ ...common(row), bytes: row.bytes, verifier: row.verifier, expiresAt: row.expiresAt })),
-    checks: raw.checks.map(row => ({ ...common(row), cryptography: row.cryptography, policy: row.policy, explorer: row.explorer })) };
+    requests: raw.requests.map(row => ({ ...common(row), bytes: row.bytes, verifier: row.verifier,
+      expiresAt: row.expiresAt, proofMode: publicRequest(row.bytes).proofMode })),
+    checks: raw.checks.map(row => ({ ...common(row), cryptography: row.cryptography, policy: row.policy,
+      explorer: row.explorer, proofMode: row.proofMode ?? null, fundsQualifiedAtCheck: row.fundsQualifiedAtCheck === true })) };
 }
 function size(state) { return state.requests.reduce((n, row) => n + row.bytes.byteLength + 1024, 0) + state.checks.length * 512; }
 function trim(state) {
@@ -105,16 +130,16 @@ export function setupHistory({ store = browserHistoryStore(), crypto = globalThi
   }
   async function ticket() { await refresh(); return available && state.enabled && !disposed ? state.epoch : null; }
   async function fingerprint(bytes) {
-    if (!(bytes instanceof ArrayBuffer) || !bytes.byteLength || bytes.byteLength > HISTORY_LIMITS.requestBytes)
-      throw new Error('Invalid local request.');
+    publicRequest(bytes);
     return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), b => b.toString(16).padStart(2, '0')).join('');
   }
   async function saveRequest(bytes, metadata, token) {
     if (!token || disposed) return false;
     try {
-      const copy = bytes.slice(0), hash = await fingerprint(copy);
-      const row = { id: id(), hash, bytes: copy, nonce: metadata.nonce, network: metadata.network,
-        verifier: metadata.verifier, expiresAt: metadata.expiresAt, time: now() };
+      const copy = bytes.slice(0), decoded = publicRequest(copy), hash = await fingerprint(copy);
+      if (!sameRequest(metadata, decoded)) throw new Error('Request metadata mismatch.');
+      const row = { id: id(), hash, bytes: copy, nonce: decoded.nonce, network: decoded.network,
+        verifier: decoded.verifier, expiresAt: decoded.expiresAt, proofMode: decoded.proofMode, time: now() };
       let saved = false;
       const committed = await change(raw => {
         const current = validate(raw);
@@ -128,9 +153,12 @@ export function setupHistory({ store = browserHistoryStore(), crypto = globalThi
   async function recordCheck(metadata, outcome, token) {
     if (!token || disposed || outcome.cryptography !== 'valid' || outcome.policy !== 'matched') return null;
     try {
-      const hash = await fingerprint(metadata.requestBytes);
+      const decoded = publicRequest(metadata.requestBytes), hash = await fingerprint(metadata.requestBytes);
+      if (!sameRequest(metadata, decoded)) throw new Error('Request metadata mismatch.');
       const row = { id: id(), hash, nonce: metadata.nonce, network: metadata.network, time: now(),
-        cryptography: outcome.cryptography, policy: outcome.policy, explorer: outcome.explorer };
+        cryptography: outcome.cryptography, policy: outcome.policy, explorer: outcome.explorer,
+        proofMode: decoded.proofMode, fundsQualifiedAtCheck: outcome.explorer === 'reported_unspent' &&
+          outcome.fundsEvidence?.qualifiedAtCheck === true };
       let repeat = false, saved = false;
       const committed = await change(raw => {
         const current = validate(raw);

@@ -1,0 +1,158 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { createHash } from 'node:crypto';
+import { chromium, webkit } from 'playwright';
+import { workflows, providerResponse } from '../request/workflow-fixtures.mjs';
+import { decodeInspection } from '../../wasm/codec.mjs';
+
+const origin=process.env.QUIETPROOF_SITE_ORIGIN;
+const disabledOrigin=process.env.QUIETPROOF_DISABLED_SITE_ORIGIN;
+const output=process.env.QUIETPROOF_SIGNATURE_UI_ARTIFACTS;
+const fixtureRoot=process.env.QUIETPROOF_VERIFY_FIXTURES;
+assert(origin && disabledOrigin && output && fixtureRoot, 'Enabled/disabled sites, public fixtures and evidence directory are required.');
+const proof=await readFile(resolve(fixtureRoot,'signature-mixed.qpf'));
+const request=await readFile(resolve(fixtureRoot,'signature-mixed.qpr'));
+// Change only the nonce: this is still a canonical, well-formed request, but
+// it was independently issued for a different challenge.
+const wrong=Buffer.from(request);
+let nonceOffset=10;
+for(let field=0;field<2;field++)nonceOffset+=2+wrong.readUInt16BE(nonceOffset);
+wrong[nonceOffset]^=1;
+const upload=(name,buffer)=>({ name,buffer,mimeType:'application/octet-stream' });
+const layouts=[[390,844,100],[390,844,200],[1280,800,100],[1280,800,200]];
+const digest=value=>createHash('sha256').update(value).digest('hex');
+
+for (const [name,engine] of [['chromium',chromium],['webkit',webkit]]) {
+  test(`${name}: signature request/input/results and capability/error matrix`,{ timeout:900000 },async()=>{
+    const browser=await engine.launch({ headless:true,...(name==='webkit'&&process.env.QUIETPROOF_WEBKIT_EXECUTABLE?
+      { executablePath:process.env.QUIETPROOF_WEBKIT_EXECUTABLE }:{}) });
+    const directory=resolve(output,name);await mkdir(directory,{ recursive:true });
+    const captures=[],downloads=[],errors=[];let page;
+    async function zoom(layout) {
+      const [width,height,scale]=layout;await page.setViewportSize({ width,height });
+      await page.evaluate(scale=>{
+        let style=document.querySelector('#signature-test-zoom');
+        if(!style){style=document.createElement('style');style.id='signature-test-zoom';document.head.append(style);}
+        style.textContent=`html, .quietproof-request, .quietproof-verify { font-size:${16*scale/100}px !important; line-height:1.6; }`;
+      },scale);
+    }
+    async function capture(state,layout,section) {
+      await zoom(layout);await page.evaluate(()=>scrollTo(0,0));await page.waitForTimeout(100);
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${state} no page overflow`);
+      const [width,height,scale]=layout,id=`${name}-${width}x${height}-${scale}-${state}`;
+      const full=resolve(directory,id+'.png');await page.screenshot({ path:full,fullPage:true,animations:'disabled' });
+      if(section){await section.evaluate(element=>element.scrollIntoView({block:'start'}));await page.screenshot({ path:resolve(directory,id+'-detail.png'),animations:'disabled' });}
+      captures.push({ state,width,height,textZoom:scale,path:full,observedAt:new Date().toISOString() });
+    }
+    async function support(selector) {
+      const button=page.getByRole('button',{ name:'Check signature support',exact:true });
+      await button.focus();await page.keyboard.press('Enter');
+      await page.locator(selector+' option[value="signature-possession"]').waitFor({ state:'attached' });
+      await page.locator(selector).selectOption('signature-possession');
+    }
+    async function publicLookup(workflow) {
+      await page.getByLabel('Bitcoin addresses').fill(workflow.claims.map(c=>c.address).join('\n'));
+      await page.getByRole('button',{ name:'Look up outputs',exact:true }).click();
+      const boxes=page.locator('.quietproof-claims').getByRole('checkbox');await boxes.first().waitFor();
+      await boxes.first().focus();await page.keyboard.press('Space');
+      for(let i=1;i<workflow.claims.length;i++)await boxes.nth(i).check();
+      await page.getByLabel('Intended verifier').fill('signature-ui.example');
+    }
+    try {
+      const workflow=workflows.find(w=>w.id==='mainnet-mixed-same-key');
+      for(const layout of layouts){
+        page=await browser.newPage({ viewport:{ width:layout[0],height:layout[1] },acceptDownloads:true });
+        page.on('pageerror',e=>errors.push(e.message));
+        let providerCalls=0;
+        await page.route('https://blockstream.info/**',route=>{providerCalls++;return route.fulfill(providerResponse(workflow,route.request().url()));});
+        await page.goto(origin+'/tool');await page.getByRole('button',{name:'Create request',exact:true}).waitFor();
+        assert.equal(await page.locator('#qp-request-proof-mode').inputValue(),'key-knowledge');
+        assert.equal(await page.getByLabel('Purpose',{exact:true}).inputValue(),'proof-of-control');
+        assert.equal(await page.getByLabel('Request lifetime').inputValue(),'300');
+        assert.equal(await page.locator('#qp-request-proof-mode option[value="signature-possession"]').count(),0);
+        await support('#qp-request-proof-mode');assert.equal(providerCalls,0,'capability lookup makes no explorer request');
+        await publicLookup(workflow);
+        assert.deepEqual(await page.getByLabel('Signing script kind').locator('option').evaluateAll(nodes=>nodes.map(n=>n.value)),['p2wpkh','p2pkh']);
+        const create=page.getByRole('button',{name:'Create request',exact:true});await create.focus();await page.keyboard.press('Enter');
+        const preview=page.getByRole('region',{name:'Canonical request preview'});await preview.waitFor();
+        assert.match(await preview.innerText(),/Signature possession/);assert.match(await preview.innerText(),/does not establish signing time/);
+        await capture('RequestForm',layout,preview);
+        const event=page.waitForEvent('download');await page.getByRole('link',{name:'Download .qpr request',exact:true}).click();
+        const file=await event;const bytes=await readFile(await file.path());assert.equal(bytes[4],3);
+        const path=resolve(directory,`${name}-${layout[0]}-${layout[2]}.qpr`);await writeFile(path,bytes);
+        const encodedInspection=new Uint8Array(61+bytes.length);encodedInspection.set(new TextEncoder().encode('QWI1'));encodedInspection.set(bytes,61);
+        const inspected=decodeInspection(encodedInspection.buffer);
+        assert.equal(inspected.statementVersion,3);assert.equal(inspected.proofMode,'signature-possession');
+        assert.equal(inspected.signatureProfile,1);assert.equal(inspected.signingKind,'p2wpkh');
+        assert.equal(inspected.verifier,'signature-ui.example');assert.equal(inspected.claims.length,2);
+        assert.deepEqual(Buffer.from(inspected.requestBytes),bytes);
+        downloads.push({ path,sha256:digest(bytes),inspected:{...inspected,requestBytes:undefined} });
+        await page.getByLabel('Signing script kind').selectOption('p2pkh');assert.equal(await preview.count(),0,'mode-specific edits clear preview');
+        await page.close();
+
+        page=await browser.newPage({ viewport:{width:layout[0],height:layout[1]} });page.on('pageerror',e=>errors.push(e.message));
+        await page.route('https://blockstream.info/**',route=>{throw new Error('Offline proof controls must not contact an explorer');});
+        await page.goto(origin+'/verify');
+        const inspect=page.getByRole('button',{name:'Inspect proof and policy',exact:true});await inspect.waitFor();
+        const proofInput=page.getByLabel('Proof file (.qpf)',{exact:true});await proofInput.setInputFiles(upload('public.qpf',proof));
+        await inspect.click();await page.getByRole('alert').filter({hasText:'Proof mode does not match'}).waitFor();
+        await capture('mismatched-mode',layout);
+        await support('#qp-verify-proof-mode');
+        assert.equal(await page.getByLabel('Expected policy source').inputValue(),'request');
+        assert.equal(await page.getByLabel('Expected policy source').locator('option').count(),1);
+        await inspect.focus();await page.keyboard.press('Enter');await page.getByRole('alert').filter({hasText:'.qpr'}).waitFor();
+        await capture('missing-request',layout);
+        const expected=page.getByLabel('Expected request file (.qpr)',{exact:true});
+        await expected.setInputFiles(upload('retained.qpr',request));
+        await proofInput.setInputFiles(upload('private.qpa',Buffer.from('QPA1private fixture marker')));
+        await inspect.click();await page.getByRole('alert').filter({hasText:'Private .qpa'}).waitFor();await capture('receipt-rejected',layout);
+        await proofInput.setInputFiles(upload('renamed.qpf',Buffer.from('QPA1private fixture marker')));
+        await inspect.click();await page.getByRole('alert').filter({hasText:'authorization receipt detected'}).waitFor();
+        await proofInput.setInputFiles(upload('public.qpf',proof));
+        await expected.focus();assert.equal(await page.evaluate(()=>document.activeElement.id),'qp-expected');
+        await expected.setInputFiles(upload('wrong.qpr',wrong));await inspect.click();
+        await page.getByRole('alert').filter({hasText:'Expected policy rejected'}).waitFor();await capture('mismatched-request',layout);
+        await expected.setInputFiles(upload('retained.qpr',request));await inspect.click();
+        await page.getByText('Expected policy matched at inspection time.',{exact:false}).waitFor();
+        assert.equal(await page.getByLabel('Verification network (chosen independently)').inputValue(),'');
+        const inspection=page.getByRole('region',{name:'Unverified inspection'});
+        assert.match(await inspection.innerText(),/does not prove knowledge of the private key/);
+        await capture('ProofInput',layout,inspection);
+        if(layout!==layouts.at(-1))await page.close();
+      }
+      await page.getByLabel('Verification network (chosen independently)').selectOption('mainnet');
+      await page.getByRole('button',{name:'Verify offline',exact:true}).click();
+      await page.locator('[data-result=crypto]').filter({hasText:/^Valid$/}).waitFor({ timeout:240000 });
+      const results=page.getByRole('region',{name:'Verification results'});
+      assert.equal(await page.getByRole('heading',{name:'Separate verification results',exact:true}).evaluate(element=>element===document.activeElement),true,'completed results receive keyboard focus');
+      assert.match(await results.innerText(),/Signature possession/);assert.match(await results.innerText(),/can be delegated/);
+      assert.match(await results.innerText(),/does not prove knowledge of the private key/);
+      assert.equal(await page.locator('[data-result=explorer]').innerText(),'Unavailable');
+      for(const layout of layouts)await capture('results',layout,results);
+      await page.close();
+      for(const layout of layouts){
+        page=await browser.newPage({viewport:{width:layout[0],height:layout[1]}});
+        await page.goto(disabledOrigin+'/verify');await page.getByRole('button',{name:'Check signature support',exact:true}).click();
+        await page.getByText('Signature possession is unavailable in this verifier build.',{exact:false}).waitFor();
+        assert.equal(await page.locator('#qp-verify-proof-mode option[value="signature-possession"]').count(),0);
+        assert.equal(await page.locator('#qp-verify-proof-mode').inputValue(),'key-knowledge');
+        await capture('disabled-capability',layout);await page.close();
+        page=await browser.newPage({viewport:{width:layout[0],height:layout[1]}});
+        await page.goto(disabledOrigin+'/tool');
+        const check=page.getByRole('button',{name:'Check signature support',exact:true});await check.focus();await page.keyboard.press('Enter');
+        await page.getByText('Signature possession is unavailable in this verifier build.',{exact:false}).waitFor();
+        assert.equal(await page.locator('#qp-request-proof-mode option[value="signature-possession"]').count(),0);
+        assert.equal(await page.locator('#qp-request-proof-mode').inputValue(),'key-knowledge');
+        await capture('RequestForm-disabled-capability',layout,page.locator('#qp-request-proof-mode').locator('..'));
+        await page.close();
+      }
+      assert.deepEqual(errors,[]);
+      await writeFile(resolve(directory,'matrix.json'),JSON.stringify({ engine:name,browserVersion:browser.version(),proofSha256:digest(proof),
+        requestSha256:digest(request),captures,downloads,errors,realSignatureVerification:true,
+        zoomMethod:'Repository text zoom: html and feature font size 16px/32px at fixed viewport; full-page and viewport detail captures.' },null,2));
+      console.log(JSON.stringify({engine:name,captures:captures.length,downloads:downloads.length,realSignatureVerification:true}));
+    } finally {await page?.close().catch(()=>{});await browser.close();}
+  });
+}

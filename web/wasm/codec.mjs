@@ -42,7 +42,14 @@ export function encodeRequestOptions(options) {
     put(out);
   };
   const string = (value, maximum) => { const data = text(value, maximum); uint(data.length, 2); put(data); };
-  put(encoder.encode('QWC1'));
+  if (options.proofMode !== undefined && !['key-knowledge', 'signature-possession'].includes(options.proofMode))
+    throw new Error('Unsupported proof mode.');
+  const signature = options.proofMode === 'signature-possession';
+  put(encoder.encode(signature ? 'QWC2' : 'QWC1'));
+  if (signature) {
+    if (!['p2wpkh', 'p2pkh'].includes(options.signingKind)) throw new Error('Select a supported signing kind.');
+    uint(1, 1); uint(options.signingKind === 'p2wpkh' ? 0 : 1, 1);
+  }
   uint(options.network === 'mainnet' ? 0 : 2, 1);
   uint(options.lifetimeSeconds, 8);
   string(options.verifier, 256);
@@ -75,21 +82,37 @@ export function decodeInspection(buffer) {
   const statementStart = offset;
   if (decoder.decode(take(4)) !== 'QPS1') throw new Error('Invalid statement format.');
   const statementVersion = number(1), networkId = number(1);
+  if (networkId > 4) throw new Error('Unsupported statement network.');
+  let proofMode = 'key-knowledge', signingKind = null, signatureProfile = null;
+  if (statementVersion === 3) {
+    if (number(1) !== 1) throw new Error('Unsupported signature mode.');
+    signatureProfile = number(2);
+    const kind = number(1);
+    if (signatureProfile !== 1 || kind > 1) throw new Error('Unsupported signature profile.');
+    proofMode = 'signature-possession'; signingKind = kind === 0 ? 'p2wpkh' : 'p2pkh';
+  } else if (![1, 2].includes(statementVersion)) throw new Error('Unsupported statement version.');
   const verifier = string(), purpose = string();
   const nonce = hexify(take(32)), messageHash = hexify(take(32));
   const notBefore = uint(8).toString(), expiresAt = uint(8).toString();
-  const hasSnapshot = number(1) === 1;
+  const snapshotFlag = number(1);
+  if (snapshotFlag > 1) throw new Error('Invalid snapshot flag.');
+  const hasSnapshot = snapshotFlag === 1;
   const snapshot = hasSnapshot ? { block: hexify(take(32)), height: number(4) } : null;
-  const hasBridge = number(1) === 1;
+  const bridgeFlag = number(1);
+  if (bridgeFlag > 1) throw new Error('Invalid bridge flag.');
+  const hasBridge = bridgeFlag === 1;
   const bridge = hasBridge ? { networkId: number(1), commitment: hexify(take(32)), assetId: string(), lockId: hexify(take(32)) } : null;
   const count = number(2), claims = [];
+  if (count < 1 || count > 16) throw new Error('Invalid claim count.');
   for (let i = 0; i < count; i++) {
     const txid = hexify(take(32)), vout = number(4), amountSats = uint(8).toString();
-    const kind = statementVersion === 2 ? number(1) : 0;
+    const kind = statementVersion >= 2 ? number(1) : 0;
+    if (kind > 1) throw new Error('Unsupported claim script kind.');
     claims.push({ txid, vout, amountSats, scriptKind: kind === 0 ? 'p2wpkh' : 'p2pkh', program: hexify(take(20)) });
   }
   if (offset !== bytes.length) throw new Error('Trailing inspection bytes.');
-  return { verified: false, envelopeVersion, proofCreatedAt: envelopeVersion === 2 ? proofCreatedAt : null,
+  return { verified: false, envelopeVersion, proofCreatedAt: envelopeVersion >= 2 ? proofCreatedAt : null,
+    proofMode, signatureProfile, signingKind,
     circuitDigest, circuitVersion, rate, queries, proofBytes, statementVersion,
     network: ['mainnet', 'testnet3', 'signet', 'regtest', 'testnet4'][networkId], verifier, purpose,
     nonce, messageHash, notBefore, expiresAt, snapshot, bridge, claims,
@@ -110,9 +133,14 @@ class Writer {
 }
 export function encodePolicy(policy) {
   if (!policy || typeof policy !== 'object') throw new Error('Independent expected policy is required.');
-  const w = new Writer(); w.put(encoder.encode('QWP1'));
+  if (policy.proofMode !== undefined && !['key-knowledge', 'signature-possession'].includes(policy.proofMode))
+    throw new Error('Unsupported proof mode.');
+  const signature = policy.proofMode === 'signature-possession';
+  const w = new Writer(); w.put(encoder.encode(signature ? 'QWP2' : 'QWP1'));
+  if (signature) w.uint(1, 1);
   const exact = policy.expectedRequest instanceof ArrayBuffer;
   if (policy.expectedRequest !== undefined && !exact) throw new Error('Expected request must be binary.');
+  if (signature && !exact) throw new Error('Independently retained signature request is required.');
   w.uint(exact ? 0 : 1, 1);
   w.uint(policy.maxLifetimeSeconds, 8); w.uint(policy.minConfirmations, 8);
   w.uint(policy.minimumTotalSats, 8); w.uint(policy.maxObservationAgeSeconds, 8);

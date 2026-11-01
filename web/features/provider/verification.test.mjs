@@ -8,6 +8,9 @@ for (const network of ['mainnet', 'signet']) test(`${network}: verified manifest
   const h = harness({ network }), result = await h.run();
   assert.equal(result.cryptography, 'valid'); assert.equal(result.explorer, 'reported_unspent');
   assert.equal(result.authorizes, false); assert.equal(result.provenance.atomic, false);
+  assert.equal(result.fundsEvidence.qualifiedAtCheck,true);
+  assert.equal(result.fundsEvidence.validatedNode,false);
+  assert.equal(result.fundsEvidence.provider,h.provider.endpoint);
   assert.equal(result.provenance.network, network); assert.equal(result.provenance.attempts.length, 1);
   assert.equal(h.evidence[0].claims[0].confirmations, 11);
   assert.notEqual(h.evidence[0].tipBefore.block, fixtures.block);
@@ -22,6 +25,7 @@ for (const network of ['mainnet', 'signet']) test(`${network}: verified manifest
 test('invalid cryptography never fetches, despite caller validation boolean', async () => {
   const h = harness({ invalid: true }); const result = await h.run({ validated: true });
   assert.equal(result.cryptography, 'invalid'); assert.equal(result.explorer, 'unavailable');
+  assert.equal(result.fundsEvidence.qualifiedAtCheck,false);
   assert.equal(h.requests.length, 0); assert.equal(h.evidence.length, 0); assert.ok(h.workers[0].terminated);
 });
 test('policy rejection never fetches', async () => {
@@ -40,6 +44,7 @@ test('offline cryptography remains possible without explorer requests', async ()
   const h = harness(); h.policy.provider = '';
   const result = await h.run({ online: false });
   assert.equal(result.cryptography, 'valid'); assert.equal(result.explorer, 'unavailable'); assert.equal(h.requests.length, 0);
+  assert.equal(result.fundsEvidence.qualifiedAtCheck,false);assert.equal(result.fundsEvidence.provider,null);
 });
 test('progress reports actual ordered stages and exposes no mutable proof context', async () => {
   const h = harness(), phases = [];

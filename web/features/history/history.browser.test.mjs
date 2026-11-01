@@ -61,7 +61,10 @@ async function rawState(page) {
     request.onerror = () => reject(new Error('Cannot inspect test history'));
     request.onsuccess = () => {
       const db = request.result, tx = db.transaction('state', 'readonly'), get = tx.objectStore('state').get('local');
-      get.onsuccess = () => resolve(get.result ? { enabled: get.result.enabled, requests: get.result.requests.map(r => ({ hash: r.hash, bytes: r.bytes.byteLength, keys: Object.keys(r) })), checks: get.result.checks.map(r => ({ hash: r.hash, keys: Object.keys(r) })) } : null);
+      get.onsuccess = () => resolve(get.result ? { enabled: get.result.enabled, keys: Object.keys(get.result),
+        requests: get.result.requests.map(r => ({ hash: r.hash, bytes: r.bytes.byteLength,
+          canonicalBytes: [...new Uint8Array(r.bytes)], keys: Object.keys(r) })),
+        checks: get.result.checks.map(r => ({ hash: r.hash, keys: Object.keys(r) })) } : null);
       tx.oncomplete = () => db.close(); tx.onerror = () => { db.close(); reject(new Error('Cannot inspect history')); };
     };
   }));
@@ -156,7 +159,13 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
       await page.getByText('1 saved requests; 1 completed check markers.', { exact: true }).waitFor();
       assert.equal(explorerRequests, beforeVerify); await capture(page, name, 'first-offline-check');
       const stored = await rawState(page); assert.equal(stored.requests[0].hash, fixture.qprSha256); assert.equal(stored.requests[0].bytes, request.length);
-      assert(stored.requests.every(r => !r.keys.some(k => /proof|secret/i.test(k)))); assert(stored.checks.every(r => !r.keys.includes('bytes')));
+      assert.deepEqual(stored.keys.sort(), ['version', 'enabled', 'epoch', 'requests', 'checks'].sort());
+      for (const row of stored.requests) {
+        assert.deepEqual(row.keys.sort(), ['id', 'hash', 'bytes', 'nonce', 'network', 'verifier', 'expiresAt', 'proofMode', 'time'].sort());
+        assert.deepEqual(Buffer.from(row.canonicalBytes), request, 'stored payload is exactly the downloaded canonical public request');
+      }
+      for (const row of stored.checks)
+        assert.deepEqual(row.keys.sort(), ['id', 'hash', 'nonce', 'network', 'time', 'cryptography', 'policy', 'explorer', 'proofMode', 'fundsQualifiedAtCheck'].sort());
       const second = await context.newPage(); await second.goto(origin+'/verify'); await ready(second); await prepareVerification(second, fixture, true); await verify(second);
       await second.getByText('Local repeat warning: this request or nonce', { exact: false }).waitFor();
       await page.getByText('1 saved requests; 2 completed check markers.', { exact: true }).waitFor();

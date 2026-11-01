@@ -65,6 +65,7 @@ def main():
     parser.add_argument('--sdk-source', type=Path, required=True)
     parser.add_argument('--theme-source', type=Path, default=ROOT.parent / 'vite-theme')
     parser.add_argument('--base', default='/')
+    parser.add_argument('--signature-mode', action='store_true')
     parser.add_argument('--allow-dirty', action='store_true', help='Local review only; record exact dirty sources')
     parser.add_argument('--source-addition', action='append', default=[], help='Explicit new local source path for review builds')
     args = parser.parse_args()
@@ -85,6 +86,8 @@ def main():
         parser.error('release builds require clean tracked sources; --allow-dirty is local-review only')
     cross = args.cross_work.resolve()
     provenance = json.loads((cross / 'build-provenance.json').read_text())
+    if bool(provenance.get('signatureMode', False)) != args.signature_mode:
+        parser.error('reactor signature capability mismatch; rebuild with matching --signature-mode')
     wasm = cross / 'quietproof-build/quietproof.wasm'
     if provenance['pins'] != pins or provenance['reactorSha256'] != sha(wasm):
         parser.error('reactor provenance/pins mismatch; rebuild WASM')

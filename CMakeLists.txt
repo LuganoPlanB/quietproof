@@ -119,11 +119,15 @@ endif()
 if(QUIETPROOF_BUILD_WASM)
   add_executable(quietproof-wasm src/wasm/reactor.cc)
   target_link_libraries(quietproof-wasm PRIVATE LongfellowZKQuietProof::quietproof)
+  if(QUIETPROOF_BUILD_SIGNATURE_MODE)
+    target_link_libraries(quietproof-wasm PRIVATE LongfellowZKQuietProof::signature)
+  endif()
   target_link_options(quietproof-wasm PRIVATE
     -mexec-model=reactor
     -Wl,--initial-memory=16777216 -Wl,--max-memory=2147483648
     -Wl,-z,stack-size=1048576
     -Wl,--export=quietproof_wasm_abi_version
+    -Wl,--export=quietproof_wasm_capabilities
     -Wl,--export=quietproof_wasm_alloc -Wl,--export=quietproof_wasm_free
     -Wl,--export=quietproof_wasm_smoke
     -Wl,--export=quietproof_wasm_create_request -Wl,--export=quietproof_wasm_inspect
@@ -159,6 +163,10 @@ install(DIRECTORY docs/
   PATTERN ".vitepress/cache" EXCLUDE)
 install(DIRECTORY spec/
   DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/LongfellowZKQuietProof/spec)
+# Public reference symlinks in docs/public/references retain their repository
+# relative layout in installed documentation.
+install(FILES scripts/generate_signature_profile.py
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/LongfellowZKQuietProof/scripts)
 
 if(BUILD_TESTING)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
@@ -439,6 +447,70 @@ if(BUILD_TESTING)
   # Explicit fixture generator: public disposable scalars; never part of WASM.
   add_executable(quietproof-browser-fixtures tests/wasm/proof_fixtures.cc)
   target_link_libraries(quietproof-browser-fixtures PRIVATE LongfellowZKQuietProof::quietproof)
+  add_executable(quietproof-browser-signature-test tests/wasm/signature_verifier_test.cc)
+  target_link_libraries(quietproof-browser-signature-test PRIVATE LongfellowZKQuietProof::quietproof)
+  if(QUIETPROOF_BUILD_SIGNATURE_MODE)
+    target_link_libraries(quietproof-browser-signature-test PRIVATE LongfellowZKQuietProof::signature)
+    set(_qp_browser_disabled)
+  else()
+    set(_qp_browser_disabled --disabled)
+  endif()
+  add_test(NAME quietproof-browser-signature-test COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm/signature_fixtures.py
+    --driver $<TARGET_FILE:quietproof-browser-signature-test>
+    --output ${CMAKE_CURRENT_BINARY_DIR}/tests/wasm-real ${_qp_browser_disabled})
+  set_tests_properties(quietproof-browser-signature-test PROPERTIES
+    LABELS "proof-heavy" RUN_SERIAL TRUE TIMEOUT 7200)
+  add_executable(quietproof-browser-context-linkage-test
+    tests/wasm/context_linkage/main.cc tests/wasm/context_linkage/disabled.cc)
+  target_link_libraries(quietproof-browser-context-linkage-test PRIVATE LongfellowZKQuietProof::quietproof)
+  add_test(NAME quietproof-browser-context-linkage-test COMMAND quietproof-browser-context-linkage-test)
+  if(QUIETPROOF_BUILD_SIGNATURE_MODE)
+    foreach(variant IN ITEMS debug optimized)
+      foreach(capability IN ITEMS disabled enabled)
+        set(object quietproof-browser-context-${variant}-${capability})
+        add_library(${object} OBJECT tests/wasm/context_linkage/${capability}.cc)
+        if(capability STREQUAL "enabled")
+          target_link_libraries(${object} PRIVATE LongfellowZKQuietProof::signature)
+        else()
+          target_link_libraries(${object} PRIVATE LongfellowZKQuietProof::quietproof)
+        endif()
+        set_property(TARGET ${object} PROPERTY INTERPROCEDURAL_OPTIMIZATION FALSE)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+          target_compile_options(${object} PRIVATE -fno-lto)
+          if(variant STREQUAL "debug")
+            target_compile_options(${object} PRIVATE -O0 -fno-inline -fno-inline-functions)
+          else()
+            target_compile_options(${object} PRIVATE -O2)
+          endif()
+        elseif(MSVC)
+          if(variant STREQUAL "debug")
+            target_compile_options(${object} PRIVATE /Od /Ob0)
+          else()
+            target_compile_options(${object} PRIVATE /O2)
+          endif()
+        endif()
+      endforeach()
+      foreach(first IN ITEMS disabled enabled)
+        if(first STREQUAL "disabled")
+          set(second enabled)
+        else()
+          set(second disabled)
+        endif()
+        set(test quietproof-browser-context-${variant}-${first}-first-test)
+        add_executable(${test} tests/wasm/context_linkage/main.cc
+          $<TARGET_OBJECTS:quietproof-browser-context-${variant}-${first}>
+          $<TARGET_OBJECTS:quietproof-browser-context-${variant}-${second}>)
+        target_compile_definitions(${test} PRIVATE QUIETPROOF_TEST_BROWSER_MIXED=1)
+        target_link_libraries(${test} PRIVATE LongfellowZKQuietProof::quietproof)
+        add_test(NAME ${test} COMMAND ${test})
+      endforeach()
+    endforeach()
+    add_test(NAME quietproof-browser-context-proof-test
+      COMMAND quietproof-browser-context-optimized-disabled-first-test ${CMAKE_CURRENT_BINARY_DIR}/tests/wasm-real)
+    set_tests_properties(quietproof-browser-context-proof-test PROPERTIES
+      DEPENDS quietproof-browser-signature-test LABELS "proof-heavy" RUN_SERIAL TRUE TIMEOUT 600)
+  endif()
   add_pokc_test(quietproof-integration-test tests/quietproof/integration_test.cc)
   add_pokc_test(pokc-sage-test tests/quietproof/pokc_sage_vector_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/testdata/pokc_sage_vectors.json)

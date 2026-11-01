@@ -4,6 +4,7 @@
 #define QUIETPROOF_BROWSER_VERIFIER_H_
 
 #include "pokc/verifier.h"
+#include "poksig/verifier.h"
 #include "quietproof/browser.h"
 #include "quietproof/chain_state.h"
 
@@ -16,13 +17,21 @@ struct QuietProofBrowserPolicy {
   std::vector<uint8_t> expected_request;
   uint64_t max_lifetime = 0, min_confirmations = 0, minimum_total = 0;
   uint64_t max_observation_age = 0;
+  // Keep original aggregate field order for existing source consumers.
+  bool allow_signature_possession = false;
 };
 inline bool DecodeQuietProofBrowserPolicy(const std::vector<uint8_t>& bytes,
                                          QuietProofBrowserPolicy* output) {
   if (!output || bytes.size() > 8192) return false;
   QuietProofReader r(bytes); uint8_t magic[4], mode, network;
   QuietProofBrowserPolicy p;
-  if (!r.bytes(magic, 4) || std::memcmp(magic, "QWP1", 4) || !r.u8(&mode) || mode > 1 ||
+  if (!r.bytes(magic, 4)) return false;
+  if (!std::memcmp(magic, "QWP2", 4)) {
+    uint8_t selected;
+    if (!r.u8(&selected) || selected > 1) return false;
+    p.allow_signature_possession = selected == 1;
+  } else if (std::memcmp(magic, "QWP1", 4)) return false;
+  if (!r.u8(&mode) || mode > 1 || (p.allow_signature_possession && mode != 0) ||
       !r.u64(&p.max_lifetime) || !p.max_lifetime || p.max_lifetime > 86400 ||
       !r.u64(&p.min_confirmations) || !r.u64(&p.minimum_total) ||
       p.minimum_total > kQuietProofMaxMoneySats || !r.u64(&p.max_observation_age) ||
@@ -34,7 +43,11 @@ inline bool DecodeQuietProofBrowserPolicy(const std::vector<uint8_t>& bytes,
     p.expected_request.resize(count);
     if (!r.bytes(p.expected_request.data(), count)) return false;
     QuietProofStatementV1 s;
-    if (!DecodeQuietProofStatement(p.expected_request, &s)) return false;
+    if (p.allow_signature_possession) {
+      QuietProofSignatureStatementV3 signature;
+      if (!DecodeQuietProofSignatureStatement(p.expected_request, &signature)) return false;
+      s = signature;
+    } else if (!DecodeQuietProofStatement(p.expected_request, &s)) return false;
     p.network = s.network; p.verifier = s.verifier; p.purpose = s.purpose;
     p.message_hash = s.bip322_message_hash;
   } else {
@@ -62,15 +75,24 @@ struct QuietProofBrowserOutcome {
   uint64_t total_sats = 0;
 };
 
-// One immutable proof/policy context. No callback can substitute cryptography or
-// treat explorer observations as an authenticated chain snapshot.
+namespace quietproof_detail {
+template <class Operation> struct BrowserSignatureBinding;
+}
+
+// One immutable proof/policy context, with external linkage for existing
+// cross-TU callers. Public operations accept no cryptographic callbacks.
+// Signature preparation binds its local implementation once; subsequent
+// operations use that binding even when the context crosses a TU boundary.
 class QuietProofBrowserVerification {
  public:
   enum class Phase { kEmpty, kPrepared, kVerified, kFinished };
   bool Prepare(QuietProofEnvelopeV1 envelope, QuietProofBrowserPolicy policy,
                uint64_t now) {
     phase_ = Phase::kEmpty; outcome_ = {}; error_ = ""; unsupported_ = false;
+    signature_bytes_.clear(); signature_ = false;
+    signature_enabled_ = false; signature_supported_ = nullptr; signature_verify_ = nullptr;
     envelope_ = std::move(envelope); policy_ = std::move(policy);
+    if (policy_.allow_signature_possession) return Fail("Proof mode mismatch");
     if (envelope_.statement.has_snapshot || envelope_.statement.has_bridge_binding ||
         envelope_.statement.purpose == "bridge-authorization") {
       unsupported_ = true; return Fail("Unsupported snapshot or bridge mode");
@@ -79,14 +101,63 @@ class QuietProofBrowserVerification {
     QuietProofBrowserMetadata(envelope_, true, &metadata_);
     phase_ = Phase::kPrepared; return true;
   }
+ private:
+  template <class Operation> friend struct quietproof_detail::BrowserSignatureBinding;
+  bool PrepareSignature(std::vector<uint8_t> bytes, QuietProofBrowserPolicy policy,
+                        uint64_t now) {
+    phase_ = Phase::kEmpty; outcome_ = {}; error_ = ""; unsupported_ = false;
+    signature_ = true; signature_bytes_.clear(); metadata_.clear();
+    policy_ = std::move(policy); envelope_ = {};
+    if (!policy_.allow_signature_possession) return Fail("Signature mode not allowed");
+    if (!signature_enabled_ || !signature_supported_ || !signature_verify_) {
+      unsupported_ = true; return Fail("signature_mode_disabled");
+    }
+    QuietProofSignatureStatementV3 expected;
+    if (policy_.expected_request.empty() ||
+        !DecodeQuietProofSignatureStatement(policy_.expected_request, &expected))
+      return Fail("Independently retained signature request required");
+    QuietProofSignatureEnvelopeMetadataV3 m;
+    QuietProofSignatureEnvelopeError error;
+    if (!InspectQuietProofSignatureEnvelope(bytes, &m, &error)) {
+      unsupported_ = error == QuietProofSignatureEnvelopeError::kUnsupported;
+      return Fail(QuietProofSignatureEnvelopeErrorName(error));
+    }
+    if (m.request != policy_.expected_request) return Fail("Expected request mismatch");
+    if (!signature_supported_(bytes, &error)) {
+      unsupported_ = true; return Fail(QuietProofSignatureEnvelopeErrorName(error));
+    }
+    // The common projection is used only for public policy/UTXO evidence.
+    // Cryptography and metadata always use the retained canonical v3 bytes.
+    envelope_.statement = expected;
+    envelope_.proof_created_at = m.proof_created_at;
+    if (expected.has_snapshot) {
+      unsupported_ = true; return Fail("Unsupported snapshot mode");
+    }
+    if (!PolicyMatches(now)) return false;
+    if (!QuietProofBrowserInspect(bytes, true, &metadata_)) return Fail("Invalid metadata");
+    signature_bytes_ = std::move(bytes);
+    phase_ = Phase::kPrepared; return true;
+  }
+ public:
   bool Verify(uint64_t now) {
     if (phase_ != Phase::kPrepared) return Fail("Invalid verification phase");
     phase_ = Phase::kFinished;
     if (!PolicyMatches(now)) return false;
+    if (signature_) {
+      PoKSigError error;
+      const bool valid = signature_verify_(policy_.expected_request,
+          PoKSigProofV1{std::move(signature_bytes_)}, now, {true}, &error);
+      if (!valid && (error == PoKSigError::kUnsupportedResources ||
+          error == PoKSigError::kSignatureModeDisabled || error == PoKSigError::kUnsupported)) {
+        unsupported_ = true; return Fail(PoKSigErrorName(error));
+      }
+      outcome_.crypto = valid ? QuietProofBrowserCrypto::kValid : QuietProofBrowserCrypto::kInvalid;
+    } else {
     if (!PoKCProofSupported(envelope_)) {
       unsupported_ = true; return Fail("Unsupported circuit identity or parameters");
     }
     outcome_.crypto = PoKCVerifyProof(envelope_) ? QuietProofBrowserCrypto::kValid : QuietProofBrowserCrypto::kInvalid;
+    }
     // Verify can be long. The caller checks time again before returning/fetching.
     std::vector<uint8_t>().swap(envelope_.proof.bytes);
     if (outcome_.crypto == QuietProofBrowserCrypto::kValid) phase_ = Phase::kVerified;
@@ -152,7 +223,9 @@ class QuietProofBrowserVerification {
   bool PolicyMatches(uint64_t now) {
     const auto& s = envelope_.statement;
     std::vector<uint8_t> request;
-    if (!EncodeQuietProofStatement(s, &request) ||
+    const bool encoded = signature_ ?
+        !(request = policy_.expected_request).empty() : EncodeQuietProofStatement(s, &request);
+    if (!encoded ||
         (policy_.network != QuietProofNetwork::kMainnet && policy_.network != QuietProofNetwork::kSignet) ||
         s.network != policy_.network || s.verifier != policy_.verifier || s.purpose != policy_.purpose ||
         s.bip322_message_hash != policy_.message_hash ||
@@ -175,6 +248,52 @@ class QuietProofBrowserVerification {
   std::vector<uint8_t> metadata_;
   const char* error_ = "";
   bool unsupported_ = false;
+  bool signature_ = false;
+  std::vector<uint8_t> signature_bytes_;
+  bool signature_enabled_ = false;
+  bool (*signature_supported_)(const std::vector<uint8_t>&,
+                              QuietProofSignatureEnvelopeError*) = nullptr;
+  bool (*signature_verify_)(const std::vector<uint8_t>&, const PoKSigProofV1&,
+                           uint64_t, PoKSigOptionsV1, PoKSigError*) = nullptr;
 };
+
+namespace quietproof_detail {
+// This template has one capability-independent definition. Its Operation type
+// has TU-local identity, so enabled and disabled bindings cannot be merged by
+// the linker. The context's layout and every non-template member remain equal
+// in base-only and signature-enabled consumers.
+template <class Operation> struct BrowserSignatureBinding {
+  static bool Prepare(QuietProofBrowserVerification& context,
+      std::vector<uint8_t> bytes, QuietProofBrowserPolicy policy, uint64_t now) {
+    context.signature_enabled_ = Operation::kEnabled;
+    context.signature_supported_ = &Operation::Supported;
+    context.signature_verify_ = &Operation::Verify;
+    return context.PrepareSignature(std::move(bytes), std::move(policy), now);
+  }
+};
+namespace {
+struct BrowserLocalSignatureOperation {
+  static constexpr bool kEnabled = kQuietProofSignatureModeEnabled;
+  static bool Supported(const std::vector<uint8_t>& bytes,
+                        QuietProofSignatureEnvelopeError* error) {
+    return QuietProofSignatureEnvelopeSupported(bytes, error);
+  }
+  static bool Verify(const std::vector<uint8_t>& request, const PoKSigProofV1& proof,
+                     uint64_t now, PoKSigOptionsV1 options, PoKSigError* error) {
+    return PoKSigVerifyProof(request, proof, now, options, error);
+  }
+};
+}  // namespace
+}  // namespace quietproof_detail
+
+// Explicit local signature operation; proof metadata never supplies capability.
+// The existing context constructor, scalar Prepare and Verify APIs stay intact.
+static inline bool PrepareQuietProofBrowserSignature(
+    QuietProofBrowserVerification* context, std::vector<uint8_t> bytes,
+    QuietProofBrowserPolicy policy, uint64_t now) {
+  return context && quietproof_detail::BrowserSignatureBinding<
+      quietproof_detail::BrowserLocalSignatureOperation>::Prepare(
+          *context, std::move(bytes), std::move(policy), now);
+}
 }  // namespace proofs
 #endif

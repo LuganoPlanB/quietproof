@@ -1,0 +1,1 @@
+../../../scripts/generate_signature_profile.py

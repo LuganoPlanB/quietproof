@@ -44,7 +44,7 @@ defineExpose({ ticket: () => history?.ticket() ?? Promise.resolve(null), saveReq
     <p v-if="duplicates" role="status">Local repeat warning: {{ duplicates }} repeated check marker(s) for retained request nonces. This is not authorization or global replay prevention.</p>
     <details :open="state.enabled">
     <summary>Manage local history (optional)</summary>
-    <p>Optional, unencrypted history in this browser profile and origin only. Saved requests disclose coins, amounts, wallet links, verifier, nonce and message hash. Check markers contain request fingerprints and outcomes; proof files and private keys are never stored.</p>
+    <p>Optional, unencrypted history in this browser profile and origin only. Saved public requests disclose coins, amounts, wallet links, verifier, nonce and message hash. Check markers contain request fingerprints and past outcomes; proof files, private keys, signatures, public-key witnesses and .qpa receipts are never stored.</p>
     <label class="quietproof-history-consent"><input type="checkbox" :checked="state.enabled" :disabled="!ready || pending || !state.available" @change="enable"> Keep future requests and completed check records locally</label>
     <p>This is a convenience, not authorization or global replay prevention. Clearing storage, private sessions, other profiles, origins and devices reset local warnings. Other tabs may already hold copies; same-origin code can read or change this data. Device times are untrusted.</p>
     <p>At most 8 requests and 24 check markers are retained; oldest entries are removed. Deleting or clearing history cancels pending work in connected app tabs. Reinspection and repeat warnings never establish acceptance.</p>
@@ -52,14 +52,14 @@ defineExpose({ ticket: () => history?.ticket() ?? Promise.resolve(null), saveReq
     <button type="button" :disabled="!ready || pending" @click="clear">Clear history and turn off</button>
     <ul v-if="state.requests.length">
       <li v-for="row in state.requests" :key="row.id">
-        <strong>{{ row.verifier }} · {{ row.network }}</strong><br>Nonce {{ row.nonce }}<br>Expiry {{ row.expiresAt }} (Unix seconds; device-clock policy)
+        <strong>{{ row.verifier }} · {{ row.network }}</strong><br>{{ row.proofMode === 'signature-possession' ? 'Signature possession' : 'Private-key knowledge' }} · public request<br>Nonce {{ row.nonce }}<br>Expiry {{ row.expiresAt }} (Unix seconds; device-clock policy)
         <button v-if="props.selectable" type="button" @click="choose(row)">Use saved request as explicit expectation</button>
         <button type="button" @click="remove('requests', row.id)">Delete saved request {{ row.nonce.slice(0, 8) }}</button>
       </li>
     </ul>
     <ul v-if="state.checks.length">
       <li v-for="row in state.checks" :key="row.id">
-        Local check · {{ row.network }} · {{ { unavailable: 'Chain observations unavailable', reported_unspent: 'Explorer reported unspent', reported_spent: 'Explorer reported spent', inconclusive: 'Explorer observations inconclusive' }[row.explorer] }}<br>Request fingerprint {{ row.hash }}<br>Device time {{ row.time }} (Unix seconds)
+        Local check · {{ row.network }} · {{ row.proofMode === 'signature-possession' ? 'Signature possession' : row.proofMode === 'key-knowledge' ? 'Private-key knowledge' : 'Proof mode not recorded' }} · {{ { unavailable: 'Chain observations unavailable', reported_unspent: 'Explorer reported unspent', reported_spent: 'Explorer reported spent', inconclusive: 'Explorer observations inconclusive' }[row.explorer] }}<br>{{ row.fundsQualifiedAtCheck ? 'Provider-qualified only at the recorded check time.' : 'No provider-qualified funds evidence recorded.' }} This editable marker is not current chain status or replay authority.<br>Request fingerprint {{ row.hash }}<br>Device time {{ row.time }} (Unix seconds)
         <button type="button" @click="remove('checks', row.id)">Delete check marker</button>
       </li>
     </ul>

@@ -5,13 +5,23 @@ import { loadWasmAsset } from '../../wasm/asset.mjs';
 export function preflight(file, kind) {
   const maximum = kind === 'proof' ? MAX_ENVELOPE_BYTES : 4096;
   const suffix = kind === 'proof' ? '.qpf' : '.qpr';
+  if (file?.name?.toLowerCase().endsWith('.qpa'))
+    throw new Error('Private .qpa authorization receipts belong in native tools. Upload only public .qpf proofs or .qpr requests.');
   if (!file || typeof file.name !== 'string' || !file.name.toLowerCase().endsWith(suffix))
     throw new Error(`Choose a ${suffix} ${kind} file.`);
   if (!Number.isSafeInteger(file.size) || file.size < 1 || file.size > maximum)
     throw new Error(`${kind === 'proof' ? 'Proof' : 'Request'} size must be from 1 to ${maximum} bytes.`);
 }
 
+function publicArtifact(bytes) {
+  const data = new Uint8Array(bytes);
+  if (data.length >= 4 && data[0] === 81 && data[1] === 80 && data[2] === 65 && data[3] === 49)
+    throw new Error('Private .qpa authorization receipt detected. Keep receipts in native tools; never upload them here.');
+}
+
 export function expectedPolicy(options, expectedRequest) {
+  if (options.proofMode === 'signature-possession' && options.mode !== 'request')
+    throw new Error('Signature possession requires the independently retained expected .qpr request.');
   if (options.mode === 'none') return undefined;
   if (!['request', 'explicit'].includes(options.mode)) throw new Error('Choose an expected policy.');
   const policy = { maxLifetimeSeconds: '86400', minConfirmations: '1', minimumTotalSats: '0',
@@ -77,9 +87,11 @@ export function setupProofInput({ wasmUrl = '/wasm/quietproof.wasm', fetch: fetc
       const requestBytes = selected.mode === 'request' ? await readFile(request) : undefined;
       if (requestBytes && (!(requestBytes instanceof ArrayBuffer) || requestBytes.byteLength !== request.size))
         throw new Error('Request read failed.');
+      if (requestBytes) publicArtifact(requestBytes);
       check(); const policy = expectedPolicy(selected, requestBytes);
       const bytes = await readFile(proof); check();
       if (!(bytes instanceof ArrayBuffer) || bytes.byteLength !== proof.size) throw new Error('Proof read failed.');
+      publicArtifact(bytes);
       const wasm = await loadWasmAsset(wasmUrl, { fetch: fetcher, signal: controller.signal, check, label: 'proof' });
       if (verifying) {
         check();
@@ -100,11 +112,15 @@ export function setupProofInput({ wasmUrl = '/wasm/quietproof.wasm', fetch: fetc
         else current.resolve(data);
       };
       worker.onerror = event => { event.preventDefault?.(); pending?.reject(new Error('Proof tools stopped. Retry with a supported browser.')); pending = undefined; };
-      await call('initialize', { bytes: wasm }, [wasm]);
+      const ready = await call('initialize', { bytes: wasm }, [wasm]);
+      if (selected.proofMode === 'signature-possession' && ready.capabilities?.signaturePossession !== true)
+        throw new Error('Signature possession is unavailable in this verifier build.');
       const transfer = requestBytes ? [bytes, requestBytes] : [bytes];
       const result = await call('inspectProofInput', { bytes, policy }, transfer); check();
       if (result.metadata?.verified !== false) throw new Error('Invalid inspection response.');
-      return { metadata: result.metadata, binding: result.binding, cryptography: 'not_checked', explorer: 'unavailable' };
+      if ((result.metadata.proofMode ?? 'key-knowledge') !== (selected.proofMode ?? 'key-knowledge'))
+        throw new Error('Proof mode does not match the explicitly selected mode. Choose the matching mode and independent request.');
+      return { metadata: result.metadata, capabilities: ready.capabilities, binding: result.binding, cryptography: 'not_checked', explorer: 'unavailable' };
     } catch (error) {
       if (controller.signal.aborted) throw aborted(controller.signal.reason);
       throw error;

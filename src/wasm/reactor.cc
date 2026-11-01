@@ -15,6 +15,7 @@
 
 #include "quietproof/browser.h"
 #include "quietproof/browser_verifier.h"
+#include "quietproof/acceptance.h"
 #include "util/crypto.h"
 
 // Compiled libc++ routines use the same overridable fatal handler.
@@ -73,6 +74,11 @@ uint32_t verification_result() {
 }  // namespace
 
 extern "C" uint32_t quietproof_wasm_abi_version() { return 2; }
+// Bit zero: existing key knowledge; bit one: signature possession. Neither
+// inspection nor untrusted proof metadata can enable a compiled-out mode.
+extern "C" uint32_t quietproof_wasm_capabilities() {
+  return 1u | (proofs::kQuietProofSignatureModeEnabled ? 2u : 0u);
+}
 
 extern "C" void* quietproof_wasm_alloc(uint32_t size) {
   if (size == 0 || size > proofs::kQuietProofMaxEnvelopeBytes) return nullptr;
@@ -108,13 +114,20 @@ extern "C" uint32_t quietproof_wasm_prepare(const uint8_t* proof, uint32_t proof
   proofs::QuietProofBrowserPolicy expected;
   if (!proofs::DecodeQuietProofBrowserPolicy(std::vector<uint8_t>(policy, policy + policy_size), &expected))
     return fail("Independent expected policy is required", 4);
-  proofs::QuietProofEnvelopeV1 envelope;
-  if (!proofs::DecodeQuietProofEnvelope(std::vector<uint8_t>(proof, proof + proof_size), &envelope))
-    return fail("Malformed or unsupported proof");
   uint64_t now;
   if (!realtime(&now)) return fail("Browser clock unavailable", 3);
   verification = std::make_unique<proofs::QuietProofBrowserVerification>();
-  if (!verification->Prepare(std::move(envelope), std::move(expected), now))
+  bool prepared;
+  if (proof_size >= 5 && proof[4] == 3) {
+    prepared = proofs::PrepareQuietProofBrowserSignature(verification.get(),
+        std::vector<uint8_t>(proof, proof + proof_size), std::move(expected), now);
+  } else {
+    proofs::QuietProofEnvelopeV1 envelope;
+    if (!proofs::DecodeQuietProofEnvelope(std::vector<uint8_t>(proof, proof + proof_size), &envelope))
+      return fail("Malformed or unsupported proof");
+    prepared = verification->Prepare(std::move(envelope), std::move(expected), now);
+  }
+  if (!prepared)
     return fail(verification->error(), verification->unsupported() ? 5 : 4);
   return verification_result();
 }
@@ -152,6 +165,25 @@ extern "C" uint32_t quietproof_wasm_create_request(const uint8_t* input,
   if (!owned(input, size) || size > proofs::kQuietProofBrowserMaxOptionsBytes)
     return fail("Invalid request options buffer");
   const std::vector<uint8_t> bytes(input, input + size);
+  if (bytes.size() >= 4 && !std::memcmp(bytes.data(), "QWC2", 4)) {
+    proofs::QuietProofSignatureChallengeOptions options;
+    std::vector<proofs::QuietProofClaimV1> claims;
+    if (!proofs::DecodeQuietProofBrowserSignatureOptions(bytes, &options, &claims))
+      return fail("Malformed signature request options");
+    if (!proofs::kQuietProofSignatureModeEnabled) return fail("signature_mode_disabled", 5);
+    proofs::QuietProofSignatureStatementV3 statement;
+    proofs::QuietProofSignatureChallengeError error;
+    if (!proofs::quietproof_detail::CreateQuietProofSignatureChallengeWithSources(
+          claims, options, &statement, &error, realtime,
+          [](uint8_t* data, size_t count) { return __wasi_random_get(data, count); })) {
+      using Error = proofs::QuietProofSignatureChallengeError;
+      return fail(proofs::QuietProofSignatureChallengeErrorName(error),
+          error == Error::kRandom ? 2 : error == Error::kClock ? 3 : 1);
+    }
+    if (!proofs::EncodeQuietProofSignatureStatement(statement, &result))
+      return fail("Signature request encoding failed");
+    return 0;
+  }
   proofs::QuietProofChallengeOptions options;
   std::vector<proofs::QuietProofClaimV1> claims;
   if (!proofs::DecodeQuietProofBrowserOptions(bytes, &options, &claims))

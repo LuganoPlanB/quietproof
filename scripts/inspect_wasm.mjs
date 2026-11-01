@@ -15,6 +15,7 @@ for (const name of ['random_get', 'clock_time_get', 'fd_write', 'fd_seek', 'fd_c
   assert(imports.some(item => item.name === name), `missing host contract: ${name}`);
 }
 const expectedExports = ['memory', '_initialize', 'quietproof_wasm_abi_version',
+  'quietproof_wasm_capabilities',
   'quietproof_wasm_alloc', 'quietproof_wasm_free', 'quietproof_wasm_smoke',
   'quietproof_wasm_create_request', 'quietproof_wasm_inspect',
   'quietproof_wasm_result_data', 'quietproof_wasm_result_size',

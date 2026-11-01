@@ -42,7 +42,9 @@ export function setupRequest({ wasmUrl = '/wasm/quietproof.wasm', fetch: fetcher
       worker.onerror = event => {
         event.preventDefault?.(); pending?.reject(new Error('Request tools stopped unexpectedly. Retry or reload this page.')); pending = undefined;
       };
-      await call('initialize', { bytes: wasm }, [wasm]);
+      const ready = await call('initialize', { bytes: wasm }, [wasm]);
+      if (snapshot.proofMode === 'signature-possession' && ready.capabilities?.signaturePossession !== true)
+        throw new Error('Signature possession is unavailable in this verifier build.');
       const { bytes } = await call('createRequest', { options: snapshot });
       if (!(bytes instanceof ArrayBuffer) || !bytes.byteLength || bytes.byteLength > 4096)
         throw new Error('Request creation returned an invalid artifact.');
@@ -55,7 +57,7 @@ export function setupRequest({ wasmUrl = '/wasm/quietproof.wasm', fetch: fetcher
       if (!inspected || inspected.byteLength !== bytes.byteLength ||
           new Uint8Array(bytes).some((b, i) => b !== inspected[i]))
         throw new Error('Request inspection did not match its artifact.');
-      return { bytes, metadata, summary: selectionSummary(metadata.claims) };
+      return { bytes, metadata, capabilities: ready.capabilities, summary: selectionSummary(metadata.claims) };
     } finally {
       clearTimeout(timer); controller.signal.removeEventListener('abort', abort);
       worker?.terminate(); if (active === controller) active = undefined;

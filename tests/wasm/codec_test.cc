@@ -83,5 +83,32 @@ int main(int argc, char** argv) {
     CHECK(!quietproof_detail::CreateQuietProofChallengeWithSources(parsed, options, &statement, &error,
       [](uint64_t*) { return false; }, random)); CHECK(error == QuietProofChallengeError::kClock);
   }
-  std::cout << "3 native golden families and codec adversarial checks passed\n";
+  for (int kind=0; kind<2; ++kind) {
+    QuietProofClaimV1 claim; claim.txid.fill(1); claim.program.fill(3); claim.amount_sats=50000;
+    claim.script_kind=static_cast<QuietProofScriptKind>(kind);
+    const auto old=Options({claim});
+    std::vector<uint8_t> options{'Q','W','C','2',1,uint8_t(kind)};
+    options.insert(options.end(),old.begin()+4,old.end());
+    QuietProofSignatureChallengeOptions decoded; std::vector<QuietProofClaimV1> claims;
+    CHECK(DecodeQuietProofBrowserSignatureOptions(options,&decoded,&claims));
+    CHECK(decoded.signing_kind==claim.script_kind && claims.size()==1);
+    auto malformed=options; malformed[4]=0;
+    CHECK(!DecodeQuietProofBrowserSignatureOptions(malformed,&decoded,&claims));
+    QuietProofStatementV1 common; QuietProofChallengeError error;
+    CHECK(quietproof_detail::CreateQuietProofChallengeWithSources(claims,decoded.request,&common,&error,clock,random));
+    QuietProofSignatureStatementV3 statement;
+    static_cast<QuietProofStatementV1&>(statement)=common;
+    statement.statement_version=3; statement.signing_kind=claim.script_kind;
+    std::vector<uint8_t> request,proof,inspection;
+    CHECK(EncodeQuietProofSignatureStatement(statement,&request));
+    CHECK(QuietProofBrowserInspect(request,false,&inspection));
+    QuietProofSignatureEnvelopeMetadataV3 metadata; metadata.request=request;
+    metadata.proof_created_at=1700000001; metadata.circuit_digest=PoKSigExpectedCircuitDigest();
+    CHECK(EncodeQuietProofSignatureEnvelope(metadata,{1,2,3},&proof));
+    CHECK(QuietProofBrowserInspect(proof,true,&inspection));
+    CHECK(inspection.size()==request.size()+61);
+    const std::string name=kind ? "signature-p2pkh" : "signature-p2wpkh";
+    write(name+".options",options); write(name+".qpr",request); write(name+".qpf",proof);
+  }
+  std::cout << "3 unchanged golden families, 2 signature metadata families and codec adversarial checks passed\n";
 }

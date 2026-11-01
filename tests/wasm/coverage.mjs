@@ -1,6 +1,8 @@
 // Coverage accounting only; cryptographic verification remains in the worker.
 export const REQUIRED_ENGINES = Object.freeze(['chromium', 'webkit']);
 export const REQUIRED_KEYS = Object.freeze(['one-key']);
+export const SIGNATURE_KEYS = Object.freeze(['signature-p2pkh', 'signature-p2wpkh', 'signature-mixed', 'signature-max16']);
+export const requiredKeys = signatureMode => signatureMode ? [...REQUIRED_KEYS, ...SIGNATURE_KEYS] : [...REQUIRED_KEYS];
 export const DIAGNOSTIC_ENGINES = Object.freeze(['firefox']);
 
 export function parseSelection(value, defaults, allowed, label) {
@@ -13,6 +15,7 @@ export function parseSelection(value, defaults, allowed, label) {
 
 export function assessCoverage(report) {
   const failures = [];
+  const required = requiredKeys(report.signatureMode === true);
   if (report.completeness !== 'complete') failures.push('Report capture is incomplete.');
   const engines = Array.isArray(report.engines) ? report.engines : [];
   const names = engines.map(engine => engine.name);
@@ -26,10 +29,13 @@ export function assessCoverage(report) {
     if (engine.status !== 'passed') failures.push(`Required ${name} did not pass.`);
     const checks = Array.isArray(engine.checks) ? engine.checks : [];
     const keys = checks.map(check => check.key);
-    if (checks.length !== REQUIRED_KEYS.length || new Set(keys).size !== keys.length ||
-        REQUIRED_KEYS.some(key => !keys.includes(key)) || checks.some(check => check.status !== 'passed'))
-      failures.push(`Required ${name} single-key coverage is incomplete, duplicated or failed.`);
+    if (checks.length !== required.length || new Set(keys).size !== keys.length ||
+        required.some(key => !keys.includes(key)) || checks.some(check => check.status !== 'passed'))
+      failures.push(`Required ${name} proof-family coverage is incomplete, duplicated or failed.`);
+    if (report.signatureMode && !checks.some(check => check.key === 'signature-max16' &&
+        check.claimCount === 16 && check.resourceDepth === 'full' && check.status === 'passed'))
+      failures.push(`Required ${name} maximum-16-claim resource coverage is missing.`);
   }
   return { passed: failures.length === 0, requiredEngines: [...REQUIRED_ENGINES],
-    requiredKeys: [...REQUIRED_KEYS], unsupportedBrowsers: ['firefox'], failures };
+    requiredKeys: required, unsupportedBrowsers: ['firefox'], failures };
 }

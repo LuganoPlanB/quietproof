@@ -172,7 +172,13 @@ void TestFixture(const nlohmann::json& vector) {
                  [&](const char*) { progress = true; }) && !progress,
       "signature request reached scalar proof API");
   std::vector<uint8_t> metadata;
-  Require(!QuietProofBrowserInspect(bytes, false, &metadata), "old browser accepted v3");
+  // L8 adds public v3 metadata inspection in either build. Inspection carries
+  // the exact request and no proof/circuit result; the scalar prove/verify and
+  // envelope APIs above and below must continue rejecting signature statements.
+  Require(QuietProofBrowserInspect(bytes, false, &metadata) && metadata.size() == bytes.size() + 61 &&
+      std::equal(metadata.begin(), metadata.begin() + 4, std::array<uint8_t,4>{'Q','W','I','1'}.begin()) &&
+      metadata[4] == 0 && std::equal(bytes.begin(), bytes.end(), metadata.begin() + 61),
+      "public v3 inspection did not preserve the unverified request");
   for (uint8_t version : {uint8_t{1}, uint8_t{2}}) {
     std::vector<uint8_t> wire{'Q','P','E','1',version};
     QuietProofAppendU32(&wire, static_cast<uint32_t>(bytes.size()));

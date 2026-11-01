@@ -7,6 +7,9 @@ import { wasmAsset } from './wasm.mjs';
 
 const projectRoot = fileURLToPath(new URL("../..", import.meta.url));
 const siteBase = process.env.DOCS_BASE || "/";
+// VitePress otherwise treats raw Python source links as HTML routes. The
+// signature reference page serves this public generator from public/references.
+process.env.VITE_EXTRA_EXTENSIONS = [process.env.VITE_EXTRA_EXTENSIONS, "py"].filter(Boolean).join(",");
 
 export default defineConfig({
   base: siteBase,
@@ -43,13 +46,26 @@ export default defineConfig({
                 ["./docs/security", "/security"],
                 ["spec/README.md", "/technical/sage"],
                 ["./spec/README", "/technical/sage"],
+                ["spec/quietproof-signature-v1.md", "/technical/signature-profile"],
+                ["./spec/quietproof-signature-v1", "/technical/signature-profile"],
               ])
             : sourcePath.endsWith("security.md")
               ? new Map([
                   ["../spec/quietproof-v1.md", "/technical/protocol"],
                   ["./../spec/quietproof-v1", "/technical/protocol"],
+                  ["../spec/quietproof-signature-v1.md", "/technical/signature-profile"],
+                  ["./../spec/quietproof-signature-v1", "/technical/signature-profile"],
                 ])
-              : null;
+              : sourcePath.endsWith("technical/signature-profile.md")
+                ? new Map([
+                    ["quietproof-v1.md", "/technical/protocol"],
+                    ["./quietproof-v1", "/technical/protocol"],
+                    ["signature-profile-v1.json", "/references/signature-profile-v1.json"],
+                    ["./signature-profile-v1.json", "/references/signature-profile-v1.json"],
+                    ["../scripts/generate_signature_profile.py", "/references/generate_signature_profile.py"],
+                    ["./../scripts/generate_signature_profile.py", "/references/generate_signature_profile.py"],
+                  ])
+                : null;
 
         if (!rewrites) return;
 

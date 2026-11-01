@@ -2,7 +2,8 @@
 // These are regression alarms, not protocol limits or device support detection.
 export const RESOURCE_BUDGETS = Object.freeze({
   localAssetLoadMs: 10000, initializeMs: 10000, prepareMs: 10000,
-  verifyMs: Object.freeze({ 'one-key': 100000 }),
+  verifyMs: Object.freeze({ 'one-key': 100000, 'signature-p2pkh': 240000,
+    'signature-p2wpkh': 240000, 'signature-mixed': 240000, 'signature-max16': 240000 }),
   linearMemoryBytes: 1920 * 1024 * 1024, repeatGrowthBytes: 16 * 1024 * 1024,
   heartbeatGapMs: 2000, cancellationSettleMs: 2000,
 });

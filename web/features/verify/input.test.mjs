@@ -28,6 +28,23 @@ test('independent expectations require explicit context and preserve empty messa
   assert.equal(policy.message, ''); assert.equal(policy.network, 'signet');
   assert.equal(policy.expectedRequest, undefined);
 });
+test('signature expectations require retained binary requests and encode explicit mode', () => {
+  for (const mode of ['none', 'explicit']) assert.throws(() => expectedPolicy({ ...options, mode,
+    proofMode: 'signature-possession' }), /retained/);
+  assert.throws(() => expectedPolicy({ mode: 'request', proofMode: 'signature-possession' }), /independent/);
+  const expected = new Uint8Array([1,2]).buffer;
+  const policy = expectedPolicy({ mode: 'request', proofMode: 'signature-possession' }, expected);
+  assert.equal(policy.expectedRequest, expected); assert.equal(policy.proofMode, 'signature-possession');
+});
+test('private receipts and renamed QPA1 files are rejected before workers or asset fetch', async () => {
+  let fetches=0, workers=0, reads=0;
+  const tools=setupProofInput({ fetch() { fetches++; }, workerFactory() { workers++; } });
+  await assert.rejects(tools.inspect({ proof: { ...proof, name: 'PRIVATE.QPA', arrayBuffer() { reads++; } }, options }), /Private .qpa/);
+  const receipt=new TextEncoder().encode('QPA1private receipt');
+  await assert.rejects(tools.inspect({ proof: { name: 'renamed.qpf', size: receipt.byteLength,
+    arrayBuffer: async () => receipt.buffer }, options }), /authorization receipt/);
+  assert.equal(reads,0); assert.equal(fetches,0); assert.equal(workers,0); tools.dispose();
+});
 
 test('invalid explicit policy fails before proof read; oversized stream fails before worker', async () => {
   let reads = 0, workers = 0;

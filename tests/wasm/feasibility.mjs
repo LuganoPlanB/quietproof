@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { gzipSync, brotliCompressSync } from 'node:zlib';
 import os from 'node:os';
-import { REQUIRED_ENGINES, REQUIRED_KEYS, DIAGNOSTIC_ENGINES, parseSelection, assessCoverage } from './coverage.mjs';
+import { REQUIRED_ENGINES, REQUIRED_KEYS, SIGNATURE_KEYS, requiredKeys, DIAGNOSTIC_ENGINES, parseSelection, assessCoverage } from './coverage.mjs';
 import { cappedMemoryArtifact, RESOURCE_BUDGETS } from './resources.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -18,12 +18,13 @@ const destination = process.env.QUIETPROOF_FEASIBILITY_REPORT;
 if (!destination) throw new Error('QUIETPROOF_FEASIBILITY_REPORT is required.');
 const engineNames = parseSelection(process.env.QUIETPROOF_ENGINES, REQUIRED_ENGINES,
   [...REQUIRED_ENGINES, ...DIAGNOSTIC_ENGINES], 'engine');
-const keyNames = parseSelection(process.env.QUIETPROOF_KEYS, REQUIRED_KEYS, REQUIRED_KEYS, 'key');
+const signatureMode = process.env.QUIETPROOF_SIGNATURE_MODE === '1';
+const keyNames = parseSelection(process.env.QUIETPROOF_KEYS, requiredKeys(signatureMode), [...REQUIRED_KEYS, ...SIGNATURE_KEYS], 'key');
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const wasm = readFileSync(artifact);
 const cappedWasm = cappedMemoryArtifact(wasm);
 const site = process.env.QUIETPROOF_FEASIBILITY_SITE ? resolve(process.env.QUIETPROOF_FEASIBILITY_SITE) : null;
-const report = { version: 2, supportedBrowsers: [...REQUIRED_ENGINES],
+const report = { version: 3, signatureMode, supportedBrowsers: [...REQUIRED_ENGINES],
   unsupportedBrowsers: [...DIAGNOSTIC_ENGINES], observedAt: new Date().toISOString(),
   environment: { platform: os.platform(), release: os.release(), architecture: os.arch(),
     cpu: os.cpus()[0]?.model ?? null, logicalCPUs: os.cpus().length, hostMemoryBytes: os.totalmem(), node: process.version },
@@ -37,7 +38,7 @@ const report = { version: 2, supportedBrowsers: [...REQUIRED_ENGINES],
     'package.json', 'package-lock.json'].map(path => ({ path: resolve(root, path), sha256: digest(readFileSync(resolve(root, path))) })),
   memoryScope: 'Linear memory high-water allocation observed after synchronous calls; WASM memory never shrinks. Not process RSS or JS heap.',
   copyScope: 'Sender detachment is observed per transferred proof; implementation copy inventory is documented separately. Engine-internal physical copies are not measurable here.' };
-for (const key of ['one-key']) {
+for (const key of keyNames) {
   const provenance = JSON.parse(readFileSync(resolve(fixtures, key + '.json')));
   if (provenance.expiresAt <= Math.floor(Date.now() / 1000) + 3600)
     throw new Error(`${key} fixture expires within one hour; regenerate native fixtures.`);
@@ -57,7 +58,7 @@ const server = createServer((request, response) => {
     }
     let local;
     if (path === '/quietproof.wasm') { local = artifact; response.setHeader('Content-Type', 'application/wasm'); }
-    else if (/^\/fixtures\/(one-key)\.(qpf|qpr)$/.test(path)) local = resolve(fixtures, basename(path));
+    else if (/^\/fixtures\/(one-key|signature-p2pkh|signature-p2wpkh|signature-mixed|signature-max16)\.(qpf|qpr)$/.test(path)) local = resolve(fixtures, basename(path));
     else if (/^\/(web\/wasm\/[a-z]+|tests\/wasm\/(measured-worker|resources))\.mjs$/.test(path)) {
       local = resolve(root, '.' + path); response.setHeader('Content-Type', 'text/javascript');
     } else if (site && (path === '/' || /^\/assets\/[a-zA-Z0-9_.-]+\.(js|css|woff2)$/.test(path))) {
@@ -143,7 +144,9 @@ try {
             const bytes = await loadWasmAsset(capped ? '/quietproof-low-memory.wasm' : '/quietproof.wasm',
               { fetch, check() {}, label: 'qualification' });
             const loadMs = performance.now() - start, initializeStart = performance.now();
-            await api.send('initialize', { bytes }).result;
+            const ready = await api.send('initialize', { bytes }).result;
+            if (key.startsWith('signature-') && ready.capabilities?.signaturePossession !== true)
+              throw new Error('Required signature capability unavailable; no fallback.');
             const initializeMs = performance.now() - initializeStart;
             records.push({ label: capped ? 'controlled-low-memory-load' : 'load', loadMs, initializeMs,
               senderDetached: bytes.byteLength === 0 });
@@ -158,6 +161,7 @@ try {
             if (changed) new Uint8Array(proof)[proof.byteLength - 1] ^= 1;
             const start = performance.now();
             const prepared = await api.send('prepare', { bytes: proof, policy: {
+              proofMode: key.startsWith('signature-') ? 'signature-possession' : 'key-knowledge',
               expectedRequest: request, provider: '', maxLifetimeSeconds: 86400,
               minConfirmations: 1, minimumTotalSats: 0, maxObservationAgeSeconds: 60 } }).result;
             return { prepared, inputBytes, prepareMs: performance.now() - start, senderDetached: proof.byteLength === 0 };
@@ -174,9 +178,13 @@ try {
             catch (error) { record.verifyMs = performance.now() - start; record.failureMemoryBytes = error.linearMemoryBytes ?? null; throw error; }
             Object.assign(record, { verifyMs: performance.now() - start,
               peakObservedLinearMemoryBytes: output.linearMemoryBytes,
-              cryptography: output.cryptography, policy: output.policy, explorer: output.explorer, authorizes: output.authorizes });
+              cryptography: output.cryptography, policy: output.policy, explorer: output.explorer, authorizes: output.authorizes,
+              claimCount: output.manifest?.claims?.length ?? null, proofMode: output.manifest?.proofMode ?? null });
             if (output.cryptography !== (changed ? 'invalid' : 'valid') || output.authorizes !== false || output.explorer !== 'unavailable')
               throw new Error('Real verification or trust separation failed');
+            if (!changed && (record.claimCount !== (key === 'signature-max16' ? 16 : key === 'signature-mixed' ? 2 : 1) ||
+                record.proofMode !== (key.startsWith('signature-') ? 'signature-possession' : 'key-knowledge')))
+              throw new Error('Actual proof family or maximum claim count does not match required fixture.');
             if (record.prepareMs > budgets.prepareMs || record.verifyMs > budgets.verifyMs[key] ||
                 record.peakObservedLinearMemoryBytes > budgets.linearMemoryBytes)
               throw new Error('Verification regression budget exceeded');
@@ -186,6 +194,15 @@ try {
           try {
             let api = await initialize();
             const cold = await verify(api, 'cold');
+            // Preserve all original scalar resource gates and run the same full
+            // lifecycle on the largest signature statement. Other signature
+            // families still require measured real verification in each engine.
+            if (key.startsWith('signature-') && key !== 'signature-max16') {
+              api.terminate();
+              return { key, status: 'passed', resourceDepth: 'verification', claimCount: cold.claimCount, records,
+                heartbeat: { intervalMs: 20, ticks, maximumGapMs: maximumGap },
+                memoryScope: 'Linear-memory high-water only; no process RSS/JS heap claim' };
+            }
             const warm = await verify(api, 'repeat');
             // Linear-memory pages cannot shrink. Bound retained high-water growth
             // across identical operations; 16MiB allows allocator page rounding.
@@ -217,7 +234,7 @@ try {
             records.push({ label: 'controlled-low-memory-failure', ...memoryFailure }); api.terminate();
             api = await initialize(); await verify(api, 'fresh-after-low-memory'); api.terminate();
             if (maximumGap > budgets.heartbeatGapMs || ticks < 10) throw new Error('Main thread responsiveness gate failed');
-            return { key, status: 'passed', records, heartbeat: { intervalMs: 20, ticks, maximumGapMs: maximumGap },
+            return { key, status: 'passed', resourceDepth: 'full', claimCount: cold.claimCount, records, heartbeat: { intervalMs: 20, ticks, maximumGapMs: maximumGap },
               memoryScope: 'Observed linear-memory high-water allocation; no claim about process RSS/JS heap' };
           } catch (error) {
             return { key, status: 'failed', error: { name: error.name, message: error.message, stack: error.stack }, records,

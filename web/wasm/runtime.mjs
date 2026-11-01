@@ -6,6 +6,7 @@ const EINVAL = 28;
 const EIO = 29;
 const IMPORTS = ['clock_time_get', 'fd_close', 'fd_seek', 'fd_write', 'random_get'];
 const EXPORTS = ['_initialize', 'memory', 'quietproof_wasm_abi_version',
+  'quietproof_wasm_capabilities',
   'quietproof_wasm_alloc', 'quietproof_wasm_free', 'quietproof_wasm_smoke',
   'quietproof_wasm_create_request', 'quietproof_wasm_inspect',
   'quietproof_wasm_result_data', 'quietproof_wasm_result_size',
@@ -131,6 +132,9 @@ export async function instantiateReactor(bytes) {
   if (instance.exports.quietproof_wasm_abi_version() !== 2)
     throw new CapabilityError('The WASM ABI version is unsupported.');
   instance.exports._initialize();
+  const capabilities = instance.exports.quietproof_wasm_capabilities();
+  if (capabilities !== 1 && capabilities !== 3)
+    throw new CapabilityError('The WASM proof capabilities are unsupported.');
   let poisoned = false;
   function invoke(name, ...args) {
     if (poisoned) throw new Error('WASM instance is unusable; recreate the worker.');
@@ -172,6 +176,8 @@ export async function instantiateReactor(bytes) {
   }
   return {
     exports: instance.exports,
+    capabilities: Object.freeze({ keyKnowledge: true,
+      signaturePossession: Boolean(capabilities & 2) }),
     reset() { invoke('quietproof_wasm_reset'); },
     prepare(proof, policy) {
       invoke('quietproof_wasm_reset');

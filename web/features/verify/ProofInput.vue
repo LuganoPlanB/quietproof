@@ -2,7 +2,8 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { setupProofInput } from './input.mjs';
 import { setupProvider } from '../provider/discovery.mjs';
-import { phaseLabel, failureResult, observationReasons } from './results.mjs';
+import { phaseLabel, failureResult, observationReasons, claimDetails, fundsEvidenceLabel, publicResultReport } from './results.mjs';
+import { probeProofCapabilities } from '../../wasm/capabilities.mjs';
 import LocalHistory from '../history/LocalHistory.vue';
 const props = defineProps({ wasmUrl: { type: String, required: true } });
 const proof = ref(null), request = ref(null), mode = ref('none');
@@ -12,6 +13,21 @@ const selectedNetwork = ref(''), online = ref(false), minConfirmations = ref('1'
 const verification = ref(null), progress = ref(null), now = ref(Date.now()), startedAt = ref(null);
 const history = ref(null), savedRequest = ref(null), expectedInput = ref(null), repeat = ref(false);
 const resultsHeading = ref(null), verifyButton = ref(null), inspectButton = ref(null);
+const proofMode = ref('key-knowledge'), capabilities = ref({ signaturePossession: false });
+const capabilityState = ref('unknown'), capabilityError = ref('');
+const inspectedClaim = computed(() => claimDetails(result.value?.metadata));
+const verifiedClaim = computed(() => claimDetails(verification.value?.metadata));
+let capabilityAbort, reportUrl;
+function clearReport() { if (reportUrl) URL.revokeObjectURL(reportUrl); reportUrl = null; }
+async function checkCapabilities() {
+  capabilityAbort?.abort(); capabilityAbort = new AbortController(); capabilityState.value = 'checking'; capabilityError.value = '';
+  try {
+    capabilities.value = await probeProofCapabilities({ wasmUrl: props.wasmUrl, signal: capabilityAbort.signal });
+    capabilityState.value = 'ready';
+  } catch (e) {
+    if (e.name !== 'AbortError') { capabilityState.value = 'error'; capabilityError.value = 'Cannot check signature support. Retry with the local verifier available.'; }
+  }
+}
 const busy = computed(() => ['loading', 'verifying'].includes(state.value));
 const elapsed = computed(() => startedAt.value === null ? 0 : Math.max(0, Math.floor((now.value - startedAt.value) / 1000)));
 const descriptor = computed(() => {
@@ -24,22 +40,25 @@ const currentPolicy = computed(() => verification.value?.metadata && Math.floor(
 const reasons = computed(() => observationReasons(verification.value));
 let tools, generation = 0, timer;
 onMounted(() => { tools = setupProofInput({ wasmUrl: props.wasmUrl }); ready.value = true; timer = setInterval(() => { now.value = Date.now(); }, 250); });
-onUnmounted(() => { generation++; tools?.dispose(); clearInterval(timer); });
+onUnmounted(() => { generation++; tools?.dispose(); capabilityAbort?.abort(); clearReport(); clearInterval(timer); });
 function invalidate() {
+  clearReport();
   generation++; tools?.cancel(); result.value = null; verification.value = null; progress.value = null;
   startedAt.value = null; state.value = 'idle'; error.value = '';
   repeat.value = false;
 }
-watch([proof, request, mode, network, verifier, purpose, message, confirmed, selectedNetwork, online, minConfirmations, minimumTotalSats, maxAge], invalidate, { flush: 'sync' });
+watch([proof, request, mode, network, verifier, purpose, message, confirmed, selectedNetwork, online, minConfirmations, minimumTotalSats, maxAge, proofMode], invalidate, { flush: 'sync' });
+watch(proofMode, selected => { if (selected === 'signature-possession') mode.value = 'request'; }, { flush: 'sync' });
 watch([network, verifier, purpose, message], () => { confirmed.value = false; }, { flush: 'sync' });
 async function inspect() {
   invalidate(); const current = generation; state.value = 'loading';
   try {
     const imported = await tools.inspect({ proof: proof.value, request: request.value,
-      options: { mode: mode.value, network: network.value, verifier: verifier.value,
+      options: { mode: mode.value, proofMode: proofMode.value, network: network.value, verifier: verifier.value,
         purpose: purpose.value, message: message.value, confirmed: confirmed.value } });
     if (current !== generation) return;
     result.value = imported; state.value = 'inspected';
+    if (imported.capabilities) { capabilities.value = imported.capabilities; capabilityState.value = 'ready'; }
   } catch (e) { if (current === generation) { error.value = e.message; state.value = 'error'; } }
 }
 async function cancel() {
@@ -69,7 +88,7 @@ async function verify() {
       request.value = null; savedRequest.value = null; state.value = 'error'; error.value = 'The saved request was removed. Choose an independent expectation again.'; return;
     }
     const checked = await tools.verify({ proof: proof.value, request: request.value,
-      options: { mode: mode.value, network: network.value, verifier: verifier.value, purpose: purpose.value,
+      options: { mode: mode.value, proofMode: proofMode.value, network: network.value, verifier: verifier.value, purpose: purpose.value,
         message: message.value, confirmed: confirmed.value, minConfirmations: minConfirmations.value,
         minimumTotalSats: minimumTotalSats.value, maxObservationAgeSeconds: maxAge.value },
       online: online.value, selectedNetwork: selectedNetwork.value,
@@ -91,6 +110,11 @@ function timestamp(seconds) {
   const date = new Date(Number(seconds) * 1000);
   return Number.isFinite(date.getTime()) ? date.toISOString() : `${seconds} seconds since Unix epoch`;
 }
+function exportResult() {
+  const report = publicResultReport({ ...verification.value, policy: currentPolicy.value });
+  clearReport(); reportUrl = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2) + '\n'], { type: 'application/json' }));
+  const link = document.createElement('a'); link.href = reportUrl; link.download = 'quietproof-public-result.json'; link.click();
+}
 </script>
 
 <template>
@@ -104,14 +128,26 @@ function timestamp(seconds) {
         <label for="qp-proof">Proof file (.qpf)</label>
         <input id="qp-proof" type="file" accept=".qpf" @change="proof = $event.target.files?.[0] ?? null">
         <p>Maximum file size: 134221889 bytes (128 MiB plus envelope). Size is checked before the file is read. Decoding runs in a disposable worker.</p>
+        <p>Private .qpa authorization receipts are never proof uploads. Keep them in native wallet/prover tools; a receipt exposes the signature and public key to its holder.</p>
+        <label for="qp-verify-proof-mode">Proof mode (chosen independently)</label>
+        <select id="qp-verify-proof-mode" v-model="proofMode" aria-describedby="qp-verify-mode-help">
+          <option value="key-knowledge">Private-key knowledge (default)</option>
+          <option v-if="capabilities.signaturePossession" value="signature-possession">Signature possession · request-bound authorization</option>
+        </select>
+        <button type="button" :disabled="capabilityState === 'checking' || busy" @click="checkCapabilities">Check signature support</button>
+        <p v-if="capabilityState === 'checking'" role="status">Checking the local verifier’s proof capabilities…</p>
+        <p v-else-if="capabilityState === 'ready' && !capabilities.signaturePossession" role="status">Signature possession is unavailable in this verifier build. The existing private-key mode remains available.</p>
+        <p v-if="capabilityError" role="status">{{ capabilityError }}</p>
+        <p id="qp-verify-mode-help" v-if="proofMode === 'signature-possession'">Require the independently retained expected .qpr request. This verifies knowledge of a request-bound signature, which can be delegated for that exact request. It does not prove private-key knowledge or when the signature was made. The native prover learns the signature/public key; public verifiers receive the .qpf and .qpr. Never upload the private .qpa receipt.</p>
+        <p v-else id="qp-verify-mode-help">Default: private-key knowledge. Proof metadata never changes the selected mode. Checking signature support loads the local verifier and makes no explorer request.</p>
       </fieldset>
       <fieldset>
         <legend>2. Choose independent expectations</legend>
         <label for="qp-policy">Expected policy source</label>
         <select id="qp-policy" v-model="mode">
-          <option value="none">Inspection only — no expected policy</option>
+          <option v-if="proofMode !== 'signature-possession'" value="none">Inspection only — no expected policy</option>
           <option value="request">Exact expected .qpr request</option>
-          <option value="explicit">Explicit expected context</option>
+          <option v-if="proofMode !== 'signature-possession'" value="explicit">Explicit expected context</option>
         </select>
         <p>Obtain the expected request or context through your own trusted channel. Proof metadata never fills these fields.</p>
         <template v-if="mode === 'request'">
@@ -146,6 +182,7 @@ function timestamp(seconds) {
       <p v-else role="alert">Expected policy rejected, expired or unsupported. Do not accept this proof.</p>
       <p>Chain status: unavailable. Disconnected checking needs the local application and WASM asset; no explorer is required for policy or cryptographic checks. This import step inspects metadata only.</p>
       <dl>
+        <dt>Claimed proof mode</dt><dd>{{ inspectedClaim.label }}</dd>
         <dt>Claimed network / statement version</dt><dd>{{ result.metadata.network }} / v{{ result.metadata.statementVersion }}</dd>
         <dt>Claimed verifier / purpose</dt><dd>{{ result.metadata.verifier }} / {{ result.metadata.purpose }}</dd>
         <dt>Message hash</dt><dd>{{ result.metadata.messageHash }}</dd>
@@ -155,6 +192,8 @@ function timestamp(seconds) {
         <dt>Circuit digest</dt><dd>{{ result.metadata.circuitDigest }}</dd>
         <dt>Historical snapshot / bridge</dt><dd>{{ result.metadata.snapshot ? 'Present; unsupported' : 'Absent' }} / {{ result.metadata.bridge ? 'Present; unsupported' : 'Absent' }}</dd>
       </dl>
+      <p>{{ inspectedClaim.meaning }}</p>
+      <p v-if="result.metadata.proofMode === 'signature-possession'">{{ inspectedClaim.disclosure }}</p>
       <ul>
         <li v-for="claim in result.metadata.claims" :key="`${claim.txid}:${claim.vout}`">
           {{ claim.amountSats }} sats · {{ claim.scriptKind.toUpperCase() }}<br>{{ claim.txid }}:{{ claim.vout }}<br>Key fingerprint: {{ claim.program }}
@@ -185,7 +224,9 @@ function timestamp(seconds) {
         <dt>Proof cryptography</dt><dd data-result="crypto">{{ verification.cryptography === 'valid' ? 'Valid' : verification.cryptography === 'invalid' ? 'Invalid — do not accept' : 'Not checked to completion' }}</dd>
         <dt>Independent expected policy</dt><dd data-result="policy">{{ currentPolicy === 'matched' ? 'Matched at check time' : currentPolicy === 'expired' ? 'Expired according to device clock — do not accept' : currentPolicy === 'rejected' ? 'Rejected — do not accept' : 'Not checked to completion' }}</dd>
         <dt>Explorer-reported chain status</dt><dd data-result="explorer">{{ { unavailable: 'Unavailable', reported_unspent: 'Reported unspent under selected limits', reported_spent: 'Reported spent — do not accept', inconclusive: 'Inconclusive — retry or investigate' }[verification.explorer] }}</dd>
+        <dt>Funds evidence</dt><dd data-result="funds">{{ fundsEvidenceLabel(verification) }}</dd>
         <template v-if="verification.metadata">
+          <dt>Proof claim</dt><dd data-result="claim">{{ verifiedClaim.label }}</dd>
           <dt>Disclosed claim total</dt><dd>{{ verification.metadata.claims.reduce((total, claim) => total + BigInt(claim.amountSats), 0n).toString() }} sats · {{ verification.metadata.network }}</dd>
           <dt>Request expires (device clock)</dt><dd>{{ timestamp(verification.metadata.expiresAt) }}</dd>
         </template>
@@ -199,8 +240,14 @@ function timestamp(seconds) {
         </template>
         <dt v-if="verification.checkedAt">Check completed (device clock)</dt><dd v-if="verification.checkedAt">{{ timestamp(verification.checkedAt) }}</dd>
       </dl>
+      <template v-if="verification.metadata">
+        <p data-result="meaning">{{ verifiedClaim.meaning }}</p>
+        <p v-if="verification.metadata.proofMode === 'signature-possession'">{{ verifiedClaim.disclosure }}</p>
+      </template>
       <ul v-if="reasons.length"><li v-for="reason in reasons" :key="reason">{{ reason }}</li></ul>
-      <p>This static tool does not authorize acceptance. Explorer reports do not establish strict current or historical chain validity. Proofs disclose coins and wallet links. Key access may be shared or temporary; a proof does not establish exclusive control, ownership or solvency.</p>
+      <p>This static tool does not authorize acceptance. Explorer reports do not establish strict current or historical chain validity. Proofs disclose coins and wallet links. A proof does not establish exclusive control, ownership or solvency.</p>
+      <p>Cryptographic validity alone does not establish current funds. Provider-qualified evidence is a trusted, non-atomic assessment at check time, not validated-node evidence or a replay reservation. Saved markers and exported reports are editable local records.</p>
+      <button type="button" @click="exportResult">Download public result report</button>
       <button type="button" @click="verify">Retry verification</button>
     </section>
     <p>Supported browsers: Chromium and WebKit; Firefox is unsupported and unqualified. This static tool has no server or global acceptance authority.</p>

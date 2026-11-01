@@ -21,6 +21,7 @@ def main():
     parser.add_argument('--wasi-sdk', type=Path,
                         default=Path(os.environ.get('WASI_SDK_PATH', '/opt/wasi-sdk')))
     parser.add_argument('--jobs', type=int, default=2)
+    parser.add_argument('--signature-mode', action='store_true')
     args = parser.parse_args()
     if args.jobs < 1:
         parser.error('--jobs must be positive')
@@ -69,12 +70,14 @@ def main():
         f'-DCMAKE_PREFIX_PATH={prefix}',
         f'-DCMAKE_FIND_ROOT_PATH={prefix};{wasi / "share/wasi-sysroot"}',
         '-DQUIETPROOF_BUILD_CLI=OFF',
-        '-DQUIETPROOF_BUILD_RPC=OFF', '-DQUIETPROOF_BUILD_WASM=ON')
+        '-DQUIETPROOF_BUILD_RPC=OFF', '-DQUIETPROOF_BUILD_WASM=ON',
+        f'-DQUIETPROOF_BUILD_SIGNATURE_MODE={"ON" if args.signature_mode else "OFF"}')
     run('cmake', '--build', str(work / 'quietproof-build'), '--parallel', str(args.jobs))
     run('node', str(source / 'scripts/inspect_wasm.mjs'),
         str(work / 'quietproof-build/quietproof.wasm'))
     digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
     provenance = {
+        'signatureMode': args.signature_mode,
         'pins': PINS, 'wasiVersionFile': (wasi / 'VERSION').read_text(),
         'compilerVersion': subprocess.check_output([str(wasi / 'bin/clang++'), '--version'], text=True).splitlines()[0],
         'toolchainFiles': {name: digest(wasi / name) for name in

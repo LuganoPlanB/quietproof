@@ -16,7 +16,7 @@ self.onmessage = async ({ data }) => {
       initializing = true;
       try { reactor = await instantiateReactor(data.bytes); }
       finally { initializing = false; }
-      self.postMessage({ id, type: 'ready', abiVersion: 2 });
+      self.postMessage({ id, type: 'ready', abiVersion: 2, capabilities: reactor.capabilities });
     } else if (data.type === 'createRequest') {
       if (!reactor) throw new Error('Worker is not initialized.');
       const bytes = reactor.createRequest(data.options);

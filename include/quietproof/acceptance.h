@@ -17,8 +17,12 @@ inline bool QuietProofSystemClock(uint64_t* output) {
   return true;
 }
 inline bool QuietProofReadClock(const QuietProofClock& clock, uint64_t* output) {
+#if defined(__cpp_exceptions)
   try { return clock && output && clock(output); }
   catch (...) { return false; }
+#else
+  return clock && output && clock(output);
+#endif
 }
 enum class QuietProofFinalAcceptanceStatus : uint8_t {
   kAccepted, kReplay, kNotYetValid, kExpired, kClockUnavailable, kStoreFailure, kInvalidRequest

@@ -14,6 +14,19 @@ function freeze(value) {
   return value;
 }
 
+// This describes the completed explorer assessment, never node validation,
+// current ownership, an acceptance decision or a replay reservation.
+function finish(result) {
+  const qualifiedAtCheck = result.cryptography === 'valid' && result.policy === 'matched' &&
+    result.explorer === 'reported_unspent' && result.provenance?.attempts?.length > 0 &&
+    result.provenance.attempts.at(-1).reasons.length === 0;
+  return freeze({ ...result, fundsEvidence: {
+    qualifiedAtCheck: !!qualifiedAtCheck,
+    provider: result.provenance?.provider ?? null,
+    trust: 'trusted_explorer_non_atomic', validatedNode: false, authorizes: false,
+  } });
+}
+
 export function createVerification({ provider, config, fetcher, timeoutMs, workerFactory = () =>
   new Worker(new URL('../../wasm/worker.mjs', import.meta.url), { type: 'module' }) }) {
   // One live proof operation per selected adapter. A new operation consumes the
@@ -90,7 +103,7 @@ export function createVerification({ provider, config, fetcher, timeoutMs, worke
       if (verified.policy !== 'matched' || verified.authorizes !== false) fail('invalid_worker');
       if (verified.cryptography !== 'valid') {
         if (verified.cryptography !== 'invalid') fail('invalid_worker');
-        return freeze({ ...verified, explorer: 'unavailable', provenance: null });
+        return finish({ ...verified, explorer: 'unavailable', provenance: null });
       }
       if (verified.phase !== 'verified' || !verified.manifest || verified.manifest.network !== provider.network ||
           !Array.isArray(verified.manifest.claims) || !verified.manifest.claims.length || verified.manifest.claims.length > 16)
@@ -101,7 +114,7 @@ export function createVerification({ provider, config, fetcher, timeoutMs, worke
         if (!/^[1-9][0-9]{0,15}$/.test(claim.amountSats) || BigInt(claim.amountSats) > 2100000000000000n) fail('invalid_manifest');
         const id = `${claim.txid}:${claim.vout}`; if (seen.has(id)) fail('invalid_manifest'); seen.add(id);
       }
-      if (!online) return freeze({ ...verified, explorer: 'unavailable', provenance: null });
+      if (!online) return finish({ ...verified, explorer: 'unavailable', provenance: null });
       progress('fetching', verified);
       operation = createOperation(config, fetcher, timeoutMs, controller.signal, true);
       const { get } = operation;
@@ -180,7 +193,7 @@ export function createVerification({ provider, config, fetcher, timeoutMs, worke
         }
       } catch (error) {
         check();
-        return freeze({ ...verified, explorer: 'unavailable', provenance, providerError: error.code ?? 'invalid_observation' });
+        return finish({ ...verified, explorer: 'unavailable', provenance, providerError: error.code ?? 'invalid_observation' });
       }
       check();
       progress('evaluating', verified);
@@ -188,7 +201,7 @@ export function createVerification({ provider, config, fetcher, timeoutMs, worke
       check();
       if (evaluated.phase !== 'finished' || evaluated.cryptography !== 'valid' || evaluated.authorizes !== false ||
           !['reported_unspent', 'reported_spent', 'inconclusive'].includes(evaluated.explorer)) fail('invalid_worker');
-      return freeze({ ...evaluated, manifest: verified.manifest, provenance });
+      return finish({ ...evaluated, manifest: verified.manifest, provenance });
     } finally {
       operation?.close(); worker?.terminate(); clearTimeout(timer);
       signal?.removeEventListener('abort', cancel); if (active === controller) active = undefined;
