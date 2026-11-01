@@ -49,6 +49,7 @@ class RpcClient {
 };
 // Shared private operation used by the provider and deterministic transport tests.
 QuietProofChainEvidence LookupCurrentTip(RpcClient&, const QuietProofChainRequest&);
+QuietProofNodeState ObserveCurrentNodeState(RpcClient&);
 bool DiscoverAddress(RpcClient&, const BitcoinUtxoQuery&, BitcoinUtxoDiscovery*,
                      BitcoinRpcError*);
 }  // namespace proofs::bitcoin_rpc_internal

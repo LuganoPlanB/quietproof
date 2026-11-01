@@ -169,6 +169,7 @@ class BitcoinCoreRpc final : public QuietProofChainProvider {
                         BitcoinRpcError* = nullptr);
   QuietProofProviderKind kind() const override;
   QuietProofChainEvidence Lookup(const QuietProofChainRequest&) override;
+  QuietProofNodeState ObserveNodeState() override;
 
  private:
   bool ExportAddressKeyImpl(const std::string&, const std::string&,

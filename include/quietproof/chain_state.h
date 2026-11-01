@@ -35,8 +35,42 @@ struct QuietProofChainRequest {
   std::array<uint8_t, 32> snapshot{};
   uint32_t snapshot_height = 0;
 };
-struct QuietProofChainEvidence { QuietProofChainStatus status = QuietProofChainStatus::kUnavailable; QuietProofNetwork network = QuietProofNetwork::kMainnet; std::array<uint8_t,32> block{}; uint64_t height = 0; uint64_t confirmations = 0; uint64_t amount_sats = 0; std::vector<uint8_t> script_pub_key; std::string detail; };
-class QuietProofChainProvider { public: virtual ~QuietProofChainProvider() = default; virtual QuietProofProviderKind kind() const = 0; virtual QuietProofChainEvidence Lookup(const QuietProofChainRequest&) = 0; };
+struct QuietProofChainEvidence { QuietProofChainStatus status = QuietProofChainStatus::kUnavailable; QuietProofNetwork network = QuietProofNetwork::kMainnet; std::array<uint8_t,32> block{}; uint64_t height = 0; uint64_t confirmations = 0; uint64_t amount_sats = 0; std::vector<uint8_t> script_pub_key; std::string detail;
+  // Optional metadata for quantity/maturity labels. Older providers and scalar
+  // checks retain their contracts when this observation is unavailable.
+  bool coinbase_known = false;
+  bool coinbase = false;
+};
+enum class QuietProofNodeStateStatus : uint8_t { kUnavailable, kMalformed, kWrongNetwork, kChanged, kObserved };
+struct QuietProofNodeState {
+  QuietProofNodeStateStatus status = QuietProofNodeStateStatus::kUnavailable;
+  QuietProofNetwork network = static_cast<QuietProofNetwork>(0xff);
+  std::array<uint8_t, 32> block{};
+  uint64_t height = 0;
+  uint64_t tip_time = 0;
+  bool initial_block_download = true;
+  bool active_chainstate_validated = false;
+};
+class QuietProofChainProvider {
+ public:
+  virtual ~QuietProofChainProvider() = default;
+  virtual QuietProofProviderKind kind() const = 0;
+  virtual QuietProofChainEvidence Lookup(const QuietProofChainRequest&) = 0;
+  // Opt-in observation, never called by the scalar verifier. Unknown support
+  // cannot establish fully validated current state for signature policy.
+  virtual QuietProofNodeState ObserveNodeState() { return {}; }
+};
+
+inline const char* QuietProofQuantityMaturityLabel(
+    const std::vector<QuietProofChainEvidence>& claims) {
+  bool unknown = claims.empty();
+  for (const auto& claim : claims) {
+    if (claim.status != QuietProofChainStatus::kUnspent || !claim.coinbase_known) unknown = true;
+    if (claim.status == QuietProofChainStatus::kUnspent && claim.coinbase_known &&
+        claim.coinbase && claim.confirmations < 100) return "includes_immature_coinbase";
+  }
+  return unknown ? "unknown" : "no_immature_coinbase_observed";
+}
 // Recognize only canonical, bounded templates. Outputs remain unchanged on failure.
 // P2PKH reveals a key hash, not whether the hidden public key was compressed.
 inline bool QuietProofClassifyScript(

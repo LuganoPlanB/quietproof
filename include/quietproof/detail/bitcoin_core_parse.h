@@ -10,6 +10,7 @@
 
 #include "cli/json.hpp"
 #include "quietproof/statement.h"
+#include "quietproof/chain_state.h"
 
 namespace proofs {
 
@@ -114,6 +115,49 @@ inline bool ParseTip(const std::string& text, Tip* tip) {
   if (tip == nullptr || text.size() > kQuietProofMaxRpcOutputBytes) return false;
   const auto json = nlohmann::json::parse(text, nullptr, false);
   return ParseTipFields(json, tip);
+}
+
+// Core32 orders chainstates by work with the active chainstate LAST. A
+// validated background chainstate cannot authorize an unvalidated active one.
+// This strict parser is opt-in; ParseTipFields and old scalar callers stay as-is.
+inline bool ParseNodeStateFields(const nlohmann::json& blockchain,
+                                const nlohmann::json& chainstates,
+                                QuietProofNetwork network, QuietProofNodeState* output) {
+  Tip tip;
+  uint64_t tip_time = 0, active_height = 0;
+  if (!output || !QuietProofNetworkValid(network) || !ParseTipFields(blockchain, &tip) ||
+      !blockchain.contains("time") || !JsonUnsigned(blockchain["time"], &tip_time) ||
+      !tip_time || !blockchain.contains("initialblockdownload") ||
+      !blockchain["initialblockdownload"].is_boolean() || !chainstates.is_object() ||
+      !chainstates.contains("chainstates") || !chainstates["chainstates"].is_array() ||
+      chainstates["chainstates"].empty() || chainstates["chainstates"].size() > 2) return false;
+  const auto& active = chainstates["chainstates"].back();
+  if (!active.is_object() || !active.contains("blocks") ||
+      !JsonUnsigned(active["blocks"], &active_height) ||
+      !active.contains("bestblockhash") || !active["bestblockhash"].is_string() ||
+      !IsLowerHex(active["bestblockhash"].get<std::string>(), 64) ||
+      !active.contains("validated") || !active["validated"].is_boolean()) return false;
+  QuietProofNodeState state;
+  state.network = network;
+  state.height = tip.height;
+  state.tip_time = tip_time;
+  state.initial_block_download = blockchain["initialblockdownload"].get<bool>();
+  state.active_chainstate_validated = active["validated"].get<bool>();
+  std::vector<uint8_t> block;
+  if (!DecodeHex(tip.best_block_hash, &block)) return false;
+  std::copy(block.begin(), block.end(), state.block.begin());
+  state.status = tip.chain != QuietProofBitcoinCoreChainName(network) ? QuietProofNodeStateStatus::kWrongNetwork :
+      active_height != tip.height || active["bestblockhash"].get<std::string>() != tip.best_block_hash ?
+      QuietProofNodeStateStatus::kChanged : QuietProofNodeStateStatus::kObserved;
+  *output = state;
+  return true;
+}
+
+inline void ParseCoinbaseMetadata(const nlohmann::json& txout, QuietProofChainEvidence* evidence) {
+  if (txout.contains("coinbase") && txout["coinbase"].is_boolean()) {
+    evidence->coinbase_known = true;
+    evidence->coinbase = txout["coinbase"].get<bool>();
+  }
 }
 
 inline bool TxOutShapeValid(const nlohmann::json& txout) {
