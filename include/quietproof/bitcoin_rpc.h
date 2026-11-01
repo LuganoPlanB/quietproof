@@ -141,6 +141,17 @@ class BitcoinCoreRpc final : public QuietProofChainProvider {
                         const BitcoinRpcKeyMatch&, std::array<uint8_t, 32>*,
                         BitcoinRpcError* = nullptr,
                         const std::function<bool()>& stop = {});
+  // Explicit signature-possession operation. wallet is always selected, including
+  // the unnamed wallet. Only a canonical request is accepted: no raw transaction,
+  // digest, real input, amount or signing options can be supplied by the caller.
+  // Returns a private .qpa receipt after strict request-bound preverification.
+  // Never exports keys, unlocks, funds or broadcasts. Output is unchanged on
+  // failure/cancellation; callbacks are checked between bounded RPC calls.
+  bool AuthorizeSignature(const std::string& wallet,
+                        const std::vector<uint8_t>& expected_request,
+                        std::vector<uint8_t>* private_receipt,
+                        BitcoinRpcError* = nullptr,
+                        const std::function<bool()>& stop = {});
   bool WalletState(const std::string& wallet, BitcoinRpcWalletState*,
                    BitcoinRpcError* = nullptr);
   // One bounded lease; no retries. A transport failure may mean it succeeded.

@@ -87,7 +87,39 @@ experimental Bitcoin ECDSA constraint component. It defaults to OFF and uses
 the same pinned base SDK. Installed CMake consumers must request the `signature`
 component and link `LongfellowZKQuietProof::signature`; an ordinary package lookup
 loads only the base target. See the [constraint and package contract](spec/signature-ecdsa-constraints.md).
-This component does not yet add a signature proof command or browser mode.
+It enables explicit native signature-possession commands; browser support is
+qualified separately. Existing command defaults remain key knowledge.
+
+Create a request by adding `--proof-mode signature-possession --signing-kind
+p2wpkh` (or `p2pkh`) to `challenge create`. The selected kind must occur among
+the claims and actually be available in the signing wallet. Review the audience,
+purpose, network, total satoshis and expiry displayed before authorisation.
+
+```sh
+# Local signing and proving with an explicitly selected stock Core wallet.
+build/quietproof prove --proof-mode signature-possession \
+  --request request.qpr --output proof.qpf --rpc-wallet wallet-name
+
+# Export a private capability for offline or delegated native proving.
+build/quietproof authorize --proof-mode signature-possession \
+  --request request.qpr --receipt-output authorisation.qpa --rpc-wallet wallet-name
+build/quietproof prove --proof-mode signature-possession \
+  --request request.qpr --receipt-input authorisation.qpa --output delegated.qpf
+```
+
+Use explicit local RPC options when the node is outside the default local cookie
+location. Unlock the wallet separately if needed; signature mode never exports
+keys, automatically unlocks, funds or broadcasts. Receipt-only proving also works
+with `QUIETPROOF_BUILD_RPC=OFF` and needs no wallet credentials. Outputs use new
+owner-only files; existing destinations are never replaced. Receipt imports must
+be regular owner-only files owned by the current user, bounded to 4 KiB.
+
+The `.qpa` receipt reveals the signature and public key to its holder and permits
+delegated proving for the same request. Keep it private; share the public `.qpf`
+proof separately. Signature possession does not establish private-key knowledge,
+exclusive control, reserved funds or signing time. Current-funds acceptance still
+requires expected-request, chain-state and replay policy; creating a proof alone
+does not establish that acceptance.
 
 ## Try an isolated regtest workflow
 

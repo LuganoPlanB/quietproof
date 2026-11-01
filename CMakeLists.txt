@@ -73,6 +73,11 @@ if(QUIETPROOF_BUILD_RPC)
     EXPORT_NAME rpc POSITION_INDEPENDENT_CODE ON)
   target_link_libraries(quietproof-rpc
     PUBLIC LongfellowZKQuietProof::quietproof PRIVATE CURL::libcurl)
+  if(QUIETPROOF_BUILD_SIGNATURE_MODE)
+    # Implementation-only capability; rpc consumers do not implicitly select a
+    # proof mode or acquire the signature circuit component.
+    target_compile_definitions(quietproof-rpc PRIVATE QUIETPROOF_HAS_SIGNATURE_MODE=1)
+  endif()
   install(TARGETS quietproof-rpc EXPORT LongfellowZKQuietProofRpcTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
   install(EXPORT LongfellowZKQuietProofRpcTargets
@@ -97,6 +102,9 @@ if(QUIETPROOF_BUILD_CLI)
   set_target_properties(quietproof-cli PROPERTIES OUTPUT_NAME quietproof)
   target_compile_definitions(quietproof-cli PRIVATE QUIETPROOF_VERSION="${PROJECT_VERSION}")
   target_link_libraries(quietproof-cli PRIVATE LongfellowZKQuietProof::quietproof Threads::Threads)
+  if(QUIETPROOF_BUILD_SIGNATURE_MODE)
+    target_link_libraries(quietproof-cli PRIVATE LongfellowZKQuietProof::signature)
+  endif()
   if(QUIETPROOF_BUILD_RPC)
     target_link_libraries(quietproof-cli PRIVATE LongfellowZKQuietProof::rpc)
     target_compile_definitions(quietproof-cli PRIVATE QUIETPROOF_HAS_RPC=1)
@@ -243,6 +251,24 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/rpc_http_fixture.py
       $<TARGET_FILE:quietproof-rpc-test>)
     set_tests_properties(quietproof-rpc-test PROPERTIES TIMEOUT 60)
+    add_executable(quietproof-signature-rpc-driver tests/quietproof/signature_rpc_driver.cc)
+    target_link_libraries(quietproof-signature-rpc-driver PRIVATE LongfellowZKQuietProof::rpc)
+    set(_signature_rpc_disabled)
+    if(NOT QUIETPROOF_BUILD_SIGNATURE_MODE)
+      set(_signature_rpc_disabled --disabled)
+    endif()
+    add_test(NAME quietproof-signature-rpc-test COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/signature_rpc_test.py
+      --driver $<TARGET_FILE:quietproof-signature-rpc-driver> ${_signature_rpc_disabled})
+    set_tests_properties(quietproof-signature-rpc-test PROPERTIES TIMEOUT 120)
+    if(QUIETPROOF_BUILD_SIGNATURE_MODE AND QUIETPROOF_ENABLE_CORE32_SIGNING_TEST)
+      add_test(NAME quietproof-signature-rpc-core-test COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/signature_rpc_test.py
+        --driver $<TARGET_FILE:quietproof-signature-rpc-driver>
+        --core32 "${QUIETPROOF_CORE32_DIR}" --oracle $<TARGET_FILE:quietproof-signing-oracle>)
+      set_tests_properties(quietproof-signature-rpc-core-test PROPERTIES
+        TIMEOUT 180 RUN_SERIAL TRUE LABELS "bitcoin-core32;signature-reference")
+    endif()
   endif()
   if(QUIETPROOF_ENABLE_BITCOIN_REGTEST_TEST)
     set(QUIETPROOF_CORE28_DIR "" CACHE PATH "Directory containing Core 28 bitcoind and bitcoin-cli")
@@ -395,6 +421,40 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/cli_context_test.py $<TARGET_FILE:quietproof-cli>
     --rpc-enabled ${QUIETPROOF_BUILD_RPC})
   set_tests_properties(quietproof-cli-context-test PROPERTIES TIMEOUT 180)
+  set(_signature_cli_capability)
+  if(NOT QUIETPROOF_BUILD_SIGNATURE_MODE)
+    set(_signature_cli_capability --disabled)
+  endif()
+  set(_signature_cli_fault)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_library(quietproof-signature-cli-fault SHARED tests/quietproof/signature_cli_fault.cc)
+    target_link_libraries(quietproof-signature-cli-fault PRIVATE ${CMAKE_DL_LIBS})
+    set(_signature_cli_fault --fault $<TARGET_FILE:quietproof-signature-cli-fault>)
+  endif()
+  add_test(NAME quietproof-signature-cli-test COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/signature_cli_test.py
+    --cli $<TARGET_FILE:quietproof-cli> --rpc ${QUIETPROOF_BUILD_RPC}
+    ${_signature_cli_capability} ${_signature_cli_fault})
+  set_tests_properties(quietproof-signature-cli-test PROPERTIES TIMEOUT 120)
+  if(QUIETPROOF_BUILD_SIGNATURE_MODE)
+    add_executable(quietproof-signature-cli-verify tests/quietproof/signature_cli_verify.cc)
+    target_link_libraries(quietproof-signature-cli-verify PRIVATE LongfellowZKQuietProof::signature)
+    add_test(NAME quietproof-signature-cli-proof-test COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/signature_cli_test.py
+      --cli $<TARGET_FILE:quietproof-cli> --rpc ${QUIETPROOF_BUILD_RPC}
+      --proof-verifier $<TARGET_FILE:quietproof-signature-cli-verify>)
+    set_tests_properties(quietproof-signature-cli-proof-test PROPERTIES
+      TIMEOUT 3600 RUN_SERIAL TRUE LABELS "proof-heavy")
+    if(QUIETPROOF_BUILD_RPC AND QUIETPROOF_ENABLE_CORE32_SIGNING_TEST)
+      add_test(NAME quietproof-signature-cli-core-test COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/signature_cli_test.py
+        --cli $<TARGET_FILE:quietproof-cli> --rpc ON
+        --proof-verifier $<TARGET_FILE:quietproof-signature-cli-verify>
+        --core32 "${QUIETPROOF_CORE32_DIR}" --oracle $<TARGET_FILE:quietproof-signing-oracle>)
+      set_tests_properties(quietproof-signature-cli-core-test PROPERTIES
+        TIMEOUT 3600 RUN_SERIAL TRUE LABELS "bitcoin-core32;proof-heavy")
+    endif()
+  endif()
   if(QUIETPROOF_BUILD_RPC)
     set(_quietproof_cli_rpc_mode --cli)
   else()

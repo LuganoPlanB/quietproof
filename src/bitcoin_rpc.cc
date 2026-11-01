@@ -34,6 +34,7 @@
 #include "bitcoin_rpc_internal.h"
 #include "bitcoin_rpc_json.h"
 #include "quietproof/detail/bitcoin_core_parse.h"
+#include "quietproof/signature_authorisation.h"
 
 namespace proofs::bitcoin_rpc_internal {
 namespace {
@@ -1006,6 +1007,130 @@ bool BitcoinCoreRpc::ExportAddressKeyImpl(
     return fail(BitcoinRpcErrorCode::kMalformed, "Address-key export failed; private diagnostics suppressed");
   }
 }
+bool BitcoinCoreRpc::AuthorizeSignature(const std::string& wallet,
+    const std::vector<uint8_t>& expected_request, std::vector<uint8_t>* private_receipt,
+    BitcoinRpcError* error, const std::function<bool()>& stop) {
+  using namespace bitcoin_rpc_internal;
+  using namespace quietproof_internal;
+  const auto fail = [&](BitcoinRpcErrorCode code, const char* message) {
+    return Fail(error, code, message);
+  };
+  if (!private_receipt || wallet.size() > 1024 || !QuietProofUtf8(wallet))
+    return fail(BitcoinRpcErrorCode::kConfiguration, "Invalid signature wallet or output");
+  QuietProofSignatureStatementV3 statement;
+  QuietProofSignatureInputsV1 inputs;
+  if (!DecodeQuietProofSignatureStatement(expected_request, &statement))
+    return fail(BitcoinRpcErrorCode::kConfiguration, "Invalid signature request");
+  if (statement.network != impl_->client_.config().network)
+    return fail(BitcoinRpcErrorCode::kWrongNetwork, "Signature request network does not match RPC configuration");
+  if (!DeriveQuietProofSignatureInputs(expected_request, &inputs))
+    return fail(BitcoinRpcErrorCode::kConfiguration, "Signature mode is unavailable or request is unsupported");
+  const auto& profile = inputs.profile;
+  // Independent fixed-shape check BEFORE any wallet authority is exercised.
+  // Only the synthetic parent hash is variable in the 61-byte unsigned child.
+  std::array<uint8_t, kQuietProofSignatureUnsignedToSignBytes> fixed{};
+  fixed[4] = 1;
+  std::copy(profile.synthetic_outpoint.begin(), profile.synthetic_outpoint.end(), fixed.begin() + 5);
+  fixed[46] = 1; fixed[55] = 1; fixed[56] = 0x6a;
+  if (profile.unsigned_to_sign != fixed ||
+      !std::equal(profile.to_spend_txid.begin(), profile.to_spend_txid.end(), profile.synthetic_outpoint.begin()) ||
+      std::any_of(profile.synthetic_outpoint.begin() + 32, profile.synthetic_outpoint.end(), [](uint8_t b) { return b != 0; }))
+    return fail(BitcoinRpcErrorCode::kConfiguration, "Invalid fixed signature transaction");
+  for (const auto& claim : statement.claims) {
+    // Claims are real funds, never signing inputs (claim txid is display order).
+    if (std::equal(claim.txid.rbegin(), claim.txid.rend(), profile.to_spend_txid.begin()) && claim.vout == 0)
+      return fail(BitcoinRpcErrorCode::kConfiguration, "Real claim cannot be the signature input");
+  }
+  const auto hex = [](const auto& bytes) {
+    constexpr char digits[] = "0123456789abcdef";
+    std::string text; text.reserve(bytes.size() * 2);
+    for (uint8_t byte : bytes) { text += digits[byte >> 4]; text += digits[byte & 15]; }
+    return text;
+  };
+  const auto stopped = [&] {
+    if (!stop || !stop()) return false;
+    fail(BitcoinRpcErrorCode::kInconclusive, "Signature authorisation canceled");
+    return true;
+  };
+  RpcDecodedResponse response;
+  struct EraseResponse { nlohmann::json& value; ~EraseResponse() { EraseRpcJson(value); } } erase{response.result};
+  try {
+    auto& client = impl_->client_;
+    if (stopped()) return false;
+    if (!client.Call("getblockchaininfo", nlohmann::json::array(), false, &response, error)) return false;
+    Tip tip;
+    if (!ParseTipFields(response.result, &tip))
+      return fail(BitcoinRpcErrorCode::kMalformed, "Node tip is malformed");
+    if (tip.chain != QuietProofBitcoinCoreChainName(statement.network))
+      return fail(BitcoinRpcErrorCode::kWrongNetwork, "Bitcoin node network does not match signature request");
+    if (stopped()) return false;
+    if (!client.Call("getwalletinfo", nlohmann::json::array(), false, &response, error, wallet)) return false;
+    const auto& info = response.result;
+    if (!info.is_object() || !info.contains("private_keys_enabled") || !info["private_keys_enabled"].is_boolean() ||
+        !info.contains("external_signer") || !info["external_signer"].is_boolean())
+      return fail(BitcoinRpcErrorCode::kMalformed, "Malformed signing wallet information");
+    if (!info["private_keys_enabled"].get<bool>() || info["external_signer"].get<bool>())
+      return fail(BitcoinRpcErrorCode::kUnsupportedWallet, "Wallet has no supported local signing keys");
+    if (info.contains("unlocked_until")) {
+      const auto& until = info["unlocked_until"];
+      if ((!until.is_number_integer() && !until.is_number_unsigned()) ||
+          (until.is_number_integer() && !until.is_number_unsigned() && until.get<int64_t>() < 0))
+        return fail(BitcoinRpcErrorCode::kMalformed, "Malformed signing wallet lock state");
+      if (until == 0) return fail(BitcoinRpcErrorCode::kWalletLocked, "Signing wallet is locked; unlock explicitly outside this operation");
+    }
+    const std::string address = statement.signing_kind == QuietProofScriptKind::kP2pkh
+        ? P2pkhAddress(statement.network, profile.h) : ProgramAddress(statement.network, profile.h);
+    if (stopped()) return false;
+    if (!client.Call("getaddressinfo", nlohmann::json::array({address}), false, &response, error, wallet)) return false;
+    const auto& owned = response.result;
+    std::vector<uint8_t> script;
+    if (!owned.is_object() || !owned.contains("ismine") || !owned["ismine"].is_boolean() ||
+        !owned.contains("scriptPubKey") || !owned["scriptPubKey"].is_string() ||
+        !DecodeHex(owned["scriptPubKey"].get<std::string>(), &script))
+      return fail(BitcoinRpcErrorCode::kMalformed, "Malformed signing address information");
+    if (!owned["ismine"].get<bool>() || script != profile.selected_script)
+      return fail(BitcoinRpcErrorCode::kUnsupportedWallet, "Selected signing script is unavailable in this wallet");
+    std::array<uint8_t, 32> display_txid;
+    std::reverse_copy(profile.to_spend_txid.begin(), profile.to_spend_txid.end(), display_txid.begin());
+    const auto prevouts = nlohmann::json::array({{{"txid", hex(display_txid)}, {"vout", 0},
+        {"scriptPubKey", hex(profile.selected_script)}, {"amount", 0}}});
+    if (stopped()) return false;
+    if (!client.Call("signrawtransactionwithwallet",
+        nlohmann::json::array({hex(profile.unsigned_to_sign), prevouts, "ALL"}), false, &response, error, wallet)) {
+      if (error && error->rpc_code == -13) {
+        error->code = BitcoinRpcErrorCode::kWalletLocked;
+        error->message = "Signing wallet is locked; unlock explicitly outside this operation";
+      }
+      return false;
+    }
+    const auto& signed_result = response.result;
+    if (!signed_result.is_object() || signed_result.size() != 2 ||
+        !signed_result.contains("complete") || !signed_result["complete"].is_boolean() ||
+        !signed_result["complete"].get<bool>() || !signed_result.contains("hex") || !signed_result["hex"].is_string())
+      return fail(BitcoinRpcErrorCode::kMalformed, "Incomplete or malformed signature response");
+    const auto& signed_hex = signed_result["hex"].get_ref<const std::string&>();
+    std::vector<uint8_t> transaction;
+    if (signed_hex.size() > 342 || !DecodeHex(signed_hex, &transaction))
+      return fail(BitcoinRpcErrorCode::kMalformed, "Malformed signed virtual transaction");
+    // .qpa framing and verification use the established L4 protocol. Nothing is
+    // returned until shape, DER/low-S/compressed key, HASH160 and ECDSA pass.
+    std::vector<uint8_t> receipt{'Q','P','A','1',1,1,0,1};
+    receipt.insert(receipt.end(), profile.statement_digest.begin(), profile.statement_digest.end());
+    const auto size = static_cast<uint32_t>(transaction.size());
+    for (int shift : {24,16,8,0}) receipt.push_back(static_cast<uint8_t>(size >> shift));
+    receipt.insert(receipt.end(), transaction.begin(), transaction.end());
+    QuietProofSignatureAuthorisationV1 verified;
+    if (!ImportQuietProofSignatureAuthorisation(expected_request, receipt, &verified))
+      return fail(BitcoinRpcErrorCode::kMalformed, "Signed virtual transaction failed request-bound verification");
+    if (stopped()) return false;
+    *private_receipt = std::move(receipt);
+    ClearError(error);
+    return true;
+  } catch (...) {
+    return fail(BitcoinRpcErrorCode::kMalformed, "Signature authorisation failed; private diagnostics suppressed");
+  }
+}
+
 bool BitcoinCoreRpc::WalletState(const std::string& wallet,
     BitcoinRpcWalletState* state, BitcoinRpcError* error) {
   using namespace bitcoin_rpc_internal;
