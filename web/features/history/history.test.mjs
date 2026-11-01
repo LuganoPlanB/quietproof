@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { webcrypto } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { decodeInspection } from '../../wasm/codec.mjs';
 import { setupHistory, HISTORY_LIMITS } from './history.mjs';
 function persistence(initial) {
   let state = initial, queue = Promise.resolve(), failWrite = false;
@@ -11,8 +13,17 @@ function persistence(initial) {
 function harness(store = persistence(), extra = {}) {
   return { store, history: setupHistory({ store, crypto: webcrypto, channelFactory: () => null, events: {}, now: () => 123, ...extra }) };
 }
-const bytes = n => new Uint8Array([n, 1, 2, 3]).buffer;
-const metadata = n => ({ nonce: n.toString(16).padStart(64, '0'), network: 'mainnet', verifier: 'Independent', expiresAt: '9999999999', requestBytes: bytes(n) });
+const template = readFileSync(new URL('../../../tests/wasm/fixtures/0.qpr', import.meta.url));
+const decode = bytes => {
+  const encoded = new Uint8Array(61 + bytes.byteLength); encoded.set(new TextEncoder().encode('QWI1'));
+  encoded.set(new Uint8Array(bytes), 61); return decodeInspection(encoded.buffer);
+};
+const bytes = n => {
+  const result = Uint8Array.from(template);let offset = 6;
+  for (let i=0;i<2;i++) offset += 2 + result[offset] * 256 + result[offset+1];
+  result.fill(0,offset,offset+32);result[offset+31]=n;return result.buffer;
+};
+const metadata = n => decode(bytes(n));
 const outcome = { cryptography: 'valid', policy: 'matched', explorer: 'unavailable' };
 
 test('history starts off and stores nothing without an explicit consent ticket', async () => {
@@ -34,9 +45,40 @@ test('repeat markers are scoped to retained request/nonce data and never authori
   const { history } = harness(); await history.enable(true); const token = await history.ticket();
   assert.equal((await history.recordCheck(metadata(1), outcome, token)).repeat, false);
   assert.equal((await history.recordCheck(metadata(1), outcome, token)).repeat, true);
-  const reusedNonce = { ...metadata(1), requestBytes: bytes(2) };
+  const changed = bytes(1);new Uint8Array(changed)[changed.byteLength-1] ^= 1;
+  const reusedNonce = decode(changed);
   assert.equal((await history.recordCheck(reusedNonce, outcome, token)).repeat, true);
   assert.equal(history.snapshot().checks[0].authorizes, undefined); history.dispose();
+});
+
+test('receipts, renamed receipts and trailing private payloads cannot enter history', async () => {
+  for (const privateBytes of [new TextEncoder().encode('QPA1private marker').buffer,
+    new Uint8Array([...new Uint8Array(bytes(1)), ...new TextEncoder().encode('private marker')]).buffer]) {
+    const { history, store } = harness();await history.enable(true);const token=await history.ticket();
+    assert.equal(await history.saveRequest(privateBytes, metadata(1), token),false);
+    assert.equal(store.raw().requests.length,0);assert.equal(store.raw().checks.length,0);history.dispose();
+  }
+});
+test('public request bytes supply stored metadata and arbitrary witness fields are discarded', async () => {
+  const { history,store }=harness();await history.enable(true);const token=await history.ticket();
+  assert.equal(await history.saveRequest(bytes(1),{...metadata(1),receipt:'private marker',signature:'private marker'},token),true);
+  await history.recordCheck({...metadata(1),witness:'private marker'},outcome,token);
+  assert(!JSON.stringify(store.raw()).includes('private marker'));
+  assert.equal(store.raw().requests[0].proofMode,'key-knowledge');
+  assert.equal(store.raw().checks[0].fundsQualifiedAtCheck,false);history.dispose();
+});
+test('contradictory claimed metadata cannot label another retained public request', async () => {
+  const { history,store }=harness();await history.enable(true);const token=await history.ticket();
+  assert.equal(await history.recordCheck({...metadata(1),requestBytes:bytes(2)},outcome,token),null);
+  assert.equal(store.raw().checks.length,0);history.dispose();
+});
+test('old markers without a proof mode or qualification never acquire invented claims on reload', async () => {
+  const {history,store}=harness();await history.enable(true);const token=await history.ticket();
+  await history.recordCheck(metadata(1),outcome,token);
+  const prior=structuredClone(store.raw());delete prior.checks[0].proofMode;delete prior.checks[0].fundsQualifiedAtCheck;
+  const reloaded=harness(persistence(prior)).history;await reloaded.refresh();
+  assert.equal(reloaded.snapshot().checks[0].proofMode,null);
+  assert.equal(reloaded.snapshot().checks[0].fundsQualifiedAtCheck,false);history.dispose();reloaded.dispose();
 });
 test('two service instances serialize check markers for cross-tab duplicate warnings', async () => {
   const store = persistence(), a = harness(store).history, b = harness(store).history;

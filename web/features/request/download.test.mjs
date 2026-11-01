@@ -41,3 +41,15 @@ test('download URL retains exact binary bytes and revokes on replacement and cle
   download.replace(bytes.buffer, metadata); assert.deepEqual(revoked, ['blob:1']);
   download.clear(); download.clear(); assert.deepEqual(revoked, ['blob:1', 'blob:2']);
 });
+test('signature creation rejects a disabled initialized worker before creation, with no fallback', async () => {
+  const sent = []; let terminated = 0;
+  const tools = setupRequest({ fetch: fetcher, workerFactory() {
+    return { terminate() { terminated++; }, postMessage(data) {
+      sent.push(data.type);
+      queueMicrotask(() => this.onmessage({ data: { id: data.id, type: 'ready', abiVersion: 2,
+        capabilities: { keyKnowledge: true, signaturePossession: false } } }));
+    } };
+  } });
+  await assert.rejects(tools.create({ ...options, proofMode: 'signature-possession', signingKind: 'p2wpkh' }), /unavailable/);
+  assert.deepEqual(sent, ['initialize']); assert.equal(terminated, 1); tools.dispose();
+});

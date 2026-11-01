@@ -18,7 +18,7 @@ spec.loader.exec_module(qualification)
 
 
 class QualificationTests(unittest.TestCase):
-    def exercise(self, mode=None, fail_full=False):
+    def exercise(self, mode=None, fail_full=False, signature=False):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / 'web/features/provider').mkdir(parents=True)
@@ -27,6 +27,8 @@ class QualificationTests(unittest.TestCase):
                 (root / name).touch()
             commands = []
             output = root / 'docs/.vitepress/dist'
+            (root / 'cross').mkdir()
+            (root / 'cross/build-provenance.json').write_text(json.dumps({'signatureMode': signature}))
 
             class Server:
                 server_port = 12345
@@ -51,7 +53,10 @@ class QualificationTests(unittest.TestCase):
                         hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                                   for p in output.iterdir() if p.name != 'asset-manifest.json'}
                         (output / 'asset-manifest.json').write_text(json.dumps(hashes))
-                    kwargs['stdout'].write('# tests 1\n# pass 1\n# fail 0\n')
+                    if command[0] == 'ctest':
+                        kwargs['stdout'].write('100% tests passed, 0 tests failed out of 2\nThe following tests did not run:\n  2 - optional-core-fixture (Skipped)\n')
+                    else:
+                        kwargs['stdout'].write('# tests 1\n# pass 1\n# fail 0\n')
                 def wait(self, timeout):
                     return self.returncode
 
@@ -60,6 +65,16 @@ class QualificationTests(unittest.TestCase):
                     '--native-off', str(root / 'offline'), '--evidence', str(root / 'evidence')]
             if mode is not None:
                 args += ['--mode', mode]
+            if signature:
+                args.append('--signature-mode')
+                disabled = root / 'disabled-site'
+                disabled.mkdir()
+                (disabled / 'build-provenance.json').write_text(json.dumps({'base': '/', 'wasm': {'signatureMode': False}}))
+                args += ['--disabled-site', str(disabled)]
+                subpath = root / 'disabled-subpath-site'
+                subpath.mkdir()
+                (subpath / 'build-provenance.json').write_text(json.dumps({'base': '/quietproof/', 'wasm': {'signatureMode': False}}))
+                args += ['--disabled-subpath-site', str(subpath)]
             with patch.object(qualification, 'ROOT', root), patch('sys.argv', args), \
                  patch.object(qualification.subprocess, 'check_output', return_value='fixture-head'), \
                  patch.object(qualification.subprocess, 'Popen', Process), \
@@ -91,12 +106,12 @@ class QualificationTests(unittest.TestCase):
         self.assertFalse({'wasm-browser', 'provider-browser', 'root-build-b'} & names)
         native = next(c for c in commands if c[0] == 'ctest' and '-R' not in c)
         self.assertEqual(native[native.index('-LE') + 1], 'proof-heavy')
-        build = commands[0]
+        build = next(c for c in commands if c[:2] == ['cmake', '--build'])
         self.assertIn('--target', build)
         self.assertIn('p2sh-multisig-test', build)
         self.assertFalse({'pokc-test', 'quietproof-browser-verifier-test', 'quietproof-browser-fixtures'} & set(build))
         wasm = next(c for c in commands if 'tests/wasm/browser.test.mjs' in c)
-        self.assertIn('--test-skip-pattern=^(real proof stages|browser time and phase failures)', wasm)
+        self.assertIn('--test-skip-pattern=^(real proof stages|real signature|browser time and phase failures)', wasm)
         self.assertTrue(all(entry['status'] == 'not_run_by_selected_mode' for entry in report['notRun']))
         self.assertFalse(any('web/exhaustive.browser.test.mjs' in command or
                              'tests/wasm/feasibility.mjs' in command for command in commands))
@@ -119,11 +134,32 @@ class QualificationTests(unittest.TestCase):
         self.assertTrue(provenance['qualification']['wasmProofVerification'])
         native = next(c for c in commands if c[0] == 'ctest' and '-R' not in c)
         self.assertNotIn('-LE', native)
+        native_record = next(c for c in report['checks'] if c['command'][0] == 'ctest')
+        self.assertEqual(native_record['counts'], {'total': 2, 'fail': 0, 'pass': 1, 'skipped': 1})
+        self.assertEqual(native_record['skippedTests'], ['optional-core-fixture'])
         self.assertTrue(any('web/features/provider/verification.browser.test.mjs' in c for c in commands))
         self.assertTrue(any(c[:3] == ['npm', 'run', 'test:wasm'] for c in commands))
 
     def test_explicit_full_selects_matrix_and_resources(self):
         self.assert_full('full')
+
+    def test_signature_mode_propagates_to_all_nested_builds(self):
+        commands, report, _ = self.exercise('full', signature=True)
+        self.assertTrue(report['signatureMode'])
+        packages = [c for c in commands if 'scripts/build_static.py' in c]
+        self.assertGreaterEqual(len(packages), 3)
+        self.assertTrue(all('--signature-mode' in c for c in packages))
+        configs = [c for c in commands if c[:2] == ['cmake', '-S']]
+        self.assertEqual(len(configs), 2)
+        self.assertTrue(all('-DQUIETPROOF_BUILD_SIGNATURE_MODE=ON' in c for c in configs))
+
+    def test_signature_smoke_builds_registered_context_contracts(self):
+        commands, _, _ = self.exercise('smoke', signature=True)
+        build = next(c for c in commands if c[:2] == ['cmake', '--build'])
+        self.assertIn('quietproof-browser-context-linkage-test', build)
+        for variant in ['debug', 'optimized']:
+            for first in ['enabled', 'disabled']:
+                self.assertIn(f'quietproof-browser-context-{variant}-{first}-first-test', build)
 
     def test_local_default_remains_full(self):
         self.assert_full(None)

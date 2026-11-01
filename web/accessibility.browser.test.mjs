@@ -121,6 +121,11 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
       const verify=page.getByRole('button',{name:'Verify offline',exact:true}); await verify.waitFor();
       await capture('verify-empty',feature,verify);
       await page.getByLabel('Proof file (.qpf)',{exact:true}).focus(); await page.keyboard.press('Tab');
+      assert.equal(await page.evaluate(()=>document.activeElement.id),'qp-verify-proof-mode');
+      assert.equal(await page.getByLabel('Proof mode (chosen independently)',{exact:true}).inputValue(),'key-knowledge');
+      await page.keyboard.press('Tab');
+      assert.equal(await page.getByRole('button',{name:'Check signature support',exact:true}).evaluate(el=>el===document.activeElement),true);
+      await page.keyboard.press('Tab');
       assert.equal(await page.evaluate(()=>document.activeElement.id),'qp-policy');
       await page.getByLabel('Expected policy source').selectOption('request');
       await page.getByLabel('Expected request file (.qpr)',{exact:true}).setInputFiles(upload('expected.qpr',request));
@@ -159,6 +164,13 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
       const workers=await page.evaluate(()=>({created:window.__resourceWorkers.created,terminated:window.__resourceWorkers.terminated,held:window.__resourceWorkers.held.length}));
       assert.equal(workers.created,workers.terminated); assert.equal(workers.held,0);
       console.log(JSON.stringify({engine:name,states:10,combinationsPerState:4,workers,physicalLowMemory:'unverified',screenReader:'not exercised',timeout:'test-only 50ms substitution for the five-minute deadline'}));
+    } catch (error) {
+      if (evidence && page) {
+        await mkdir(evidence,{recursive:true});
+        await writeFile(resolve(evidence,`${name}-failure.txt`),await page.locator('body').innerText().catch(()=>''));
+        await page.screenshot({path:resolve(evidence,`${name}-failure.png`),fullPage:true}).catch(()=>{});
+      }
+      throw error;
     } finally {
       releaseProvider?.();
       await page?.evaluate(()=>{window.__resourceWorkers.hold=false;for(const e of window.__resourceWorkers.held.splice(0))e.send();}).catch(()=>{});

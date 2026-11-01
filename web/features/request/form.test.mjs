@@ -15,3 +15,10 @@ test('context validates protocol lifetime, UTF-8 byte limits and supported purpo
     { verifier: 'é'.repeat(129) }, { message: 'é'.repeat(2049) }, { message: '\n' }, { purpose: 'bridge-authorization' }, { claims: [] }])
     assert.throws(() => validateForm({ ...options, ...change }));
 });
+test('signature selection requires supported build and a signing kind among selected outputs', () => {
+  const options = { network: 'mainnet', claims: [claim(1)], verifier: 'Auditor', purpose: 'proof-of-control', message: '',
+    lifetimeSeconds: '300', proofMode: 'signature-possession', signingKind: 'p2wpkh' };
+  assert.equal(validateForm(options, { signaturePossession: true }).count, 1);
+  assert.throws(() => validateForm(options, { signaturePossession: false }), /unavailable/);
+  assert.throws(() => validateForm({ ...options, signingKind: 'p2pkh' }, { signaturePossession: true }), /present/);
+});

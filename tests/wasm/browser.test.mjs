@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
+import { chromium, webkit } from 'playwright';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const artifact = process.env.QUIETPROOF_WASM;
@@ -21,7 +21,7 @@ before(async () => {
         response.end('<!doctype html><title>Quietproof worker qualification</title>');
         return;
       }
-      if (realFixtures && /^\/real\/one-key\.(qpf|qpr|evidence)$/.test(path)) {
+      if (realFixtures && /^\/real\/(one-key|signature-(p2pkh|p2wpkh|mixed))\.(qpf|qpr|evidence)$/.test(path)) {
         response.end(await readFile(resolve(realFixtures, path.split('/').pop()))); return;
       }
       if (path === '/quietproof.wasm') {
@@ -29,7 +29,7 @@ before(async () => {
         response.end(wasm);
         return;
       }
-      if (/^\/tests\/wasm\/fixtures\/[0-2]\.(options|qpr|qpf)$/.test(path)) {
+      if (/^\/tests\/wasm\/fixtures\/([0-2]|signature-p2[wp]*kh)\.(options|qpr|qpf)$/.test(path)) {
         response.end(await readFile(resolve(root, '.' + path))); return;
       }
       const local = resolve(root, '.' + path);
@@ -42,8 +42,12 @@ before(async () => {
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   origin = `http://127.0.0.1:${server.address().port}`;
-  browser = await chromium.launch({ headless: true });
-  console.log(`Browser: ${browser.version()}; Playwright 1.61.1`);
+  const engine = process.env.QUIETPROOF_WASM_ENGINE ?? 'chromium';
+  assert(['chromium', 'webkit'].includes(engine));
+  browser = await ({ chromium, webkit })[engine].launch({ headless: true,
+    ...(engine === 'webkit' && process.env.QUIETPROOF_WEBKIT_EXECUTABLE ?
+      { executablePath: process.env.QUIETPROOF_WEBKIT_EXECUTABLE } : {}) });
+  console.log(`Browser: ${engine} ${browser.version()}; Playwright 1.61.1`);
   page = await browser.newPage();
   page.on('console', message => {
     const value = message.text();
@@ -347,6 +351,18 @@ test('canonical v1/v2/mixed request bytes match native golden codecs exactly', a
       call('quietproof_wasm_create_request', options);
       if (!snapshot.every((b, i) => b === new Uint8Array(result.bytes)[i])) throw new Error('Copied result lifetime failed');
     }
+    for (const name of ['signature-p2pkh', 'signature-p2wpkh']) {
+      const load = async ext => (await fetch(`/tests/wasm/fixtures/${name}.${ext}`)).arrayBuffer();
+      const options = await load('options'), golden = new Uint8Array(await load('qpr'));
+      const created = call('quietproof_wasm_create_request', options);
+      if (api.quietproof_wasm_capabilities() & 2) {
+        if (created.status || created.bytes.byteLength !== golden.length ||
+            !golden.every((b,i)=>b===new Uint8Array(created.bytes)[i])) throw new Error('Signature native golden disagreement');
+      } else if (created.status !== 5) throw new Error('Disabled signature request capability accepted');
+      const metadata = decodeInspection(call('quietproof_wasm_inspect', await load('qpf'), 1).bytes);
+      if (metadata.proofMode !== 'signature-possession' || metadata.verified !== false || metadata.proofBytes !== 3)
+        throw new Error('Signature metadata claims verification');
+    }
     const pointer = api.quietproof_wasm_alloc(16);
     api.quietproof_wasm_free(pointer); api.quietproof_wasm_free(pointer);
     if (!api.quietproof_wasm_create_request(pointer, 16) || !api.quietproof_wasm_inspect(-1, 4096, 0) ||
@@ -545,6 +561,75 @@ test('real proof stages bind independent request/policy and consume explorer pha
       return true;
     } finally { worker.terminate(); }
   });
+});
+
+test('real signature proofs require explicit capability, mode and retained request', { timeout: 1200000 }, async () => {
+  assert(realFixtures, 'Native signature fixtures are required.');
+  await inBrowser(async (expectedCapability) => {
+    const { instantiateReactor } = await import('/web/wasm/runtime.mjs');
+    const reactor = await instantiateReactor(await (await fetch('/quietproof.wasm')).arrayBuffer());
+    const enabled = reactor.capabilities.signaturePossession;
+    if (expectedCapability !== null && enabled !== expectedCapability) throw new Error('Build capability disagreement');
+    const reject = (fn, text) => {
+      try { fn(); } catch (error) {
+        if (text && !error.message.includes(text)) throw error;
+        return;
+      }
+      throw new Error('Expected signature rejection');
+    };
+    for (const name of ['signature-p2pkh', 'signature-p2wpkh', 'signature-mixed']) {
+      const load = async ext => {
+        let response = await fetch(`/real/${name}.${ext}`);
+        if (!enabled && !response.ok) response = await fetch(`/tests/wasm/fixtures/${name === 'signature-mixed' ? 'signature-p2wpkh' : name}.${ext}`);
+        if (!response.ok) throw new Error(`Missing real native fixture ${name}`);
+        return response.arrayBuffer();
+      };
+      const proof = await load('qpf'), request = await load('qpr');
+      const policy = { proofMode: 'signature-possession', expectedRequest: request, provider: '',
+        maxLifetimeSeconds: 86400, minConfirmations: 1, minimumTotalSats: 0, maxObservationAgeSeconds: 60 };
+      const metadata = reactor.inspect(proof, true);
+      if (metadata.verified !== false || metadata.proofMode !== 'signature-possession' ||
+          metadata.statementVersion !== 3 || metadata.envelopeVersion !== 3 ||
+          metadata.circuitDigest !== '85fc9626e74e1944e736237c5f71220f982b05a3f786c491cf35ef2e56547d32' ||
+          metadata.rate !== 4 || metadata.queries !== 128) throw new Error('Signature metadata disagreement');
+      reject(() => reactor.prepare(proof, { ...policy, proofMode: 'key-knowledge' }));
+      reject(() => reactor.prepare(proof, { ...policy, expectedRequest: undefined }), 'retained');
+      reject(() => reactor.prepare(new TextEncoder().encode('QPA1private authorisation').buffer, policy), 'private_receipt_input');
+      if (!enabled) {
+        reject(() => reactor.prepare(proof, policy), 'signature_mode_disabled');
+        continue;
+      }
+      const wrong = request.slice(0); new Uint8Array(wrong)[wrong.byteLength - 1] ^= 1;
+      reject(() => reactor.prepare(proof, { ...policy, expectedRequest: wrong }));
+      const identity = proof.slice(0), tail = 9 + request.byteLength;
+      new Uint8Array(identity)[tail + 13] ^= 1;
+      reject(() => reactor.prepare(identity, policy), 'unapproved_circuit');
+      const crossMode = proof.slice(0); new Uint8Array(crossMode)[4] = 2;
+      reject(() => reactor.prepare(crossMode, policy));
+      const prepared = reactor.prepare(proof, policy);
+      if (prepared.cryptography !== 'not_checked' || prepared.manifest) throw new Error('Unchecked proof reported valid');
+      const start = performance.now();
+      const verified = reactor.verify(prepared.contextId);
+      console.info(`qp-stage: ${name} verify ${Math.round(performance.now()-start)}ms memory=${reactor.exports.memory.buffer.byteLength}`);
+      if (verified.cryptography !== 'valid' || verified.authorizes !== false ||
+          verified.explorer !== 'unavailable' || verified.manifest?.proofMode !== 'signature-possession')
+        throw new Error('Native/WASM signature verification disagreement');
+      if (reactor.exports.memory.buffer.byteLength > 2147483648) throw new Error('WASM memory cap exceeded');
+      reject(() => reactor.verify(prepared.contextId));
+      if (name === 'signature-p2pkh') {
+        const corrupted = proof.slice(0); new Uint8Array(corrupted)[corrupted.byteLength - 1] ^= 1;
+        const bad = reactor.prepare(corrupted, policy);
+        const invalid = reactor.verify(bad.contextId);
+        if (invalid.cryptography !== 'invalid' || invalid.manifest || invalid.explorer !== 'unavailable')
+          throw new Error('Corrupted signature proof accepted or exposed funds metadata');
+      }
+    }
+    const scalar = await (await fetch('/real/one-key.qpf')).arrayBuffer();
+    const scalarRequest = await (await fetch('/real/one-key.qpr')).arrayBuffer();
+    reject(() => reactor.prepare(scalar, { proofMode: 'signature-possession', expectedRequest: scalarRequest,
+      provider: '', maxLifetimeSeconds: 86400, minConfirmations: 1, minimumTotalSats: 0, maxObservationAgeSeconds: 60 }));
+    return true;
+  }, process.env.QUIETPROOF_SIGNATURE_MODE === undefined ? null : process.env.QUIETPROOF_SIGNATURE_MODE === '1');
 });
 
 test('browser time and phase failures prevent crypto and evidence reuse', async () => {

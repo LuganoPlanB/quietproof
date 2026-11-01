@@ -1,11 +1,36 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setupProofInput, expectedPolicy } from './input.mjs';
-import { failureResult, observationReasons } from './results.mjs';
+import { failureResult, observationReasons, claimDetails, fundsEvidenceLabel, publicResultReport } from './results.mjs';
 const options = { mode: 'explicit', network: 'mainnet', verifier: 'Independent', purpose: 'proof-of-control', message: '', confirmed: true };
 const proof = { name: 'proof.qpf', size: 1, arrayBuffer: async () => new ArrayBuffer(1) };
 const args = { proof, options, selectedNetwork: 'mainnet' };
 const asset = async () => new Response(new Uint8Array([1]));
+test('valid cryptography and a provider label alone cannot establish qualified funds', () => {
+  const result={cryptography:'valid',policy:'matched',explorer:'reported_unspent'};
+  assert.match(fundsEvidenceLabel(result),/Not established/);
+  assert.match(fundsEvidenceLabel({...result,fundsEvidence:{qualifiedAtCheck:true}}),/at check time/);
+  assert.match(fundsEvidenceLabel({...result,cryptography:'invalid',fundsEvidence:{qualifiedAtCheck:true}}),/Not established/);
+});
+test('public report whitelist excludes receipts, witnesses and binary artifacts', () => {
+  const marker='PRIVATE_WITNESS_MARKER';
+  const result={cryptography:'valid',policy:'matched',explorer:'unavailable',receipt:marker,witness:marker,
+    metadata:{proofMode:'signature-possession',nonce:'00'.repeat(32),network:'mainnet',claims:[],
+      receipt:marker,publicKeyWitness:marker,requestBytes:new ArrayBuffer(32)},
+    fundsEvidence:{qualifiedAtCheck:false,signature:marker}};
+  const report=publicResultReport(result),encoded=JSON.stringify(report);
+  assert(!encoded.includes(marker));assert(!encoded.includes('requestBytes'));assert(!encoded.includes('witness'));
+  assert.equal(report.authorizes,false);assert.equal(report.fundsEvidence.validatedNode,false);
+  assert.match(report.limitations.join(' '),/global replay/);
+  assert.equal(report.claim.proofMode,'signature-possession');
+});
+test('signature claim explains delegation and avoids private-key or signing-time claims', () => {
+  const signature=claimDetails({ proofMode: 'signature-possession' });
+  assert.match(signature.meaning,/does not prove knowledge of the private key/);
+  assert.match(signature.meaning,/delegated/); assert.match(signature.meaning,/does not establish signing time/);
+  assert.match(signature.disclosure,/signature and public key/); assert.match(signature.disclosure,/Keep .qpa/);
+  assert.equal(claimDetails({}).label,'Private-key knowledge');
+});
 
 test('verification requires independent policy/network and bounded observation limits before proof reads', async () => {
   let reads = 0;

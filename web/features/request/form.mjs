@@ -18,13 +18,19 @@ export function selectionSummary(claims) {
   return { totalSats: total.toString(), keys: programs.size, count: claims.length };
 }
 
-export function validateForm(options) {
+export function validateForm(options, capabilities) {
   const summary = selectionSummary(options.claims);
   if (!summary.count) throw new Error('Select at least one output.');
   if (!options.verifier.trim()) throw new Error('Enter the intended verifier.');
   if (!['proof-of-control', 'proof-of-funds'].includes(options.purpose)) throw new Error('Select a supported purpose.');
   if (!/^[1-9][0-9]*$/.test(String(options.lifetimeSeconds)) || BigInt(options.lifetimeSeconds) > 86400n)
     throw new Error('Lifetime must be a whole number from 1 to 86400 seconds.');
+  if (options.proofMode === 'signature-possession') {
+    if (capabilities && capabilities.signaturePossession !== true)
+      throw new Error('Signature possession is unavailable in this verifier build.');
+    if (!options.claims.some(claim => claim.scriptKind === options.signingKind))
+      throw new Error('Choose a signing kind present among the selected outputs.');
+  }
   encodeRequestOptions(options);
   return summary;
 }

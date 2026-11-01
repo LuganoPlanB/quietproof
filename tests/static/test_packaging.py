@@ -78,6 +78,8 @@ class PackagingTests(unittest.TestCase):
             stub.write_text('#!/bin/sh\nprintf "controlled build failure\\n"\nexit 7\n')
             stub.chmod(0o755)
             evidence = root / 'evidence'
+            (root / 'cross').mkdir()
+            (root / 'cross/build-provenance.json').write_text('{"signatureMode":false}')
             environment = dict(os.environ, PATH=str(binary) + os.pathsep + os.environ['PATH'],
                                QUIETPROOF_RPC_PASSWORD='PUBLIC_TEST_SENTINEL_NEVER_CAPTURE')
             result = subprocess.run(['python3', str(ROOT / 'scripts/qualify_static.py'),
@@ -116,6 +118,37 @@ class PackagingTests(unittest.TestCase):
                 self.assertEqual(result.exception.code, 2)
                 self.assertIn('another compiler installation', stderr.getvalue())
                 self.assertEqual(commands.call_count, 1, 'only SDK cleanliness checked; no CMake build started')
+
+    def test_cross_build_signature_flag_is_explicit_in_enabled_and_default_builds(self):
+        spec = importlib.util.spec_from_file_location('build_wasm', ROOT / 'scripts/build_wasm.py')
+        builder = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(builder)
+        class StopAfterBuild(Exception):
+            pass
+        for enabled in [False, True]:
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                wasi = root / 'wasi'
+                (wasi / 'bin').mkdir(parents=True)
+                (wasi / 'bin/clang++').touch()
+                (wasi / 'VERSION').write_text('34.0\n')
+                args = ['build_wasm.py', '--sdk-source', str(root), '--wasi-sdk', str(wasi),
+                        '--work-dir', str(root / 'cross')]
+                if enabled:
+                    args.append('--signature-mode')
+                commands = []
+                def run(command, **kwargs):
+                    commands.append(list(command))
+                    if command[0] == 'node':
+                        raise StopAfterBuild()
+                    return SimpleNamespace(returncode=0)
+                with patch('sys.argv', args), patch.object(builder.subprocess, 'check_output', return_value=builder.SDK_COMMIT), \
+                     patch.object(builder.subprocess, 'run', side_effect=run):
+                    with self.assertRaises(StopAfterBuild):
+                        builder.main()
+                configure = next(c for c in commands if c[:2] == ['cmake', '-S'] and str(ROOT) in c)
+                self.assertIn('-DQUIETPROOF_BUILD_SIGNATURE_MODE=' + ('ON' if enabled else 'OFF'), configure)
+                self.assertFalse(any('ecdsa' in str(part).lower() for command in commands for part in command))
 
 
 if __name__ == '__main__':

@@ -48,8 +48,20 @@ def main():
     parser.add_argument('--evidence', type=Path, required=True, help='New, nonexistent directory')
     parser.add_argument('--base', default='/')
     parser.add_argument('--allow-dirty', action='store_true')
+    parser.add_argument('--signature-mode', action='store_true')
+    parser.add_argument('--disabled-site', type=Path,
+                        help='Separately packaged signature-OFF site for full capability separation checks')
+    parser.add_argument('--disabled-subpath-site', type=Path,
+                        help='Separately packaged signature-OFF /quietproof/ site')
     parser.add_argument('--source-addition', action='append', default=[])
     args = parser.parse_args()
+    if args.mode == 'full' and args.signature_mode:
+        for path, base in [(args.disabled_site, '/'), (args.disabled_subpath_site, '/quietproof/')]:
+            if not path:
+                parser.error('signature full mode requires separate signature-OFF root/subpath sites')
+            disabled = json.loads((path / 'build-provenance.json').read_text())
+            if disabled.get('wasm', {}).get('signatureMode') is not False or disabled.get('base') != base:
+                parser.error('disabled artifact must declare signatureMode=false and its matching base')
     args.evidence = args.evidence.resolve()
     args.evidence.mkdir(parents=True, exist_ok=False)
     native, offline, cross = args.native_on.resolve(), args.native_off.resolve(), args.cross_work.resolve()
@@ -59,17 +71,20 @@ def main():
                 'reason': 'Fast CI omits expensive qualification; run --mode full explicitly or on schedule'}
                for name in ['native-proof-heavy', 'wasm-proof-verification', 'provider-browser',
                             'fixtures', 'full-browser', 'resources', 'reproducibility']] if args.mode == 'smoke' else []
-    manifest = {'schema': 2, 'mode': args.mode, 'notRun': not_run,
+    manifest = {'schema': 2, 'mode': args.mode, 'signatureMode': args.signature_mode, 'notRun': not_run,
                 'startedAt': now(), 'cwd': str(ROOT), 'checks': [],
                 'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
                 'environment': {key: os.environ[key] for key in ['QUIETPROOF_WEBKIT_EXECUTABLE', 'PLAYWRIGHT_BROWSERS_PATH'] if key in os.environ},
-                'status': 'running', 'servers': []}
+                'status': 'running', 'servers': [],
+                'disabledSite': str(args.disabled_site.resolve()) if args.disabled_site else None,
+                'disabledSubpathSite': str(args.disabled_subpath_site.resolve()) if args.disabled_subpath_site else None}
     manifest_path = args.evidence / 'qualification.json'
 
     def save():
         manifest_path.write_text(json.dumps(manifest, sort_keys=True, indent=2) + '\n')
 
     environment = dict(os.environ, QUIETPROOF_WASM=str(wasm),
+                       QUIETPROOF_SIGNATURE_MODE='1' if args.signature_mode else '0',
                        QUIETPROOF_WASM_FIXTURES=str(native / 'tests/wasm-real'),
                        QUIETPROOF_NATIVE_CLI=str(native / 'quietproof'),
                        QUIETPROOF_VERIFY_FIXTURES=str(args.evidence / 'fixtures'))
@@ -78,10 +93,13 @@ def main():
                         ('QUIETPROOF_HISTORY_ARTIFACTS', 'history'), ('QUIETPROOF_WORKFLOW_ARTIFACTS', 'workflow'),
                         ('QUIETPROOF_ROUNDTRIP_ARTIFACTS', 'matrix')]:
         environment[key] = str(args.evidence / folder)
+    environment['QUIETPROOF_SIGNATURE_UI_ARTIFACTS'] = str(args.evidence / 'signature-ui')
+    environment['QUIETPROOF_SIGNATURE_STATE_ARTIFACTS'] = str(args.evidence / 'signature-state')
     # Capture only declared path/config inputs. Inherited QUIETPROOF_* variables
     # could include native credentials and must never be copied into evidence.
     recorded_environment = {
         'QUIETPROOF_WASM', 'QUIETPROOF_WASM_FIXTURES', 'QUIETPROOF_NATIVE_CLI',
+        'QUIETPROOF_SIGNATURE_MODE',
         'QUIETPROOF_VERIFY_FIXTURES', 'QUIETPROOF_REQUEST_SCREENSHOTS',
         'QUIETPROOF_VERIFY_SCREENSHOTS', 'QUIETPROOF_SECURITY_SCREENSHOTS',
         'QUIETPROOF_ACCESSIBILITY_EVIDENCE', 'QUIETPROOF_HISTORY_ARTIFACTS',
@@ -89,6 +107,8 @@ def main():
         'QUIETPROOF_WEBKIT_EXECUTABLE', 'QUIETPROOF_SITE_ORIGIN', 'QUIETPROOF_SECURITY_BASE',
         'QUIETPROOF_ARTIFACT_DIR', 'QUIETPROOF_FEASIBILITY_REPORT', 'QUIETPROOF_FEASIBILITY_SITE',
         'QUIETPROOF_HOSTING_ARTIFACTS',
+        'QUIETPROOF_DISABLED_SITE_ORIGIN', 'QUIETPROOF_SIGNATURE_UI_ARTIFACTS',
+        'QUIETPROOF_SIGNATURE_STATE_ARTIFACTS', 'QUIETPROOF_SIGNATURE_STATE_SUBPATH', 'WASI_SDK_PATH',
     }
 
     def run(name, command, timeout=7200):
@@ -118,7 +138,10 @@ def main():
         counts = {key: int(value) for key, value in re.findall(r'^(?:# |ℹ )(tests|pass|fail|cancelled|skipped) (\d+)$', text, re.M)}
         ctest = re.search(r'(\d+)% tests passed, (\d+) tests failed out of (\d+)', text)
         if ctest:
-            counts = {'total': int(ctest[3]), 'fail': int(ctest[2]), 'pass': int(ctest[3]) - int(ctest[2])}
+            skipped = re.findall(r'^\s*\d+ - (.+) \(Skipped\)\s*$', text, re.M)
+            counts = {'total': int(ctest[3]), 'fail': int(ctest[2]), 'skipped': len(skipped),
+                      'pass': int(ctest[3]) - int(ctest[2]) - len(skipped)}
+            check['skippedTests'] = skipped
         check.update(exit=status, counts=counts or None, completedAt=now(),
                      logSha256=hashlib.sha256(path.read_bytes()).hexdigest(), logBytes=path.stat().st_size)
         save()
@@ -131,6 +154,8 @@ def main():
     def packaged_build(base, name):
         command = ['python3', 'scripts/build_static.py', '--cross-work', cross,
                    '--sdk-source', args.sdk_source.resolve(), '--base', base]
+        if args.signature_mode:
+            command.append('--signature-mode')
         if args.allow_dirty:
             command.append('--allow-dirty')
         for path in args.source_addition:
@@ -161,10 +186,23 @@ def main():
         origin = f'http://127.0.0.1:{server.server_port}'
         record = {'origin': origin, 'base': base, 'startedAt': now(), 'stoppedAt': None}
         manifest['servers'].append(record)
+        disabled_server = disabled_thread = disabled_record = None
+        disabled_site = args.disabled_site if base == '/' else args.disabled_subpath_site
+        if disabled_site:
+            disabled_server = ThreadingHTTPServer(('127.0.0.1', 0), partial(Handler, directory=str(disabled_site.resolve())))
+            disabled_thread = threading.Thread(target=disabled_server.serve_forever, daemon=True)
+            disabled_thread.start()
+            disabled_origin = f'http://127.0.0.1:{disabled_server.server_port}'
+            disabled_record = {'origin': disabled_origin, 'base': base, 'startedAt': now(), 'stoppedAt': None,
+                               'role': 'separate signature-disabled artifact'}
+            manifest['servers'].append(disabled_record)
+            environment['QUIETPROOF_DISABLED_SITE_ORIGIN'] = disabled_origin + base.rstrip('/')
         save()
         environment.update(QUIETPROOF_SITE_ORIGIN=origin + base.rstrip('/'),
                            QUIETPROOF_SECURITY_BASE='', QUIETPROOF_ARTIFACT_DIR=str(output),
                            QUIETPROOF_HOSTING_ARTIFACTS=str(args.evidence / 'hosting' / ('root' if base == '/' else 'subpath')))
+        environment.update(QUIETPROOF_SIGNATURE_STATE_SUBPATH='1' if base != '/' else '0',
+                           QUIETPROOF_SIGNATURE_STATE_ARTIFACTS=str(args.evidence / 'signature-state' / ('root' if base == '/' else 'subpath')))
         try:
             run('hosting-' + ('root' if base == '/' else 'subpath'),
                 ['node', '--test', '--test-concurrency=1', 'tests/static/hosting.browser.test.mjs'])
@@ -173,9 +211,16 @@ def main():
             if full:
                 files = sorted(str(p.relative_to(ROOT)) for p in (ROOT / 'web').rglob('*.browser.test.mjs')
                                if p.name != 'security.browser.test.mjs' and
-                               p.relative_to(ROOT).as_posix() != 'web/features/provider/verification.browser.test.mjs')
+                               p.relative_to(ROOT).as_posix() != 'web/features/provider/verification.browser.test.mjs' and
+                               (args.signature_mode or p.name != 'signature-ui.browser.test.mjs'))
                 run('full-browser', ['node', '--test', '--test-concurrency=1', *files], timeout=10800)
+            elif args.mode == 'full':
+                run('signature-state-subpath', ['node', '--test', '--test-concurrency=1',
+                    'web/features/verify/signature-state.browser.test.mjs'], timeout=3600)
         finally:
+            if disabled_server:
+                disabled_server.shutdown(); disabled_server.server_close(); disabled_thread.join(timeout=10)
+                disabled_record['stoppedAt'] = now()
             server.shutdown()
             server.server_close()
             thread.join(timeout=10)
@@ -184,6 +229,12 @@ def main():
 
     save()
     try:
+        provenance = json.loads((cross / 'build-provenance.json').read_text())
+        if bool(provenance.get('signatureMode', False)) != args.signature_mode:
+            raise RuntimeError('WASM signature capability mismatch; rebuild with matching --signature-mode')
+        for directory in [native, offline]:
+            run('configure-' + directory.name, ['cmake', '-S', ROOT, '-B', directory,
+                '-DQUIETPROOF_BUILD_SIGNATURE_MODE=' + ('ON' if args.signature_mode else 'OFF')])
         old = native / 'tests/wasm-real'
         if old.exists():
             shutil.copytree(old, args.evidence / 'previous-wasm-real')
@@ -193,7 +244,11 @@ def main():
                              'compressed-key-sha256-test', 'key-ownership-test', 'ripemd160-test',
                              'quietproof-protocol-test', 'quietproof-challenge-test',
                              'quietproof-browser-codec-test', 'quietproof-integration-test',
+                             'quietproof-browser-context-linkage-test',
                              'pokc-sage-test', 'quietproof-progress-test', 'p2sh-multisig-test']
+            if args.signature_mode:
+                native_build += [f'quietproof-browser-context-{variant}-{first}-first-test'
+                    for variant in ['debug', 'optimized'] for first in ['disabled', 'enabled']]
         run('native-on-build', native_build)
         run('native-off-build', ['cmake', '--build', offline, '--target', 'quietproof-cli', '--parallel', '2'])
         native_tests = ['ctest', '--test-dir', native, '--output-on-failure', '--no-tests=error',
@@ -205,6 +260,14 @@ def main():
                           '--parallel', '1', '--timeout', '600', '-R', '^quietproof-(package-test|cli-test|cli-rpc-test|prove-feedback-test)$'])
         if args.mode == 'full':
             run('fixtures', [native / 'quietproof-browser-fixtures', args.evidence / 'fixtures'])
+            if args.signature_mode:
+                for suffix, extra in [('families', []), ('largest', ['--largest-only'])]:
+                    run('signature-fixtures-' + suffix, ['python3', 'tests/wasm/signature_fixtures.py',
+                        '--driver', native / 'quietproof-browser-signature-test',
+                        '--output', args.evidence / 'fixtures', *extra])
+            # Keep the longstanding low-level scalar contract fixtures (one-hour
+            # request/fixed independent context) from the native verifier tests.
+            # UI/resources use the separate 24-hour feasibility fixtures below.
         if args.mode == 'full':
             run('wasm-browser', ['npm', 'run', 'test:wasm'])
             # Use fresh native proof fixtures before the long full-web matrix.
@@ -212,7 +275,7 @@ def main():
                                      'web/features/provider/verification.browser.test.mjs'])
         else:
             run('wasm-browser-fast', ['node', '--test', '--test-concurrency=1', '--test-timeout=60000',
-                '--test-skip-pattern=^(real proof stages|browser time and phase failures)',
+                '--test-skip-pattern=^(real proof stages|real signature|browser time and phase failures)',
                 'tests/wasm/browser.test.mjs'])
         units = sorted(str(p.relative_to(ROOT)) for parent in [ROOT / 'web', ROOT / 'tests/wasm']
                        for p in parent.rglob('*.test.mjs') if not p.name.endswith('.browser.test.mjs') and p.name != 'browser.test.mjs')

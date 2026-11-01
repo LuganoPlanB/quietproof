@@ -2,6 +2,59 @@ export const phaseLabel = Object.freeze({ reading: 'Reading bounded files', init
   preparing: 'Checking independent expected policy', verifying: 'Checking proof cryptography',
   fetching: 'Fetching fresh explorer observations', evaluating: 'Evaluating explorer observations' });
 
+export function claimDetails(metadata) {
+  if (metadata?.proofMode === 'signature-possession') return {
+    label: 'Signature possession · request-bound authorization',
+    meaning: 'Knowledge of a signature authorizing the exact retained request. This does not prove knowledge of the private key. The signature can be delegated for that same request; proof creation time does not establish signing time.',
+    disclosure: 'The native prover receives the signature and public key as private witness. The verifier receives the public .qpf proof and .qpr request. Keep .qpa authorization receipts private and outside this page.',
+  };
+  return { label: 'Private-key knowledge',
+    meaning: 'Knowledge of the private scalar for the disclosed key fingerprint. Key access may be shared or temporary.',
+    disclosure: 'Private keys stay in native proving tools. The verifier receives the public proof and request.',
+  };
+}
+
+export function fundsEvidenceLabel(result) {
+  return result?.cryptography === 'valid' && result?.policy === 'matched' &&
+    result?.fundsEvidence?.qualifiedAtCheck === true
+    ? 'Provider-qualified at check time (trusted, non-atomic explorer)'
+    : 'Not established by this check';
+}
+
+// A deliberately small public report. Never spread a worker result, binary
+// artifact, receipt, witness, hidden public key or arbitrary metadata into it.
+export function publicResultReport(result) {
+  if (!result || !['valid', 'invalid', 'not_checked'].includes(result.cryptography))
+    throw new Error('No completed public result to export.');
+  const metadata = result.metadata;
+  return {
+    format: 'quietproof-public-result-v1', cryptography: result.cryptography,
+    policy: result.policy, explorer: result.explorer, authorizes: false,
+    fundsEvidence: { label: fundsEvidenceLabel(result), provider: result.fundsEvidence?.provider ?? null,
+      qualifiedAtCheck: result.cryptography === 'valid' && result.policy === 'matched' && result.fundsEvidence?.qualifiedAtCheck === true,
+      trust: 'trusted_explorer_non_atomic', validatedNode: false },
+    claim: metadata ? { proofMode: metadata.proofMode ?? 'key-knowledge',
+      signatureProfile: metadata.signatureProfile ?? null, signingKind: metadata.signingKind ?? null,
+      network: metadata.network, verifier: metadata.verifier, purpose: metadata.purpose,
+      nonce: metadata.nonce, messageHash: metadata.messageHash, notBefore: metadata.notBefore,
+      expiresAt: metadata.expiresAt, claims: metadata.claims.map(({ txid, vout, amountSats, scriptKind, program }) =>
+        ({ txid, vout, amountSats, scriptKind, program })) } : null,
+    checkedAt: result.checkedAt ?? null,
+    limits: result.expected ? { minConfirmations: result.expected.minConfirmations,
+      minimumTotalSats: result.expected.minimumTotalSats,
+      maxObservationAgeSeconds: result.expected.maxObservationAgeSeconds } : null,
+    observations: result.provenance ? { provider: result.provenance.provider, atomic: false,
+      attempts: result.provenance.attempts.map(({ observedAt, completedAt, tipBefore, tipAfter, reasons }) =>
+        ({ observedAt, completedAt, tipBefore: { block: tipBefore.block, height: tipBefore.height },
+          tipAfter: { block: tipAfter.block, height: tipAfter.height },
+          reasons: reasons.map(({ code, txid, vout }) => ({ code, txid, vout })) })) } : null,
+    limitations: ['Editable local report; independently verify the public proof and retained expected request.',
+      'Explorer observations are trusted and non-atomic, not validated-node chain evidence.',
+      'No acceptance authority or global replay prevention. Local history is editable and origin-scoped.',
+      'Device clocks are untrusted; a check does not establish present ownership, exclusivity or solvency.'],
+  };
+}
+
 export function failureResult(error, progress = {}) {
   progress ??= {};
   const reasons = {

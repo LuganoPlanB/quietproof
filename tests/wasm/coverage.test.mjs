@@ -1,11 +1,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { REQUIRED_ENGINES, REQUIRED_KEYS, parseSelection, assessCoverage } from './coverage.mjs';
+import { REQUIRED_ENGINES, REQUIRED_KEYS, SIGNATURE_KEYS, parseSelection, assessCoverage } from './coverage.mjs';
 
 // Synthetic reports exercise accounting, not proof verification or callbacks.
 const engine = name => ({ name, status: 'passed', checks: REQUIRED_KEYS.map(key => ({ key, status: 'passed' })) });
 const complete = () => ({ completeness: 'complete', engines: REQUIRED_ENGINES.map(engine) });
+test('signature qualification requires every real family and full maximum16 coverage in each engine', () => {
+  const report=complete();report.signatureMode=true;
+  assert.equal(assessCoverage(report).passed,false);
+  for(const item of report.engines)item.checks.push(...SIGNATURE_KEYS.map(key=>({key,status:'passed',
+    claimCount:key==='signature-max16'?16:key==='signature-mixed'?2:1,
+    resourceDepth:key==='signature-max16'?'full':'verification'})));
+  assert.equal(assessCoverage(report).passed,true);
+  report.engines[1].checks.at(-1).claimCount=2;assert.equal(assessCoverage(report).passed,false);
+});
 
 test('default selection is exactly Chromium and WebKit', () => {
   assert.deepEqual(parseSelection(undefined, REQUIRED_ENGINES, [...REQUIRED_ENGINES, 'firefox'], 'engine'), ['chromium', 'webkit']);

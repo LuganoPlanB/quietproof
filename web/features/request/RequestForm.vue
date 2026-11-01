@@ -4,6 +4,7 @@ import { setupProvider } from '../provider/discovery.mjs';
 import { lookupError, selectionSummary, validateForm } from './form.mjs';
 import { setupRequest, setupDownload } from './download.mjs';
 import LocalHistory from '../history/LocalHistory.vue';
+import { probeProofCapabilities } from '../../wasm/capabilities.mjs';
 
 const props = defineProps({ wasmUrl: { type: String, required: true } });
 
@@ -14,6 +15,18 @@ let adapter, generation = 0, timer;
 let requestTools, download, requestGeneration = 0;
 const requestState = ref('idle'), requestError = ref(''), preview = ref(null), artifact = ref(null);
 const history = ref(null);
+const proofMode = ref('key-knowledge'), signingKind = ref('p2wpkh');
+const capabilities = ref({ signaturePossession: false }), capabilityState = ref('unknown'), capabilityError = ref('');
+let capabilityAbort;
+async function checkCapabilities() {
+  capabilityAbort?.abort(); capabilityAbort = new AbortController(); capabilityState.value = 'checking'; capabilityError.value = '';
+  try {
+    capabilities.value = await probeProofCapabilities({ wasmUrl: props.wasmUrl, signal: capabilityAbort.signal });
+    capabilityState.value = 'ready';
+  } catch (e) {
+    if (e.name !== 'AbortError') { capabilityState.value = 'error'; capabilityError.value = 'Cannot check signature support. Retry with the local verifier available.'; }
+  }
+}
 function invalidateRequest() {
   requestGeneration++; requestTools?.cancel(); download?.clear();
   preview.value = null; artifact.value = null; requestState.value = 'idle'; requestError.value = '';
@@ -27,18 +40,21 @@ onMounted(() => {
   reset(); requestTools = setupRequest({ wasmUrl: props.wasmUrl }); download = setupDownload();
   timer = setInterval(() => { now.value = Date.now(); }, 1000);
 });
-onUnmounted(() => { generation++; adapter?.dispose(); requestTools?.dispose(); download?.clear(); clearInterval(timer); });
+onUnmounted(() => { generation++; adapter?.dispose(); requestTools?.dispose(); download?.clear(); capabilityAbort?.abort(); clearInterval(timer); });
 watch(network, reset);
-watch([network, addresses, selected, verifier, purpose, message, lifetime], invalidateRequest, { deep: true, flush: 'sync' });
+watch([network, addresses, selected, verifier, purpose, message, lifetime, proofMode, signingKind], invalidateRequest, { deep: true, flush: 'sync' });
 watch(addresses, () => {
   // Editing an address invalidates and cancels even an already pending lookup.
   if (adapter) reset();
 });
 const chosen = computed(() => claims.value.filter((_, i) => selected.value.includes(i)));
 const summary = computed(() => selectionSummary(chosen.value));
+const signingKinds = computed(() => ['p2wpkh', 'p2pkh'].filter(kind => chosen.value.some(claim => claim.scriptKind === kind)));
+watch(signingKinds, kinds => { if (kinds.length && !kinds.includes(signingKind.value)) signingKind.value = kinds[0]; });
 const options = computed(() => ({ network: network.value, claims: chosen.value, verifier: verifier.value,
-  purpose: purpose.value, message: message.value, lifetimeSeconds: lifetime.value }));
-const validation = computed(() => { try { validateForm(options.value); return ''; } catch (e) { return e.message; } });
+  purpose: purpose.value, message: message.value, lifetimeSeconds: lifetime.value, proofMode: proofMode.value,
+  ...(proofMode.value === 'signature-possession' ? { signingKind: signingKind.value } : {}) }));
+const validation = computed(() => { try { validateForm(options.value, capabilities.value); return ''; } catch (e) { return e.message; } });
 const expiry = computed(() => /^[1-9][0-9]*$/.test(lifetime.value) && Number(lifetime.value) <= 86400
   ? new Date(now.value + Number(lifetime.value) * 1000).toISOString() : 'Choose a valid lifetime');
 function blocked(index) {
@@ -63,10 +79,11 @@ async function createRequest() {
   try {
     const ticket = await history.value?.ticket();
     if (operation !== requestGeneration) return;
-    validateForm(options.value); requestState.value = 'creating';
+    validateForm(options.value, capabilities.value); requestState.value = 'creating';
     const result = await requestTools.create(options.value);
     if (operation !== requestGeneration) return;
     preview.value = result; artifact.value = download.replace(result.bytes, result.metadata);
+    if (result.capabilities) { capabilities.value = result.capabilities; capabilityState.value = 'ready'; }
     requestState.value = 'ready';
     if (ticket) await history.value?.saveRequest(result.bytes, result.metadata, ticket);
   } catch (e) {
@@ -85,7 +102,8 @@ async function saveRequest() {
 
 <template>
   <section class="quietproof-request" aria-label="Create a request">
-    <p>Choose disclosed Bitcoin outputs to request proof of spend-key control. Proving happens in the external CLI or a wallet; keep private keys there.</p>
+    <p v-if="proofMode === 'signature-possession'">Choose disclosed Bitcoin outputs for a request-bound signature-possession proof. Wallet signing, private receipt handling and proving stay in native tools.</p>
+    <p v-else>Choose disclosed Bitcoin outputs to request proof of spend-key control. Proving happens in the external CLI or a wallet; keep private keys there.</p>
     <p>This static tool has no authoritative challenge service. A proof does not establish exclusive control, ownership, reserves or solvency. Key access may be shared or temporary.</p>
     <LocalHistory ref="history" @reset="invalidateRequest" />
     <form @submit.prevent="lookup">
@@ -121,6 +139,24 @@ async function saveRequest() {
     <p class="quietproof-total" role="status">Selected: {{ summary.count }}/16 outputs · {{ summary.keys }}/1 key fingerprints · <strong>{{ summary.totalSats }} sats</strong></p>
     <fieldset>
       <legend>3. Set the request context</legend>
+      <label for="qp-request-proof-mode">Proof mode</label>
+      <select id="qp-request-proof-mode" v-model="proofMode" aria-describedby="qp-request-mode-help">
+        <option value="key-knowledge">Private-key knowledge (default)</option>
+        <option v-if="capabilities.signaturePossession" value="signature-possession">Signature possession · request-bound authorization</option>
+      </select>
+      <button type="button" :disabled="capabilityState === 'checking'" @click="checkCapabilities">Check signature support</button>
+      <p v-if="capabilityState === 'checking'" role="status">Checking the local verifier’s proof capabilities…</p>
+      <p v-else-if="capabilityState === 'ready' && !capabilities.signaturePossession" role="status">Signature possession is unavailable in this verifier build. The existing private-key mode remains available.</p>
+      <p v-if="capabilityError" role="status">{{ capabilityError }}</p>
+      <p id="qp-request-mode-help" v-if="proofMode === 'signature-possession'">This requests knowledge of a signature authorizing this exact request, without proving private-key knowledge. The signature may be delegated for the same request. The native prover learns the signature and public key; the verifier receives only the public .qpf proof and .qpr request. Keep .qpa authorization receipts private and outside this page.</p>
+      <p v-else id="qp-request-mode-help">Default: knowledge of the private scalar for the disclosed key fingerprint. Checking signature support loads the local verifier; it makes no explorer request.</p>
+      <template v-if="proofMode === 'signature-possession'">
+        <label for="qp-signing-kind">Signing script kind</label>
+        <select id="qp-signing-kind" v-model="signingKind" aria-describedby="qp-signing-kind-help">
+          <option v-for="kind in signingKinds" :key="kind" :value="kind">{{ kind.toUpperCase() }}</option>
+        </select>
+        <p id="qp-signing-kind-help">Choose a kind present among the selected outputs and supported by the signing wallet. A P2WPKH wallet descriptor does not imply a P2PKH alias.</p>
+      </template>
       <label for="qp-verifier">Intended verifier (up to 256 UTF-8 bytes)</label>
       <input id="qp-verifier" v-model="verifier" maxlength="256" autocomplete="off" required>
       <label for="qp-purpose">Purpose</label>
@@ -140,6 +176,8 @@ async function saveRequest() {
       <h2>Review the request</h2>
       <p>These facts were decoded from the canonical request. Editing any input clears this preview. A new creation generates a fresh nonce.</p>
       <dl>
+        <dt>Proof mode</dt><dd>{{ preview.metadata.proofMode === 'signature-possession' ? 'Signature possession · request-bound authorization' : 'Private-key knowledge' }}</dd>
+        <template v-if="preview.metadata.proofMode === 'signature-possession'"><dt>Signing kind · profile</dt><dd>{{ preview.metadata.signingKind.toUpperCase() }} · {{ preview.metadata.signatureProfile }}</dd></template>
         <dt>Network · statement version</dt><dd>{{ preview.metadata.network }} · v{{ preview.metadata.statementVersion }}</dd>
         <dt>Intended verifier</dt><dd>{{ preview.metadata.verifier }}</dd>
         <dt>Purpose</dt><dd>{{ preview.metadata.purpose }}</dd>
@@ -160,10 +198,12 @@ async function saveRequest() {
       <a v-else-if="artifact" class="quietproof-download" :href="artifact.url" :download="artifact.filename">Download .qpr request</a>
       <button type="button" @click="saveRequest">Save this request locally (opt-in required)</button>
       <h3>Prove outside the browser</h3>
-      <p>Send this request to the prover through your chosen channel. On the prover’s machine, inspect it and use the existing CLI with protected key input or a supported wallet. Private keys stay outside this page.</p>
-      <pre><code>quietproof inspect {{ artifact?.filename }}
+      <p v-if="preview.metadata.proofMode === 'signature-possession'">Retain this independently issued request for verification. Send a copy to the native wallet/prover through your chosen channel. Signing, private receipt handling and proving happen outside the browser. A delegated prover receives a private authorization receipt, not the private scalar.</p>
+      <p v-else>Send this request to the prover through your chosen channel. On the prover’s machine, inspect it and use the existing CLI with protected key input or a supported wallet. Private keys stay outside this page.</p>
+      <pre v-if="preview.metadata.proofMode !== 'signature-possession'"><code>quietproof inspect {{ artifact?.filename }}
 quietproof prove --request {{ artifact?.filename }} --output proof.qpf --network {{ preview.metadata.network }}</code></pre>
-      <p>The CLI prompts for protected key input. See the auditor workflow for wallet options. Return the resulting .qpf proof to the verifier together with this exact expected .qpr request. Request creation does not check a proof or authenticate current chain state.</p>
+      <p v-if="preview.metadata.proofMode !== 'signature-possession'">The CLI prompts for protected key input. See the auditor workflow for wallet options.</p>
+      <p>Return the resulting public .qpf proof to the verifier. The verifier must retain this exact expected .qpr independently; a request copied from the proof is not independent authority. Request creation does not check a proof or authenticate current chain state. Proof creation time does not establish signing time.</p>
     </section>
     <p>Historical snapshots and bridge authorization are unavailable in this workflow. Supported browsers: Chromium and WebKit; Firefox is unsupported and unqualified.</p>
   </section>
@@ -176,6 +216,7 @@ fieldset { border: 1px solid var(--vp-c-divider); border-radius: .5rem; padding:
 legend { font-weight: 700; padding: 0 .35rem; }
 label { display: block; font-weight: 600; margin-top: 1rem; }
 input:not([type=checkbox]), textarea, select { display: block; width: 100%; box-sizing: border-box; border: 1px solid var(--vp-c-text-2); border-radius: .25rem; padding: .65rem; color: var(--vp-c-text-1); background: var(--vp-c-bg); font: inherit; }
+select { min-width: 0; overflow: hidden; }
 button { font: inherit; font-weight: 600; border: 1px solid var(--vp-c-brand-1); border-radius: .25rem; min-height: 44px; padding: .6rem 1rem; margin: .5rem .5rem .5rem 0; color: var(--vp-c-brand-1); }
 button:disabled { opacity: .65; cursor: wait; }
 :is(input, textarea, select, button):focus-visible { outline: 3px solid var(--planb-color-focus, var(--vp-c-brand-1)); outline-offset: 3px; }

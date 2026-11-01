@@ -9,6 +9,15 @@ The tiny `.qpf` files exercise **metadata parsing only**. Their three payload
 bytes are not cryptographic proofs. Inspection must always return
 `verified: false`; real verification fixtures are qualified separately.
 
+`signature-p2pkh` and `signature-p2wpkh` add v3 request and metadata-only proof
+families. Their QWC2 options explicitly select signature possession and signing
+kind. These tiny proofs are never accepted as cryptographic fixtures. Separately
+named real native proofs (`signature-p2pkh`, `signature-p2wpkh`, `signature-mixed`)
+are generated into the build's `tests/wasm-real` by
+`quietproof-browser-signature-test`; only public requests, proofs and provenance
+are retained there. Private native authorisation inputs are temporary and never
+served to either browser engine. Existing numbered fixture bytes are preserved.
+
 Regenerate all files from the native core (from the repository):
 
 ```sh

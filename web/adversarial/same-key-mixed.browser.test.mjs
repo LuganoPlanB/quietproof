@@ -62,7 +62,7 @@ for(const [name,engine] of [['chromium',chromium],['webkit',webkit]])for(const n
       await page.getByLabel('Bitcoin addresses').fill([first.address,second.address].join('\n'));assert.equal(requests.length,0);
       await page.getByRole('button',{name:'Look up outputs',exact:true}).click();await page.locator('.quietproof-claims').getByRole('checkbox').first().waitFor();
       for(const box of await page.locator('.quietproof-claims').getByRole('checkbox').all())await box.check();
-      assert.match(await page.locator('.quietproof-total').innerText(),/1\/2 key fingerprints/);
+      assert.match(await page.locator('.quietproof-total').innerText(),/^Selected: 2\/16 outputs · 1\/1 key fingerprints · 100001 sats$/);
       await page.getByLabel('Intended verifier').fill('same-key-mixed.example');
       await page.getByLabel('Purpose',{exact:true}).selectOption('proof-of-funds');
       await page.getByLabel('Message (optional').fill('One public disposable spend key, two script kinds');
