@@ -463,6 +463,7 @@ QuietProofChainEvidence LookupCurrentTip(RpcClient& client,
       amount == 0 || amount != money->second.sats ||
       !QuietProofClassifyScript(script, &script_kind, &key_hash))
     return reject(QuietProofChainStatus::kMalformed, "gettxout fields are not canonical");
+  quietproof_internal::ParseCoinbaseMetadata(response.result, &evidence);
 
   if (!call("getblockchaininfo", nlohmann::json::array())) return rpc_failure();
   quietproof_internal::Tip after;
@@ -484,6 +485,36 @@ QuietProofChainEvidence LookupCurrentTip(RpcClient& client,
   evidence.script_pub_key = std::move(script);
   evidence.status = QuietProofChainStatus::kUnspent;
   return evidence;
+}
+
+QuietProofNodeState ObserveCurrentNodeState(RpcClient& client) {
+  QuietProofNodeState state;
+  RpcDecodedResponse response;
+  BitcoinRpcError error;
+  const auto call = [&](const char* method) {
+    return client.Call(method, nlohmann::json::array(), false, &response, &error);
+  };
+  if (!call("getblockchaininfo")) return state;
+  const auto before = response.result;
+  if (!call("getchainstates")) return state;
+  const auto chainstates = response.result;
+  if (!quietproof_internal::ParseNodeStateFields(before, chainstates, client.config().network, &state)) {
+    state.status = QuietProofNodeStateStatus::kMalformed;
+    return state;
+  }
+  if (state.status != QuietProofNodeStateStatus::kObserved) return state;
+  if (!call("getblockchaininfo")) return {};
+  QuietProofNodeState after;
+  if (!quietproof_internal::ParseNodeStateFields(response.result, chainstates, client.config().network, &after)) {
+    state.status = QuietProofNodeStateStatus::kMalformed;
+    return state;
+  }
+  if (after.status != QuietProofNodeStateStatus::kObserved || after.block != state.block ||
+      after.height != state.height || after.tip_time != state.tip_time) {
+    state.status = QuietProofNodeStateStatus::kChanged;
+    return state;
+  }
+  return after;
 }
 
 namespace {
@@ -1207,5 +1238,8 @@ QuietProofProviderKind BitcoinCoreRpc::kind() const {
 }
 QuietProofChainEvidence BitcoinCoreRpc::Lookup(const QuietProofChainRequest& request) {
   return bitcoin_rpc_internal::LookupCurrentTip(impl_->client_, request);
+}
+QuietProofNodeState BitcoinCoreRpc::ObserveNodeState() {
+  return bitcoin_rpc_internal::ObserveCurrentNodeState(impl_->client_);
 }
 }  // namespace proofs

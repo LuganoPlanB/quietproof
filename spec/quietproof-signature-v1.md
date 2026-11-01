@@ -104,6 +104,68 @@ After proof and chain work, acceptance MUST atomically check final expiry and
 consume the verifier nonce. A stale request MUST NOT become acceptable because
 verification started before expiry.
 
+The native signature verifier defaults to `kValidatedCurrentNode`. It checks
+`getblockchaininfo.initialblockdownload = false` and requires Core32's **last**
+`getchainstates.chainstates` entry to match the observed block hash/height and
+have boolean `validated = true`. A validated background entry does not qualify
+an unvalidated active snapshot. Missing, malformed or unavailable readiness is
+inconclusive. Readiness observations bracket all output lookups; every lookup
+and both observations must agree on one tip. `gettxout` includes mempool spends
+(`include_mempool = true`); null remains ambiguous between spent and missing.
+
+Maximum tip age defaults are explicit: mainnet 7,200 seconds; testnet3,
+testnet4 and signet 86,400 seconds; isolated regtest 3,600 seconds. A tip more
+than 7,200 seconds ahead of the verifier clock also fails. Local callers may
+select a different positive maximum age (`--max-tip-age` in the CLI); no proof
+field changes this policy. These are observation requirements, not a guarantee
+that all peer or mempool information is current.
+
+`kQualifiedCurrentProvider` is an explicit alternative that can report checked
+quantity but always remains inconclusive for native validated-node acceptance.
+`kRecordedHistoricalSnapshot` instead requires the request's recorded snapshot
+hash/height and a historical provider; it applies that recorded policy without
+current-tip age or IBD checks. A snapshot request cannot silently select this
+trust policy. All successful observations still need final expiry/nonce checks.
+Native output labels the amount `unspent_quantity`, never immediately spendable.
+Optional boolean `gettxout.coinbase` metadata distinguishes an immature coinbase
+(fewer than 100 confirmations) from unknown maturity; its absence cannot support
+a maturity claim. Neither signature possession nor this label reserves outputs.
+
+Signature verification uses an injectable `QuietProofClock` (system UTC by
+default), rather than the scalar API's fixed `policy.now`. It samples time
+after proof verification and after every chain operation; tip age is evaluated
+at that operation's completion time. Request expiry during either stage fails
+before acceptance. The signature verifier also requires an explicit
+`QuietProofFinalAcceptanceStore`; advisory `nonce_seen` and old `consume_nonce`
+callbacks cannot authorize it. The native CLI supplies
+`QuietProofNonceFileAcceptanceStore` for the selected `--nonce-store` file.
+
+The file operation acquires `flock`, rechecks file ownership/type/permissions,
+reads the bounded canonical records, then samples the clock **under that lock**
+before checking `[not_before, expires_at)`, rejecting replay and appending the
+nonce. The nonce record remains the same lowercase 64-hex line used by scalar
+verification, so a shared file shares replay policy across modes. There is no
+eviction or retention reduction. A corrupt/truncated/full store fails closed;
+the original scalar operation retains its existing contract. Write/fsync failure
+never accepts and may leave the nonce recorded, requiring a fresh request.
+
+Results record `verification_started_at`, `proof_checked_at`,
+`chain_observed_at` and `accepted_at` separately (null when unavailable).
+`accepted_at` is the validity decision time inside the store transaction;
+durability/return may complete later. These timestamps do not establish signing
+time or turn chain/mempool observations into an atomic snapshot. Qualified
+current-provider evidence remains inconclusive and never consumes a nonce.
+
+The opt-in native `quietproof-signature-funds-regtest-test` exercises production
+CLI request creation, stock Core32 authorisation, online and RPC-disabled
+delegated proving, actual-node funds checks and final nonce acceptance for both
+profiles over mixed claims. Its separate disposable fixture spend checks
+mempool and confirmed-spend rejection; product signing/proving is audited for
+unchanged funds state. Scalar compatibility uses the existing protected-stdin
+workflow with a matching descriptor fixture, without requiring a custom key
+export RPC from stock Core. Private receipts are removed; retained test artifacts
+contain public requests, proofs and bounded qualification evidence only.
+
 Signing uses fixed BIP-322-style virtual `to_spend` and `to_sign` transactions.
 All values are zero; the sole `to_sign` input references the synthetic
 `to_spend` output. **Real claimed outpoints occur only inside the committed

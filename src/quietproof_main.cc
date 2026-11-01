@@ -43,6 +43,7 @@
 #endif
 #include "quietproof/challenge.h"
 #include "quietproof/signature_challenge.h"
+#include "quietproof/signature_verifier.h"
 #include "poksig/prover.h"
 #include "quietproof/envelope.h"
 #include "quietproof/nonce_store.h"
@@ -87,6 +88,7 @@ void PrintUsage(std::ostream& output) {
       << "  quietproof challenge create --proof-mode signature-possession --signing-kind p2pkh|p2wpkh [CHALLENGE OPTIONS]\n"
       << "  quietproof authorize --proof-mode signature-possession --request REQUEST --receipt-output PRIVATE.qpa --rpc-wallet NAME [RPC OPTIONS]\n"
       << "  quietproof prove --proof-mode signature-possession --request REQUEST --output PUBLIC.qpf (--receipt-input PRIVATE.qpa | --rpc-wallet NAME [RPC OPTIONS])\n"
+      << "  quietproof verify PUBLIC.qpf --proof-mode signature-possession --expected-request ISSUED.qpr --nonce-store FILE [--max-tip-age SECONDS] [VERIFY OPTIONS]\n"
       << "  Signature mode never exports private keys or unlocks wallets. Unlock separately before signing.\n"
       << "  .qpa is a private authorisation capability: its holder learns the signature/public key and can delegate proving for this request.\n"
       << "  .qpf is public. Signature possession does not establish private-key knowledge, exclusive control, reserved funds or signing time.\n"
@@ -751,8 +753,14 @@ int Verify(int argc, char** argv) {
   auto allowed = kRpcOptions;
   allowed.insert({"--bitcoin-cli", "--verifier", "--purpose", "--nonce-store",
                   "--min-confirmations", "--minimum-total-sats",
-                  "--max-lifetime", "--network"});
+                  "--max-lifetime", "--network", "--proof-mode", "--expected-request", "--max-tip-age"});
   if (!ParseOptions(argc, argv, 3, allowed, &options)) return Usage();
+  std::string mode, expected_path;
+  if (!One(options, "--proof-mode", &mode, false) ||
+      (!mode.empty() && mode != "key-knowledge" && mode != "signature-possession") ||
+      !One(options, "--expected-request", &expected_path, false)) return Usage();
+  const bool signature_mode = mode == "signature-possession";
+  if (!signature_mode && (options.count("--expected-request") || options.count("--max-tip-age"))) return Usage();
   std::string executable, verifier, purpose, nonce_store, confirmations_text,
       minimum_text, lifetime_text, network_name;
   verifier = kDefaultVerifier;
@@ -766,6 +774,7 @@ int Verify(int argc, char** argv) {
       !One(options, "--max-lifetime", &lifetime_text, false) ||
       !One(options, "--network", &network_name, false)) return Usage();
   const bool legacy = options.count("--bitcoin-cli") != 0;
+  if (signature_mode && legacy) return Usage();
   if (legacy) {
     if (executable.empty() || executable[0] != '/' ||
         access(executable.c_str(), X_OK) != 0) return Usage();
@@ -781,7 +790,7 @@ int Verify(int argc, char** argv) {
 #ifndef QUIETPROOF_HAS_RPC
   // Preserve the original gate position and argument-validation precedence.
   // New-format detection selects only a local parser, never mode allowance.
-  if (!legacy) {
+  if (!legacy && !signature_mode) {
     prefix = ProbePublicProofPrefix(proof_path);
     if (prefix == PublicProofPrefix::kOther) return NativeUnavailable();
   }
@@ -794,6 +803,65 @@ int Verify(int argc, char** argv) {
       (!lifetime_text.empty() && !ParseU64(lifetime_text, &max_lifetime)) ||
       minimum_total > proofs::kQuietProofMaxMoneySats || max_lifetime == 0 ||
       max_lifetime > kMaximumLifetimeSeconds) return Usage();
+
+  if (signature_mode) {
+    if (!proofs::kQuietProofSignatureModeEnabled) return SignatureUnavailable();
+    std::vector<uint8_t> expected, bytes;
+    if (options.count("--expected-request") &&
+        !ReadSignatureFile(expected_path, proofs::kQuietProofMaxStatementBytes, false, &expected)) {
+      std::cerr << "invalid_expected_request\n";
+      return PrintResult({proofs::QuietProofVerifyResult::kMalformedStatement, {}});
+    }
+    if (!ReadSignatureFile(proof_path, proofs::kQuietProofSignatureMaxEnvelopeBytes, false, &bytes))
+      return PrintResult({proofs::QuietProofVerifyResult::kMalformedStatement, {}});
+    proofs::QuietProofSignatureStatementV3 statement;
+    if (options.count("--network") &&
+        proofs::DecodeQuietProofSignatureStatement(expected, &statement) &&
+        statement.network != asserted_network) {
+      std::cerr << "wrong_network\n";
+      return PrintResult({proofs::QuietProofVerifyResult::kInvalidProof, {}});
+    }
+    const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    if (now < 0) return kIoError;
+    proofs::QuietProofSignatureVerifierConfig config;
+    config.modes.allow_signature_possession = true; // Explicit CLI selection only.
+    config.policy.now = static_cast<uint64_t>(now);
+    config.policy.verifier = verifier;
+    config.policy.purpose = purpose;
+    config.policy.max_lifetime = max_lifetime;
+    proofs::QuietProofNonceFileAcceptanceStore acceptance_store(nonce_store);
+    config.final_acceptance_store = &acceptance_store;
+    config.min_confirmations = min_confirmations;
+    config.minimum_total_sats = minimum_total;
+    std::string tip_age;
+    if (!One(options, "--max-tip-age", &tip_age, false) ||
+        (options.count("--max-tip-age") &&
+         (!ParseU64(tip_age, &config.max_tip_age_seconds) || !config.max_tip_age_seconds))) return Usage();
+    std::unique_ptr<proofs::QuietProofChainProvider> signature_provider;
+#ifdef QUIETPROOF_HAS_RPC
+    if (proofs::DecodeQuietProofSignatureStatement(expected, &statement)) {
+      proofs::BitcoinCoreRpcConfig rpc_config(statement.network);
+      if (!ParseRpcOptions(options, &rpc_config)) return Usage();
+      signature_provider = std::make_unique<proofs::BitcoinCoreRpc>(std::move(rpc_config));
+      config.provider = signature_provider.get();
+    }
+#endif
+    const char* reason = nullptr;
+    proofs::QuietProofSignatureVerificationTimes times;
+    const auto verification = proofs::VerifyQuietProofSignatureDetailed(expected, bytes, config, &times, &reason);
+    if (reason) std::cerr << reason << '\n';
+    std::cout << nlohmann::json({
+        {"result", proofs::QuietProofVerifyResultName(verification.result)},
+        {"exit_code", proofs::QuietProofVerifyExitCode(verification.result)},
+        {"total_sats", verification.total_sats}, {"claims_checked", verification.claims.size()},
+        {"quantity_label", "unspent_quantity"},
+        {"coinbase_maturity", proofs::QuietProofQuantityMaturityLabel(verification.claims)},
+        {"verification_started_at", times.verification_started_at ? nlohmann::json(*times.verification_started_at) : nlohmann::json(nullptr)},
+        {"proof_checked_at", times.proof_checked_at ? nlohmann::json(*times.proof_checked_at) : nlohmann::json(nullptr)},
+        {"chain_observed_at", times.chain_observed_at ? nlohmann::json(*times.chain_observed_at) : nlohmann::json(nullptr)},
+        {"accepted_at", times.accepted_at ? nlohmann::json(*times.accepted_at) : nlohmann::json(nullptr)}}).dump() << '\n';
+    return proofs::QuietProofVerifyExitCode(verification.result);
+  }
 
   if (prefix == PublicProofPrefix::kOther) prefix = ProbePublicProofPrefix(proof_path);
   if (prefix == PublicProofPrefix::kPrivateReceipt) {

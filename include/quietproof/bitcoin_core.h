@@ -384,6 +384,7 @@ class BitcoinCoreCurrentTipProvider final : public QuietProofChainProvider {
     evidence.height = tip.height;
     evidence.confirmations = confirmations;
     evidence.amount_sats = amount_sats;
+    quietproof_internal::ParseCoinbaseMetadata(txout, &evidence);
     std::vector<uint8_t> block_bytes;
     if (!quietproof_internal::DecodeHex(tip.best_block_hash, &block_bytes) ||
         block_bytes.size() != evidence.block.size()) {

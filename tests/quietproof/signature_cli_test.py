@@ -93,8 +93,59 @@ def main():
             return ['authorize', *mode, '--request', request_path, '--receipt-output', target or root/'exported.qpa',
                     '--rpc-wallet', peer.wallet, *endpoint, *extra]
 
+        nonce_store = root/'verifier-nonces'
+
+        def verify(extra=()):
+            return ['verify', output, *mode, '--nonce-store', nonce_store,
+                    '--verifier', base['verifier'], '--purpose', base['purpose'], *extra]
+
         try:
             fixture(base)
+            # Bounded synthetic framing exercises only request/policy dispatch;
+            # this invalid one-byte body must never reach cryptographic work.
+            expected_bytes = request_path.read_bytes()
+            circuit_digest = bytes.fromhex('85fc9626e74e1944e736237c5f71220f982b05a3f786c491cf35ef2e56547d32')
+            output.write_bytes(b'QPE1\x03' + struct.pack('>I', len(expected_bytes)) + expected_bytes +
+                               struct.pack('>QBHH', int(time.time()), 1, 1, 1) + circuit_digest +
+                               struct.pack('>IIII', 1, 4, 128, 1) + b'\x01')
+            if args.disabled:
+                run(verify(['--expected-request', request_path]), 66)
+            else:
+                missing = run(verify(), 67)
+                require(b'missing_expected_request' in missing.stderr, 'missing expected request classification')
+                for age in ('0', '-1', 'invalid'):
+                    run(verify(['--expected-request', request_path, '--max-tip-age', age]), 64)
+                run(['verify', output, '--nonce-store', nonce_store, '--max-tip-age', '60'], 64)
+                run(['verify', output, '--expected-request', request_path, '--nonce-store', nonce_store], 64)
+                require(run(['verify', output, '--nonce-store', nonce_store], 66).returncode == 66,
+                        'envelope activated signature mode')
+                changed_path = root/'other-request.qpr'
+                for field in ('nonce', 'verifier', 'network', 'signing_kind', 'claims'):
+                    changed = copy.deepcopy(base)
+                    if field == 'nonce':
+                        changed['nonce'] = ('00' if changed['nonce'][:2] != '00' else '01') + changed['nonce'][2:]
+                    elif field == 'verifier':
+                        changed['verifier'] += '.invented'
+                    elif field == 'network':
+                        changed['network'] = 2
+                    elif field == 'signing_kind':
+                        changed['signing_kind'] = 1 - changed['signing_kind']
+                    else:
+                        changed['claims'][0]['amount_sats'] += 1
+                    changed_path.write_bytes(ref.request_bytes(changed))
+                    rejected = run(verify(['--expected-request', changed_path]), 67)
+                    require(b'expected_request_mismatch' in rejected.stderr, f'altered {field} used proof work')
+                bad_profile = bytearray(expected_bytes); bad_profile[8] = 2
+                changed_path.write_bytes(bad_profile)
+                run(verify(['--expected-request', changed_path]), 66)
+                bridge = run(verify(['--expected-request', request_path, '--purpose', 'bridge-authorization']), 64)
+                require(bridge.returncode == 64, 'duplicate purpose must fail argument validation')
+                bridge = run(['verify', output, *mode, '--expected-request', request_path,
+                              '--nonce-store', nonce_store, '--purpose', 'bridge-authorization'], 6)
+                require(b'signature_bridge_rejected' in bridge.stderr, 'bridge signature policy accepted')
+                run(verify(['--expected-request', request_path, '--network', 'signet']), 67)
+            require(not nonce_store.exists() and not peer.records, 'request dispatch touched state or wallet')
+            output.unlink()
             help_result = run(['--help'])
             require(all(s in help_result.stdout for s in (b'private authorisation capability', b'delegate', b'.qpf is public', b'signing time')), 'help claim/delegation wording')
             if args.disabled:
@@ -144,6 +195,25 @@ def main():
                                          capture_output=True, timeout=1800)
                 require(checked.returncode == 0, 'CLI public proof cryptography verification failed')
                 count += 1
+                # Verification uses only explicit disposable RPC settings; an
+                # offline run must never inspect a user's default Core cookie.
+                verification_rpc = []
+                pending_reason = b'signature_funds_checks_pending'
+                if args.rpc == 'ON':
+                    verification_rpc = (['--rpc-url', f'http://127.0.0.1:{node.port}/',
+                                         '--rpc-cookie', node.cookie] if node else endpoint)
+                    pending_reason = b'signature_node_state_unknown'
+                verified = run(verify(['--expected-request', request_path, *verification_rpc]), 0 if node else 5, timeout=1800)
+                value = json.loads(verified.stdout)
+                require(value['quantity_label'] == 'unspent_quantity' and value['proof_checked_at'] is not None,
+                        'verification omitted quantity label/proof time')
+                if node:
+                    require(value['result'] == 'valid_current' and value['chain_observed_at'] <= value['accepted_at'] and
+                            nonce_store.exists(), 'real funds acceptance omitted final nonce/time')
+                else:
+                    require(value['result'] == 'state_inconclusive' and pending_reason in verified.stderr and
+                            value['accepted_at'] is None and not nonce_store.exists(),
+                            'cryptographic success asserted unchecked current funds')
                 proofs += 1
             else:
                 created = root/'created.qpr'
