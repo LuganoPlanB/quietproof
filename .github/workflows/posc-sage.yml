@@ -16,6 +16,9 @@ jobs:
     name: PoSC Sage and composed constraints
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
         with:
@@ -31,7 +34,10 @@ jobs:
         working-directory: quietproof
         run: |
           mkdir -p "$RUNNER_TEMP/posc"
+          python3 scripts/run_posc_sage.py
           python3 scripts/run_posc_sage.py --emit > "$RUNNER_TEMP/posc/posc_sage_vectors.json"
+          cmp tests/quietproof/testdata/posc_sage_vectors.json "$RUNNER_TEMP/posc/posc_sage_vectors.json"
+          python3 tests/quietproof/posc_reference_contract_test.py
       - name: Build real composed C++ constraint evaluator
         run: |
           sudo apt-get update

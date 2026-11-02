@@ -92,6 +92,12 @@ qualified separately. Existing command defaults remain key knowledge. See the
 [complete signature workflow](docs/guide/signature-possession.md), including
 verification with the independently retained `expected.qpr`.
 
+The signature-possession relation is **PoSC (Proof of Signature Custody)**.
+Custody means knowledge of a valid signature for the request; a wallet owner
+can delegate that signature without exporting the key. The
+[independent Sage reference](spec/README.md#posc-signature-custody) checks this
+ECDSA/HASH160 relation against Python and the actual C++ constraints.
+
 | Boundary | Default key knowledge | Optional signature possession |
 | --- | --- | --- |
 | Witness | Private scalar; existing PoKC relation. | Signature and compressed public key for the exact request; no scalar knowledge required. |
@@ -332,7 +338,7 @@ record peak resident memory separately, and run multiple samples.
 ## Further documentation
 
 - [PoKC circuit construction](pokc.md)
-- [Independent Sage reference model](spec/README.md)
+- [Independent PoKC and PoSC Sage reference models](spec/README.md)
 - [Normative v1 format](spec/quietproof-v1.md)
 - [Operations and production controls](docs/operations.md)
 - [Security claim matrix](docs/security.md)

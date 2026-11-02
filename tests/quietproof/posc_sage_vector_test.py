@@ -19,7 +19,7 @@ def require(condition, message):
         raise ValueError(message)
 
 
-def check(fixture, circuit):
+def validate_fixture(fixture):
     document = json.loads(fixture.read_text())
     require(document['format'] == 'quietproof-posc-sage-v1' and document['public_test_data'] is True, 'fixture identity')
     require(document['sage_version'] == '10.6', 'Sage version')
@@ -41,7 +41,15 @@ def check(fixture, circuit):
         valid = python['valid']
         if valid:
             compressed = reference.compressed(point)
-            valid = len(public_hash) == 20 and hashlib.new('ripemd160', hashlib.sha256(compressed).digest()).digest() == public_hash
+            computed_hash = hashlib.new('ripemd160', hashlib.sha256(compressed).digest()).digest()
+            sage = case['expected']
+            require(int(sage['e'], 16) == int(python['e'], 16)
+                    and tuple(int(sage['R'][k], 16) for k in ('x', 'y'))
+                    == tuple(int(python['R'][k], 16) for k in ('x', 'y'))
+                    and sage['branch'] == python['x_branch']
+                    and sage['compressed_sec'] == compressed.hex() and sage['h'] == computed_hash.hex(),
+                    'Sage/Python arithmetic metadata mismatch: ' + case['id'])
+            valid = len(public_hash) == 20 and computed_hash == public_hash
         require(type(case['expected']['valid']) is bool and valid == case['expected']['valid'], 'Sage/Python mismatch: ' + case['id'])
         representable = (q is not None and len(digest) == 32 and len(public_hash) == 20
                          and all(0 <= v < 2**256 for v in (*point, r, s)))
@@ -52,6 +60,11 @@ def check(fixture, circuit):
         rows.append(' '.join([case['id'], case['z'], q['x'], q['y'], case['r'], case['s'], case['h'], 'none']))
         expected[case['id']] = valid
     require(any(expected.values()) and not all(expected.values()), 'positive and negative controls required')
+    return document, rows, expected, unrepresentable
+
+
+def check(fixture, circuit):
+    document, rows, expected, unrepresentable = validate_fixture(fixture)
     process = subprocess.run([str(circuit.resolve())], input='\n'.join(rows) + '\n', text=True,
                              capture_output=True, timeout=600)
     print(process.stdout, end='')
@@ -65,7 +78,7 @@ def check(fixture, circuit):
             observed[name] = status == 'accepted'
     require(observed == expected, 'Sage/C++ composed-constraint mismatch: ' + ','.join(
         sorted(n for n in set(observed) | set(expected) if observed.get(n) != expected.get(n))))
-    print(json.dumps({'model': 'PoSC (Proof of Signature Custody)', 'sage_python_cases': len(ids),
+    print(json.dumps({'model': 'PoSC (Proof of Signature Custody)', 'sage_python_cases': len(document['cases']),
         'compiled_cases': len(expected), 'accepted': sum(expected.values()),
         'constraint_rejected': len(expected) - sum(expected.values()),
         'unrepresentable_mathematical_rows': unrepresentable, 'failed': 0,

@@ -19,6 +19,8 @@ def main():
     model = ['-python', 'spec/posc_reference.sage']
     model += ['--emit'] if args.emit else ['--check', FIXTURE]
     configured = os.environ.get('POSC_SAGE_BIN')
+    if configured and not os.access(configured, os.X_OK):
+        parser.error('POSC_SAGE_BIN must be an executable SageMath 10.6 installation')
     executable = configured or shutil.which('sage')
     if executable:
         result = subprocess.run([executable, '--version'], capture_output=True, text=True)

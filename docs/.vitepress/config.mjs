@@ -64,8 +64,15 @@ export default defineConfig({
                     ["./signature-profile-v1.json", "/references/signature-profile-v1.json"],
                     ["../scripts/generate_signature_profile.py", "/references/generate_signature_profile.py"],
                     ["./../scripts/generate_signature_profile.py", "/references/generate_signature_profile.py"],
+                    ["README.md#posc-signature-custody", "/technical/sage#posc-signature-custody"],
+                    ["./README#posc-signature-custody", "/technical/sage#posc-signature-custody"],
                   ])
-                : null;
+                : sourcePath.endsWith("technical/sage.md")
+                  ? new Map([
+                      ["quietproof-signature-v1.md", "/technical/signature-profile"],
+                      ["./quietproof-signature-v1", "/technical/signature-profile"],
+                    ])
+                  : null;
 
         if (!rewrites) return;
 

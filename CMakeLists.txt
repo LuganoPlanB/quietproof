@@ -214,6 +214,8 @@ if(BUILD_TESTING)
       --generator "${CMAKE_GENERATOR}")
   option(QUIETPROOF_ENABLE_POKC_SAGE_TEST
     "Run the Sage 10.6 reference model (requires Sage or Docker)" OFF)
+  option(QUIETPROOF_ENABLE_POSC_SAGE_TEST
+    "Run the PoSC Sage 10.6 reference model (requires Sage or Docker)" OFF)
 
   function(add_pokc_test target source)
     add_executable(${target} ${source})
@@ -248,6 +250,11 @@ if(BUILD_TESTING)
       --circuit $<TARGET_FILE:quietproof-ecdsa-circuit-test>)
     set_tests_properties(quietproof-ecdsa-circuit-test
       PROPERTIES TIMEOUT 1800 RUN_SERIAL TRUE LABELS "signature-reference")
+    add_test(NAME quietproof-posc-sage-vector-test COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/posc_sage_vector_test.py
+      --circuit $<TARGET_FILE:quietproof-ecdsa-circuit-test>)
+    set_tests_properties(quietproof-posc-sage-vector-test
+      PROPERTIES TIMEOUT 660 RUN_SERIAL TRUE LABELS "signature-reference")
     add_executable(quietproof-ecdsa-prototype tests/quietproof/bitcoin_ecdsa_test.cc)
     target_link_libraries(quietproof-ecdsa-prototype PRIVATE LongfellowZKQuietProof::signature)
     add_test(NAME quietproof-ecdsa-constraint-test COMMAND ${Python3_EXECUTABLE}
@@ -595,8 +602,16 @@ if(BUILD_TESTING)
   add_test(NAME quietproof-naming-test
     COMMAND ${Python3_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/naming_test.py)
+  add_test(NAME posc-reference-contract-test
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/posc_reference_contract_test.py)
   if(QUIETPROOF_ENABLE_POKC_SAGE_TEST)
     add_test(NAME pokc-sage-reference-test
       COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_pokc_sage.sh)
+  endif()
+  if(QUIETPROOF_ENABLE_POSC_SAGE_TEST)
+    add_test(NAME posc-sage-reference-test
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_posc_sage.py)
+    set_tests_properties(posc-sage-reference-test PROPERTIES TIMEOUT 600 LABELS "signature-reference")
   endif()
 endif()

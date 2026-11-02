@@ -18,7 +18,9 @@ import copy
 import importlib.machinery
 import importlib.util
 import json
+from math import isqrt
 from pathlib import Path
+import sys
 
 from sage.all import EllipticCurve, GF, Integer, is_prime
 from sage.env import SAGE_VERSION
@@ -35,7 +37,12 @@ O = E(0)
 loader = importlib.machinery.SourceFileLoader('posc_hash_reference', str(ROOT / 'spec/pokc_reference.sage'))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 hashes = importlib.util.module_from_spec(spec)
-loader.exec_module(hashes)
+previous_bytecode_setting = sys.dont_write_bytecode
+sys.dont_write_bytecode = True
+try:
+    loader.exec_module(hashes)
+finally:
+    sys.dont_write_bytecode = previous_bytecode_setting
 sha256, ripemd160, tagged_hash = hashes.sha256, hashes.ripemd160, hashes.tagged_hash
 
 
@@ -192,6 +199,10 @@ def signed_case(name, z, scalar=1, nonce=2):
 def build_document(corpus_path, profile_path):
     require(is_prime(P) and is_prime(N) and N * G == O, 'secp256k1 domains')
     require(E.discriminant() != 0 and (N - 1) * G == -G, 'group anchors')
+    # G has prime order N. Hasse's bound contains just one positive multiple
+    # of N, establishing #E=N and cofactor one without an expensive point count.
+    hasse_bound = 2 * isqrt(int(P)) + 2
+    require(0 < P + 1 - hasse_bound <= N <= P + 1 + hasse_bound < 2 * N, 'cofactor-one Hasse bound')
     require(sec(2 * G).hex() == '02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5', '2G anchor')
     corpus = json.loads(corpus_path.read_text())
     require(Integer(int(corpus['domains']['p'], 16)) == P and Integer(int(corpus['domains']['n'], 16)) == N, 'corpus domains')
