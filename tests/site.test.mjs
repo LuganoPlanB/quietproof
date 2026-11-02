@@ -65,9 +65,33 @@ test("the homepage gives a factual operating profile", () => {
   assert.match(home, /Built for deliberate attestations/);
   assert.match(home, /not a\s+transaction path or a high-frequency request loop/);
   assert.match(home, /Observed end-to-end native API performance/);
-  assert.match(home, /29\.892 s/);
-  assert.match(home, /19\.899 s/);
-  assert.match(home, /44\.71 MiB/);
+  assert.match(home, /PoKC — Proof of Key Control/);
+  assert.match(home, /PoSC — Proof of Signature Custody/);
+  assert.match(home, /signature receipt can be copied/);
+  assert.match(home, /Means of three real rounds per relation/);
+  const metrics = JSON.parse(read('docs/public/benchmarks/relations-2026-11-02.json'));
+  assert.equal(metrics.status, 'passed');
+  assert.deepEqual(metrics.measurements.map(m => m.result.relation), ['PoKC', 'PoSC']);
+  for (const { result } of metrics.measurements) {
+    assert.equal(result.claims, 1);
+    assert.equal(result.keys, 1);
+    assert.equal(result.rows.length, 3);
+    assert(result.request_bytes > 0 && result.request_bytes <= 4096);
+    assert(home.includes(`${result.request_bytes.toLocaleString('en-US')} B`));
+    assert(result.rows.every(row => row.verified && row.prove_s > 0 && row.verify_s > 0));
+    for (const key of ['prove_s', 'verify_s']) {
+      const mean = result.rows.reduce((sum, row) => sum + row[key], 0) / result.rows.length;
+      assert(home.includes(`${mean.toFixed(3)} s`), `${result.relation} ${key} matches raw observations`);
+    }
+    const bytes = result.rows.reduce((sum, row) => sum + row.envelope_bytes, 0) / result.rows.length;
+    assert(home.includes(`${(bytes / 1024 ** 2).toFixed(2)} MiB`));
+    assert(home.includes(result.quad_terms.toLocaleString('en-US')));
+  }
+  const performance = read('docs/performance.md');
+  assert.match(performance, /Historical native PoKC figures/);
+  assert.match(performance, /29\.892 s/);
+  assert.match(performance, /19\.899 s/);
+  assert.match(performance, /Browser comparison: PoKC and PoSC/);
   assert.match(home, /Public request/);
   assert.match(home, /Private prover input/);
   assert.match(home, /Proof artifact/);

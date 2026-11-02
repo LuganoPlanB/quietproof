@@ -229,6 +229,9 @@ if(BUILD_TESTING)
     --driver $<TARGET_FILE:quietproof-signature-acceptance-test>)
   set_tests_properties(quietproof-signature-acceptance-test PROPERTIES TIMEOUT 60)
   if(QUIETPROOF_BUILD_SIGNATURE_MODE)
+    # Explicit, proof-heavy measurement tool; never part of the default build/test run.
+    add_executable(quietproof-relation-benchmark EXCLUDE_FROM_ALL tests/quietproof/relation_benchmark.cc)
+    target_link_libraries(quietproof-relation-benchmark PRIVATE LongfellowZKQuietProof::signature)
     add_executable(quietproof-signature-verifier-test tests/quietproof/signature_verifier_test.cc)
     target_link_libraries(quietproof-signature-verifier-test PRIVATE LongfellowZKQuietProof::signature)
     add_test(NAME quietproof-signature-verifier-test COMMAND quietproof-signature-verifier-test

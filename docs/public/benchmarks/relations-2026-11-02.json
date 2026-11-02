@@ -1,0 +1,177 @@
+{
+  "schema": 1,
+  "started_utc": "2026-11-02T13:09:59.097931+00:00",
+  "status": "passed",
+  "source_commit": "07117221cf6664914d3228421d1a928a99a5a818",
+  "host": {
+    "system": "Linux-6.12.113+deb13-amd64-x86_64-with-glibc2.41",
+    "machine": "x86_64",
+    "logical_cpus": 16,
+    "cpu": "AMD Ryzen 7 PRO 8700GE w/ Radeon 780M Graphics"
+  },
+  "driver_sha256": "3fa6885c7402cad06425189ffaf41dfcd4f339c3775906fe205eb4e3923d10bc",
+  "measurements": [
+    {
+      "relation": "pokc",
+      "started_process_utc": "2026-11-02T13:09:59.111197+00:00",
+      "elapsed_s": 144.80658182996558,
+      "exit_code": 0,
+      "result": {
+        "circuit_bytes": 24876346,
+        "circuit_digest": "0e26e001123e5ef89ab54ed278721f672d87a85a4a2f37c8b89d00a8b16540d3",
+        "claims": 1,
+        "crt_block_enc": 2070533,
+        "inputs": 3031,
+        "keys": 1,
+        "process_peak_rss_bytes": 1530396672,
+        "public_inputs": 21,
+        "quad_terms": 2067522,
+        "queries": 128,
+        "rate": 4,
+        "relation": "PoKC",
+        "request_bytes": 187,
+        "rows": [
+          {
+            "envelope_bytes": 46879304,
+            "proof_bytes": 46879052,
+            "prove_s": 29.494706189,
+            "round": 1,
+            "verified": true,
+            "verify_s": 19.501846393
+          },
+          {
+            "envelope_bytes": 46880008,
+            "proof_bytes": 46879756,
+            "prove_s": 27.497800633,
+            "round": 2,
+            "verified": true,
+            "verify_s": 19.482201148
+          },
+          {
+            "envelope_bytes": 46879944,
+            "proof_bytes": 46879692,
+            "prove_s": 27.156427696,
+            "round": 3,
+            "verified": true,
+            "verify_s": 19.595175342
+          }
+        ],
+        "script_kind": "p2wpkh"
+      }
+    },
+    {
+      "relation": "posc",
+      "started_process_utc": "2026-11-02T13:12:23.918023+00:00",
+      "elapsed_s": 226.55293386202538,
+      "exit_code": 0,
+      "result": {
+        "circuit_bytes": 26519998,
+        "circuit_digest": "85fc9626e74e1944e736237c5f71220f982b05a3f786c491cf35ef2e56547d32",
+        "claims": 1,
+        "crt_block_enc": 2203763,
+        "inputs": 3330,
+        "keys": 1,
+        "process_peak_rss_bytes": 1876426752,
+        "public_inputs": 53,
+        "quad_terms": 2200485,
+        "queries": 128,
+        "rate": 4,
+        "relation": "PoSC",
+        "request_bytes": 228,
+        "rows": [
+          {
+            "envelope_bytes": 49727926,
+            "proof_bytes": 49727628,
+            "prove_s": 42.285418451,
+            "round": 1,
+            "verified": true,
+            "verify_s": 32.748455483
+          },
+          {
+            "envelope_bytes": 49727382,
+            "proof_bytes": 49727084,
+            "prove_s": 41.310475845,
+            "round": 2,
+            "verified": true,
+            "verify_s": 32.557242862
+          },
+          {
+            "envelope_bytes": 49727830,
+            "proof_bytes": 49727532,
+            "prove_s": 42.891756799,
+            "round": 3,
+            "verified": true,
+            "verify_s": 32.449224123
+          }
+        ],
+        "script_kind": "p2wpkh"
+      }
+    }
+  ],
+  "method": "Separate fresh process per relation; serial rounds. First prove includes lazy identity work; verify follows prove. Signing, fixture generation and shape inspection excluded; no chain RPC/policy work.",
+  "source_sha256": {
+    "CMakeLists.txt": "0b62c6cfe13dce636feeaa584b0e00ae968355752991f5d6a2364315293013c8",
+    "tests/quietproof/relation_benchmark.cc": "4e7314ed7bece885d13dcf0f2d9899e2d36d25bf58b6a057e32357132509a093",
+    "scripts/benchmark_relations.py": "6b1182d99be8856c20c7a5fb4ca952abedaf3686f44316ae4910cfe9f7937a4a",
+    "tests/signing_reference.py": "9de28a1b9770756199c898226588cdcb87b93d8c33e599d279086fcfc4705db0",
+    "tests/bitcoin_core_signing_regtest.py": "176fa8ebbb0a9603db5ddeb8d76eb7cfe10692e630e159f3012501e3e194ce32",
+    "include/circuit/bitcoin_ecdsa.h": "f80e9d25f255af1f1d4765781cc4c09d352c370987daa52a4eef9feceab5dd21",
+    "include/circuit/bitcoin_ecdsa_witness.h": "45a5f18f9a862e035d0d79b630ef1a9770f50a41e5693eef054be8557325b3ee",
+    "include/circuit/compressed_key_sha256.h": "2ea36c2546f321f6d18ee7dcde90e63fff69a324bb49875460c36d3816e54f96",
+    "include/circuit/compressed_key_sha256_witness.h": "2166e2d3ce22fc3a624c56e977ad930b4ccc706a11fc73d7e8e4282d82ff482e",
+    "include/circuit/hash160.h": "c9d073c92f0b2fe814d28bfe30a87471560fb1d95e72b350fbfc6ea7a5ec4bb6",
+    "include/circuit/key_ownership.h": "fca4b3e7294dbf537ccbac435aa13346eda2447c88e565a4262f0a2467eaacc9",
+    "include/circuit/key_ownership_witness.h": "2c8e5aa8e1122a82f323f8bd7d2482c5e6a2e902a9b2ed6bfa51b9a952e264c5",
+    "include/circuit/p2sh_multisig.h": "3f0f1286a5d1df50f82c4c80f4ae746a59e668a62e094351947e64ffdcb78975",
+    "include/circuit/p2sh_multisig_witness.h": "4351643e48fc11aab53fdc8b4f1b67ab7e49155062c609060a505839a8236514",
+    "include/circuit/pokc_circuit.h": "392e9cde50171ea557f174d330834b44f2ee6b2419b440fee38633ca8d61bdcd",
+    "include/circuit/pokc_witness.h": "7a29bf842a7aae4b7e399f8711fe16a3a2d8078ffefec91e6ccd5f671b9256a8",
+    "include/circuit/signature_possession.h": "431f2a9a52adb77ced8f8b8e8d3d3a39224ef28fc71a8cb4c93c25bf8eb7e5af",
+    "include/circuit/signature_possession_circuit.h": "6304e5667a5700a066aae8210bee3f96830f356764f4f7bfd40e3f63dac0cc47",
+    "include/circuit/signature_possession_witness.h": "40456caa5d2af441766258c4a20008aed0fc921eab974dab90f7ea3c5816705c",
+    "include/pokc/crt_guard.h": "d4a1656318cf21901b2a5ee1d0c0c9d918d13ac4066556e6474a3c47636ea21d",
+    "include/pokc/p2sh_multisig.h": "f86a26e25aa2e23d6255d7f516ec8590dff5d00734ad7537946e36018ea77406",
+    "include/pokc/proof.h": "1f918d9449ca7a938913b3c559456e64e5b720ef4781144961345273b4a52b90",
+    "include/pokc/prover.h": "e78f443479d0f482e59c6487cc582d515f8f65d995b10db38af4ab5a0e426472",
+    "include/pokc/verifier.h": "da99367e5290c38ad38a35446f4caec23316e7e78880209245eeba59a9d81ca8",
+    "include/poksig/proof.h": "1ca2d4d7e3f66f6a11b3cf1fde906aa7f5416317d9a6de67376039e2cbcffef6",
+    "include/poksig/prover.h": "903ff5597638d6cdd8f205242690d420452429030beeb41b9ec0f0290ac14d8f",
+    "include/poksig/verifier.h": "2a1234a50a5b59653aef3ce49be200c77e5fbbfde8bf7e5e460180abf7d35dcf",
+    "include/quietproof/acceptance.h": "9e39db8b357bce74840d625a5ff9e744cea2710ecd063e573c4a92592ca943c9",
+    "include/quietproof/bitcoin_core.h": "f623112ae08804ef36d464ff1d598bd55367f999b142b43ad9d225db6081346a",
+    "include/quietproof/bitcoin_rpc.h": "81be1c042d2e9cf0805b134f71c6d89405c52487041f5f97f1c5f90ce0794c31",
+    "include/quietproof/browser.h": "212a6651998e1b95c59a4950e72c60d6118a54c7e97a74f1715cdcaefdb797a9",
+    "include/quietproof/browser_verifier.h": "31b67567a05045e51f39251496fc7a084226ca4ce7ba25ffffa8b4b08d00c5c3",
+    "include/quietproof/chain_state.h": "7051e07387a157bb7daf5d134d54386b731054526f5baaa7e5918719e10b5030",
+    "include/quietproof/challenge.h": "ccca392ed22641ca2ed78adfd50615eded7ee7951a14e7a640efa0a2cc602068",
+    "include/quietproof/detail/bitcoin_core_parse.h": "58bac30739e565fea8b8088f924815c84ae6a3b0993861f486bee8eee0c28c9c",
+    "include/quietproof/encoding.h": "5cc185ac9303f55cb55da5dd548abb10a54126b4d4e25d2e952d3dbc1ffac707",
+    "include/quietproof/envelope.h": "9ef4fb648697cb67c817523dff397175c9514db8f28284781fd82a6a7baae421",
+    "include/quietproof/nonce_store.h": "77243b51bbb350bf5a90c3a6576c0199880582f28d1a65c04c640e71839bb7c4",
+    "include/quietproof/signature_authorisation.h": "ee7fa4e682aa6d0c4e4d95a2576d2a1fc48bb99b4eeda04e18b899b832a21b5f",
+    "include/quietproof/signature_challenge.h": "636778544ff77ceaddddcc6299021b6ffd49243e5442041fd03060ebc6c20a47",
+    "include/quietproof/signature_digest.h": "9abaac57bdc794e28d4699d4a67b971ebaf291220ef93ce794dd7f82b16ee739",
+    "include/quietproof/signature_envelope.h": "0ed9e4a2544b44206c8772ee0cd887be11f0acb708df86c3c1bf070fdc7317cc",
+    "include/quietproof/signature_profile.h": "919882cd42a35ec12eab4acae21a24781e03ec285420e887eea3289fb2cdadb7",
+    "include/quietproof/signature_verifier.h": "30fef1f9543b72bbfd8db00de8a5303c38c346ca95ef00953c72664685426b5e",
+    "include/quietproof/statement.h": "5ca281743dd7445bd144d46b26ab424448bf24b77733981050b6efbc59ad8f8b",
+    "include/quietproof/verifier.h": "e7406ca22ca9ddda2691a5d900b7a31f2a36fe7b296cb3c8b55d6821b09c0396"
+  },
+  "signature_request_sha256": "80004f9a770c0c2861fe327158c67663524e4fe770b4624158363e5e35f6af8c",
+  "request_expires_at": 1793711399,
+  "finished_utc": "2026-11-02T13:16:10.471368+00:00",
+  "source_commit_role": "Worktree base revision; source_sha256 binds every measured application header and benchmark producer, including the new uncommitted measurement tool. Documentation was added after timing.",
+  "build": {
+    "compiler": "c++ (Debian 14.2.0-19) 14.2.0",
+    "flags": "-O3 -DNDEBUG -std=gnu++20",
+    "build_type": "Release",
+    "rpc": false,
+    "signature_mode": true,
+    "sdk_commit": "d2b0fc515f8663e38c79a28e8900ce8438e0106e",
+    "sdk_target": "LongfellowZK::static",
+    "installed_sdk_headers_matched": 109,
+    "sdk_archive_sha256": "031f524a792493422dcfd7bb659b6ff1d385f689a628e9e8af11b242ef7748fe",
+    "command": "cmake --build build-native-signature --target quietproof-relation-benchmark --parallel 2"
+  },
+  "fixture_note": "Same P2WPKH claim/key and common text fields. PoSC retains the optional 36-byte public snapshot binding; PoKC omits it. Request-size delta includes that metadata; no fixed format-overhead claim."
+}
