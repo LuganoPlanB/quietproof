@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build, test and package the Linux x86_64 release using dyne/musl-action's toolchain."""
+"""Build, test and package the Linux x86_64 release using the Dyne musl toolchain."""
 import argparse
 import hashlib
 import json

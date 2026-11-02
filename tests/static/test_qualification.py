@@ -18,7 +18,8 @@ spec.loader.exec_module(qualification)
 
 
 class QualificationTests(unittest.TestCase):
-    def exercise(self, mode=None, fail_full=False, signature=False, missing_core=False, required_skip=False):
+    def exercise(self, mode=None, fail_full=False, signature=False, missing_core=False, required_skip=False,
+                 fail_refresh=False):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / 'web/features/provider').mkdir(parents=True)
@@ -45,6 +46,8 @@ class QualificationTests(unittest.TestCase):
                 def __init__(self, command, **kwargs):
                     commands.append(command)
                     self.returncode = 9 if fail_full and 'web/exhaustive.browser.test.mjs' in command else 0
+                    if fail_refresh and Path(command[0]).name == 'quietproof-browser-verifier-test':
+                        self.returncode = 9
                     if 'scripts/build_static.py' in command:
                         output.mkdir(parents=True, exist_ok=True)
                         (output / 'reactor.wasm').write_bytes(b'controlled artifact')
@@ -54,6 +57,11 @@ class QualificationTests(unittest.TestCase):
                                   for p in output.iterdir() if p.name != 'asset-manifest.json'}
                         (output / 'asset-manifest.json').write_text(json.dumps(hashes))
                     if command[0] == 'ctest':
+                        if command[command.index('--test-dir') + 1] == str(root / 'native'):
+                            original = root / 'native/tests/wasm-real'
+                            original.mkdir(parents=True, exist_ok=True)
+                            (original / 'one-key.qpf').write_bytes(b'original suite fixture')
+                            (original / 'provenance.json').write_text('{"source":"native suite"}')
                         names = ['ordinary-test', 'quietproof-regtest-rpc-test']
                         if required_skip:
                             names.append('passing-control')
@@ -99,9 +107,16 @@ class QualificationTests(unittest.TestCase):
                 elif missing_core or required_skip:
                     with self.assertRaisesRegex(RuntimeError, 'requires enabled Core32|required test failed or skipped'):
                         qualification.main()
+                elif fail_refresh:
+                    with self.assertRaisesRegex(RuntimeError, 'worker-fixtures-refresh failed'):
+                        qualification.main()
                 else:
                     qualification.main()
             report = json.loads((root / 'evidence/qualification.json').read_text())
+            if report['status'] == 'passed' and mode != 'smoke':
+                retained = root / 'evidence/native-suite-wasm-real'
+                self.assertEqual((retained / 'one-key.qpf').read_bytes(), b'original suite fixture')
+                self.assertEqual((retained / 'provenance.json').read_text(), '{"source":"native suite"}')
             if not output.exists():
                 return commands, report, {}
             provenance = json.loads((output / 'build-provenance.json').read_text())
@@ -183,9 +198,29 @@ class QualificationTests(unittest.TestCase):
         self.assertEqual(report['status'], 'failed')
         self.assertEqual(provenance.get('qualification'), None)
 
+    def test_full_refreshes_worker_fixture_after_suites_and_ui_before_consumers(self):
+        commands, report, _ = self.exercise('full', signature=True)
+        names = [check['name'] for check in report['checks']]
+        refresh = names.index('worker-fixtures-refresh')
+        for predecessor in ['native-on', 'native-off', 'fixtures',
+                            'signature-fixtures-families', 'signature-fixtures-largest']:
+            self.assertLess(names.index(predecessor), refresh)
+        self.assertEqual(names[refresh + 1:refresh + 3], ['wasm-browser', 'provider-browser'])
+        command = report['checks'][refresh]['command']
+        self.assertEqual(Path(command[0]).name, 'quietproof-browser-verifier-test')
+        self.assertEqual(Path(command[1]).parts[-2:], ('tests', 'wasm-real'))
+
     def test_full_required_skip_fails(self):
         _, report, _ = self.exercise('full', required_skip=True)
         self.assertEqual(report['status'], 'failed')
+
+    def test_refresh_failure_stops_browser_consumers(self):
+        _, report, _ = self.exercise('full', fail_refresh=True)
+        self.assertEqual(report['status'], 'failed')
+        names = [check['name'] for check in report['checks']]
+        self.assertEqual(names[-1], 'worker-fixtures-refresh')
+        self.assertNotIn('wasm-browser', names)
+        self.assertNotIn('provider-browser', names)
 
     def test_local_default_remains_full(self):
         self.assert_full(None)
