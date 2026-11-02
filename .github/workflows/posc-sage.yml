@@ -1,0 +1,59 @@
+name: PoSC Sage reference
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: posc-sage-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reference:
+    name: PoSC Sage and composed constraints
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: quietproof
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: dyne/longfellow-zk
+          ref: d2b0fc515f8663e38c79a28e8900ce8438e0106e
+          path: longfellow-zk
+          persist-credentials: false
+      - name: Generate fresh Sage 10.6 vectors and check frozen Python/profile corpus
+        working-directory: quietproof
+        run: |
+          mkdir -p "$RUNNER_TEMP/posc"
+          python3 scripts/run_posc_sage.py --emit > "$RUNNER_TEMP/posc/posc_sage_vectors.json"
+      - name: Build real composed C++ constraint evaluator
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y g++ cmake ninja-build python3
+          cmake -S longfellow-zk -B sdk-build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=OFF -DLONGFELLOW_ZK_BUILD_TESTING=OFF -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/sdk-prefix"
+          cmake --build sdk-build --parallel 2
+          cmake --install sdk-build
+          cmake -S quietproof -B posc-build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/sdk-prefix" -DBUILD_TESTING=ON \
+            -DQUIETPROOF_BUILD_RPC=OFF -DQUIETPROOF_BUILD_SIGNATURE_MODE=ON
+          cmake --build posc-build --target quietproof-ecdsa-circuit-test --parallel 2
+      - name: Compare fresh Sage with Python and actual C++ assertions
+        working-directory: quietproof
+        run: |
+          python3 tests/quietproof/posc_sage_vector_test.py \
+            --fixture "$RUNNER_TEMP/posc/posc_sage_vectors.json" \
+            --circuit ../posc-build/quietproof-ecdsa-circuit-test | tee "$RUNNER_TEMP/posc/constraints.log"
+      - name: Retain independent public model output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quietproof-posc-sage
+          path: ${{ runner.temp }}/posc
+          if-no-files-found: error
