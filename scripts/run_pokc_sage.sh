@@ -17,11 +17,18 @@ for required_file in "${MODEL}" "${SAGE_FIXTURE}" "${PYTHON_FIXTURE}"; do
   fi
 done
 
-readonly -a SAGE_ARGUMENTS=(
-  "${MODEL}"
-  --check "${SAGE_FIXTURE}"
-  --cross-check "${PYTHON_FIXTURE}"
-)
+if (( $# == 0 )); then
+  readonly -a SAGE_ARGUMENTS=(
+    "${MODEL}"
+    --check "${SAGE_FIXTURE}"
+    --cross-check "${PYTHON_FIXTURE}"
+  )
+elif (( $# == 1 )) && [[ "$1" == '--emit' ]]; then
+  readonly -a SAGE_ARGUMENTS=("${MODEL}" --emit)
+else
+  printf 'usage: %s [--emit]\n' "$0" >&2
+  exit 2
+fi
 
 is_sage_10_6() {
   local sage_version

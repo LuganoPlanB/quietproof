@@ -71,8 +71,11 @@ feeds every representable tuple into the actual composed C++ constraint
 evaluator, bypassing native signature preverification. Infinite keys and
 257-bit affine aliases are accounted as mathematical cases without exact
 circuit input representations; they are not counted as circuit rejections.
-The `PoSC Sage reference` GitHub Actions job requires fresh Sage computation
-and compares its output with both Python and C++.
+The `PoKC and PoSC Sage references` GitHub Actions job runs both models from
+fresh Sage calculations, requires byte-for-byte equality with their committed
+fixtures, and runs both C++ fixture consumers. PoSC also compares every row
+with the independent Python integer oracle. Both fresh JSON corpora and C++
+results are retained together as the `quietproof-sage-vectors` artifact.
 
 To add fresh Sage execution to a local CTest run, configure
 `-DQUIETPROOF_ENABLE_POSC_SAGE_TEST=ON`; then run
@@ -151,6 +154,12 @@ To inspect a freshly generated corpus with an installed Sage:
 
 ```sh
 sage -python spec/pokc_reference.sage --emit
+```
+
+The version-pinned runner also supports the same emission mode as PoSC:
+
+```sh
+bash scripts/run_pokc_sage.sh --emit > /tmp/pokc-sage-vectors.json
 ```
 
 Fixture updates must be reviewed as cryptographic changes. Do not overwrite a
