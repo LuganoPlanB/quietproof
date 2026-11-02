@@ -286,9 +286,14 @@ def main():
                     run('signature-fixtures-' + suffix, ['python3', 'tests/wasm/signature_fixtures.py',
                         '--driver', native / 'quietproof-browser-signature-test',
                         '--output', args.evidence / 'fixtures', *extra])
-            # Keep the longstanding low-level scalar contract fixtures (one-hour
-            # request/fixed independent context) from the native verifier tests.
-            # UI/resources use the separate 24-hour feasibility fixtures below.
+            # Native suites and UI proof preparation can outlast the scalar
+            # worker fixture's one-hour request. Preserve the original suite
+            # artifacts, then produce a new honest fixture immediately before
+            # its WASM/provider consumers. Keep its original policy/lifetime;
+            # UI/resources use the separate 24-hour feasibility fixtures.
+            if old.exists():
+                shutil.copytree(old, args.evidence / 'native-suite-wasm-real')
+            run('worker-fixtures-refresh', [native / 'quietproof-browser-verifier-test', old])
         if args.mode == 'full':
             run('wasm-browser', ['npm', 'run', 'test:wasm'])
             # Use fresh native proof fixtures before the long full-web matrix.

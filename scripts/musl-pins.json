@@ -1,0 +1,7 @@
+{
+  "version": "2.2.0",
+  "sourceCommit": "5a5f41953b2d5ee2c2db3c9de28141105a850397",
+  "archive": "dyne-gcc-musl-x86_64.tar.xz",
+  "url": "https://github.com/dyne/musl/releases/download/2.2.0/dyne-gcc-musl-x86_64.tar.xz",
+  "sha256": "31420e4f978e7ccbcc597ca5e18c2dcbe640ea6985ed6325112d8a171a72ece3"
+}

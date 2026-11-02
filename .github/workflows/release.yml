@@ -10,6 +10,8 @@ on:
     paths:
       - .github/workflows/release.yml
       - scripts/build_musl_release.py
+      - scripts/install_musl.py
+      - scripts/musl-pins.json
       - scripts/build-pins.json
       - CMakeLists.txt
       - cmake/**
@@ -104,11 +106,12 @@ jobs:
           persist-credentials: false
       - name: Install build tools
         run: sudo apt-get update && sudo apt-get install --no-install-recommends -y cmake ninja-build binutils python3
-      - name: Set up Dyne musl x86_64 toolchain
+      - name: Install checksum-pinned Dyne musl x86_64 toolchain
         id: musl
-        uses: dyne/musl-action@d26fe56f7fe134a54e729d781ec687e847db34d3 # main at review
-        with:
-          target_arch: x86_64
+        run: |
+          python3 quietproof/scripts/install_musl.py --destination "$RUNNER_TEMP/dyne"
+          echo "CC=$RUNNER_TEMP/dyne/gcc-musl/bin/x86_64-linux-musl-gcc" >> "$GITHUB_OUTPUT"
+          echo "CXX=$RUNNER_TEMP/dyne/gcc-musl/bin/x86_64-linux-musl-g++" >> "$GITHUB_OUTPUT"
       - name: Build, test and package static binary
         env:
           CC: ${{ steps.musl.outputs.CC }}
