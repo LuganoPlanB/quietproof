@@ -12,6 +12,11 @@ and retained current-source cohorts support the documented scope. Original L5.3
 integrated malicious fresh-proof/advice attacks were user-waived and remain
 unexecuted/unqualified; no external audit or universal formal theorem is claimed.
 
+The independent [PoSC (Proof of Signature Custody) Sage model](README.md#posc-signature-custody)
+checks the ECDSA/HASH160 mathematical relation and frozen request/digest
+derivation against Python vectors and actual C++ constraints. This reference
+name does not introduce another wire mode or change circuit identity.
+
 ## 1. Claim and scope
 
 For the verifier's independently issued, retained expected request, the new

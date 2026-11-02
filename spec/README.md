@@ -1,4 +1,92 @@
-# PoKC Sage reference model
+# Independent Sage reference models
+
+QuietProof has two mathematical reference models: PoKC for knowledge of a key
+scalar, and **PoSC (Proof of Signature Custody)** for knowledge of a valid
+request-bound signature. Custody is transferable: a wallet owner can delegate
+the signature without exporting the key. Neither name implies exclusive control.
+
+## PoSC: signature custody
+
+`posc_reference.sage` models the optional
+[signature-possession v1 relation](quietproof-signature-v1.md). Its public
+inputs are the exact 32-byte digest `z` and 20-byte hash `h`; its private
+mathematical witness is `(Q, r, s)`. A signing scalar is not an input to the
+relation. The model requires:
+
+- a finite secp256k1 point `Q` with canonical integer coordinates before
+  coercion into Sage's `GF(p)`;
+- `1 <= r < n` and `1 <= s <= floor(n/2)` (low-S);
+- `R = s^-1 ((z mod n)G + rQ)` finite, with `x(R) mod n = r`;
+- the equivalent group equation `(z mod n)G + rQ - sR = infinity`; and
+- `RIPEMD160(SHA256(SEC_compressed(Q))) = h`, including Q's actual parity.
+
+The reference includes `z=0`, `z=n`, `z=p`, the largest 256-bit digest,
+both public-key parities, cancellation/infinity, coordinate/scalar aliases,
+high-S rejection and the rare `x(R)=r+n` branch. The rare branch is constructed
+algebraically, without a nonce search. Additional cases change every public
+digest/hash byte. All fixture signatures, scalars and nonces are **public test
+data**, never wallet funds.
+
+Sage supplies the curve arithmetic independently of the C++ gadgets and the
+Python ECDSA generator. Prime-order/group anchors and a Hasse-bound check
+establish cofactor one. The reference shares only the older Sage model's local
+SHA-256/RIPEMD-160 compression implementations; it imports no production
+signature code or witness builder. It also independently derives the frozen
+P2PKH/P2WPKH canonical request, statement digest, application message, virtual
+transactions, sighash preimage and public `z`, then checks that changing request
+fields invalidates the original signature. Request derivation is outside the
+arithmetic circuit; it is not general Bitcoin Script/BIP-322 verification.
+
+From the project root, check the committed deterministic vectors:
+
+```sh
+python3 scripts/run_posc_sage.py
+```
+
+The runner uses SageMath 10.6 (`POSC_SAGE_BIN` can select it explicitly), or the
+same digest-pinned official `linux/amd64` container as PoKC. The container has no
+network, a read-only repository/root filesystem, and a bounded temporary mount.
+To inspect fresh vectors without overwriting a fixture:
+
+```sh
+python3 scripts/run_posc_sage.py --emit > /tmp/posc-sage-vectors.json
+```
+
+The signature-enabled native suite consumes the committed Sage vectors without
+requiring Sage at runtime.
+
+The initial corpus has 134 Sage/Python mathematical cases: 131 have exact C++
+inputs (43 accepted, 88 constraint-rejected); three infinite/257-bit affine
+cases remain explicitly outside that input representation. Two signing
+profiles each have five request-binding changes. The always-enabled
+`posc-reference-contract-test` also rejects corrupted fixture decisions,
+arithmetic metadata, missing cases and incorrect input classifications.
+
+```sh
+ctest --test-dir build -R '^quietproof-posc-sage-vector-test$' --output-on-failure
+```
+
+This gate independently checks the vectors with Python integer arithmetic and
+feeds every representable tuple into the actual composed C++ constraint
+evaluator, bypassing native signature preverification. Infinite keys and
+257-bit affine aliases are accounted as mathematical cases without exact
+circuit input representations; they are not counted as circuit rejections.
+The `PoSC Sage reference` GitHub Actions job requires fresh Sage computation
+and compares its output with both Python and C++.
+
+To add fresh Sage execution to a local CTest run, configure
+`-DQUIETPROOF_ENABLE_POSC_SAGE_TEST=ON`; then run
+`ctest --test-dir build -R '^posc-sage-reference-test$' --output-on-failure`.
+
+This model provides independent differential evidence. It is not a formal
+proof of circuit completeness, Longfellow soundness, witness-wire constraints,
+parser correctness, wallet safety, replay/chain-state policy or resource limits.
+The original integrated malicious fresh-proof/advice qualification remains
+waived and unexecuted; these mathematical/assertion tests do not fill that gap.
+PoSC names the mathematical relation and its reference model. The existing wire
+mode, profile, circuit identity and CLI spelling remain `signature-possession`.
+
+## PoKC: key control
 
 `pokc_reference.sage` is an executable mathematical oracle for PoKC v1. It is
 intentionally independent of the production C++ circuit and is not

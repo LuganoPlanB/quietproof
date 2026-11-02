@@ -1,6 +1,6 @@
 ---
-title: Sage reference model
-description: Independent executable mathematical oracle for the PoKC relation and fixtures.
+title: Sage reference models
+description: Independent executable mathematical oracles for PoKC key control and PoSC signature custody.
 outline: deep
 ---
 
