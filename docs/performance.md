@@ -1,13 +1,92 @@
 ---
 title: Performance and portability
-description: Single-key circuit, measurement method, resource boundary, and supported platform.
+description: PoKC and PoSC benchmarks, measurement methods, resource boundaries, and supported platforms.
 ---
 
-# QuietProof v1 performance and portability
+# QuietProof performance and portability
 
 PoKC has one fixed single-key circuit for P2WPKH, P2PKH or mixed claims.
 A statement may contain up to 16 public outputs sharing that key hash.
 A second distinct key hash is rejected before circuit allocation.
+
+## PoKC and PoSC: what is measured
+
+**PoKC (Proof of Key Control)** proves knowledge of a secret scalar whose
+compressed public key hashes to the disclosed output's key hash.
+**PoSC (Proof of Signature Custody)** proves knowledge of a valid ECDSA signature
+and matching public key for the exact canonical request. The PoSC prover can use
+a wallet-produced private receipt without receiving the secret scalar. Its
+circuit checks ECDSA and the public-key HASH160 together.
+
+Both produce a zero-knowledge proof, disclose the claimed outputs, and require
+separate chain and verifier-policy checks. A signature/receipt can be copied:
+PoSC establishes transferable signature knowledge, not exclusive key control.
+Wallet signing and receipt acquisition happen before the measured PoSC prover
+call. See the [signature profile](./technical/signature-profile) and
+[Sage models](./technical/sage) for the exact relations.
+
+### Native comparison — 2 November 2026
+
+Three actual proof/verification rounds per relation, run serially on the same
+Linux x86-64 AMD Ryzen 7 PRO 8700GE host, GCC 14.2.0, C++20 Release
+`-O3 -DNDEBUG`, RPC OFF, signature component ON. Both use one P2WPKH claim and
+one disposable test key, with unchanged rate 4, 128 queries and pinned SDK
+`d2b0fc515f8663e38c79a28e8900ce8438e0106e`.
+
+| Relation | Prove, mean (range) | Verify, mean (range) | Request file `.qpr` | Proof file `.qpf`, mean | Quadratic terms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| PoKC — scalar knowledge | 28.050 s (27.156–29.495) | 19.526 s (19.482–19.595) | 187 B | 46,879,752.0 B (44.71 MiB) | 2,067,522 |
+| PoSC — signature custody | 42.163 s (41.310–42.892) | 32.585 s (32.449–32.748) | 228 B | 49,727,712.7 B (47.42 MiB) | 2,200,485 |
+
+`.qpr` is the complete public request file. `.qpf` is the complete proof envelope,
+including the embedded request and metadata; the raw proof payload is smaller
+and is recorded separately as `proof_bytes` in the JSON. Request sizes depend on
+text fields, optional bindings and claim count; the figures describe these exact
+fixtures. Proof sizes also vary slightly with randomized commitments. A private
+PoSC signature receipt is a different input and is not a `.qpr` or `.qpf` file.
+The native PoSC fixture retains the specification vector's optional 36-byte public
+snapshot binding; the PoKC fixture omits it. Their size difference therefore
+includes fixture metadata as well as the different request formats.
+
+The [raw observations and source/build identities](/benchmarks/relations-2026-11-02.json)
+retain every round, exact sizes, circuit digests, input/term counts and UTC times.
+Each relation starts in its own fresh process. The first prove includes lazy
+circuit-identity work; later rounds reuse that process's identity cache.
+Verification follows proving, so identity state is already warm. Proving includes
+witness preparation, circuit construction, proof generation and envelope encoding;
+PoSC also imports the receipt. Verification includes envelope parsing and actual
+cryptographic verification. Signing, chain RPC, policy checks and the benchmark's
+post-timing circuit inspection are excluded. These are three observations, not
+a statistical study, a cold-verifier comparison or timing requirements.
+
+The Linux process peak RSS values in the raw record include the entire measurement
+process and subsequent circuit inspection. They are not per-operation peaks and
+must not be compared directly with browser linear-memory allocation.
+
+Reproduce with a signature-enabled native build (the tool is excluded from normal
+builds and CTest):
+
+```sh
+cmake --build build-native-signature --target quietproof-relation-benchmark --parallel 2
+python3 scripts/benchmark_relations.py \
+  --driver build-native-signature/quietproof-relation-benchmark \
+  --output native-relations-new.json --rounds 3
+```
+
+The runner creates and deletes an owner-only disposable fixture. It never asks for
+a wallet key or performs chain RPC. Run without other heavy local work; keep the
+new output rather than overwriting an older observation.
+
+### Historical native PoKC figures
+
+The earlier homepage numbers measured **PoKC only**: one observation on
+21 August 2026, Linux x86-64 Intel Core i9-12900HK, Debian clang 19.1.7,
+C++17 hardened release. Prove: **29.892 s**; verify: **19.899 s**; full envelope:
+**44.71 MiB**; quadratic terms: **2,067,522**. Verification followed proving with
+a warm identity cache. These retain their historical configuration and are not
+a same-machine comparison with the new PoSC measurements. The separate
+[P2SH performance table](./technical/p2sh-multisig#performance) also explicitly
+labels its original one-key baseline as PoKC.
 
 ## Reproducing native metrics
 
@@ -76,7 +155,7 @@ context may already be warm. OS file caches and engine compilation caches are
 not forcibly purged. Repeated
 asset loads are loopback transfers, not public-internet timing measurements.
 
-Historical single-key measurements recorded 2026-10-27 with the hardened shared loader and built CSP; these precede removal of the two-key workflow:
+Historical **PoKC-only** single-key measurements recorded 2026-10-27 with the hardened shared loader and built CSP; these precede removal of the two-key workflow:
 
 | Engine | Keys | First verification | Same-worker repeat | Peak observed linear memory |
 | --- | --- | --- | --- | --- |
@@ -133,12 +212,15 @@ instant garbage collection or physical page reclamation by the OS.
 
 `tests/wasm/resources.mjs` sets reference-environment regression alarms:
 10 seconds each for local asset loading, initialization and preparation;
-100 seconds for single-key verification; 1920 MiB
+180 seconds for PoKC single-key verification; 1920 MiB
 observed linear memory; at most 16 MiB growth across the same-worker repeat;
 2 seconds maximum main-thread heartbeat gap and cancellation settling.
-Prior browser reference maxima were 75.454 seconds for one key;
-the timing budgets allow approximately one-third headroom. The current run
-also checks these budgets. They are not an internet download SLA, minimum
+The scalar alarm was originally 100 seconds, based on a 75.454-second reference
+maximum. Hosted CI later observed valid verification in 108.791–122.671 seconds
+and failed that alarm. On 2 November 2026 the scalar alarm was explicitly raised
+to 180 seconds to measure slower hosts; the original failures remain failures
+under their original budget. Updated qualification must be reported separately.
+These alarms are not an internet download SLA, minimum
 hardware promise, cryptographic parameter or global browser timeout. An initial
 60-second draft budget failed at a measured 72.176-second one-key check;
 it was corrected against browser measurements before qualification.
@@ -147,8 +229,8 @@ Timing is conditional on available CPU capacity. A later WebKit recovery
 produced valid cryptography in 104.892 seconds and failed the 100-second alarm
 while host load averages were observed rising above 22. The load observation
 makes shared-host contention plausible, not proven historical causality. The
-failure is retained; it is not relabelled as passing or hidden by a larger
-timeout. Retry observations use the same 100/200-second policy. Run heavy jobs
+failure is retained under its original 100-second alarm. The later 180-second
+alarm does not retroactively qualify it. Run heavy jobs
 serially with adequate CPU capacity, and investigate timing alarms alongside
 the original environment and load evidence. A past pass is not a timing
 guarantee under future contention.
@@ -213,7 +295,26 @@ The UI failure/timeout tests use a controlled memory ceiling and a test-only
 50 ms substitution for the normal five-minute deadline. Normal recovery runs
 the real proof verifier. No successful result is simulated.
 
-## Signature-possession measurements
+## Browser comparison: PoKC and PoSC
+
+These side-by-side observations come from the **same signature-enabled reactor**
+and host in the accepted 1 November 2026 cohort. Both use one P2WPKH claim and
+one key; each value is an actual first verification in a fresh worker.
+
+| Relation | Chromium 149.0.7827.55 | WebKit 26.5 | Request `.qpr` | Proof file `.qpf` | Peak observed linear memory |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| PoKC — scalar knowledge | 74.672 s | 79.091 s | 199 B | 46,879,508 B | 954,400,768 B |
+| PoSC — signature custody | 118.364 s | 123.623 s | 192 B | 49,727,698 B | 1,299,709,952 B |
+
+Each cell is one observation, not a mean. These are retained historical
+measurements, not new executions. Linear memory is **not process RSS**.
+The fixtures use different request text; the smaller PoSC request here does not
+mean its format is inherently smaller than PoKC's. Both file sizes are exact.
+The raw [measurement record](/references/signature-resources-2026-11-01.json)
+binds the exact sources, module, fixtures, engine versions and original UTC times;
+the following section retains the other PoSC shapes and lifecycle coverage.
+
+### PoSC signature-possession measurements
 
 The historical scalar tables above retain their original dates, labels and
 values. The following are actual composed-signature observations from accepted
@@ -235,12 +336,12 @@ CRT/security guards and a 16 MiB initial/2 GiB maximum linear memory. Source has
 bind the accepted candidate `c3be863b643d32654728dc415ab3b44f6a5fe17e`;
 later packaging-only CMake changes have separately checked recipe equivalence.
 
-| Actual fixture | Claims / keys | Full envelope bytes | Chromium 149.0.7827.55 first verify | WebKit 26.5 first verify |
-| --- | ---: | ---: | ---: | ---: |
-| Signature P2PKH | 1 / 1 | 49,727,346 | 118.388s | 123.931s |
-| Signature P2WPKH | 1 / 1 | 49,727,698 | 118.364s | 123.623s |
-| Signature mixed | 2 / 1 | 49,728,563 | 117.471s | 123.821s |
-| Signature maximum | 16 / 1 | 49,729,089 | 115.068s | 123.440s |
+| Actual PoSC fixture | Claims / keys | Request `.qpr` bytes | Proof file `.qpf` bytes | Chromium 149.0.7827.55 first verify | WebKit 26.5 first verify |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Signature P2PKH | 1 / 1 | 192 | 49,727,346 | 118.388s | 123.931s |
+| Signature P2WPKH | 1 / 1 | 192 | 49,727,698 | 118.364s | 123.623s |
+| Signature mixed | 2 / 1 | 257 | 49,728,563 | 117.471s | 123.821s |
+| Signature maximum | 16 / 1 | 1,167 | 49,729,089 | 115.068s | 123.440s |
 
 All rows ran real verification. Max16 is an actual 16-output single-key request,
 not a modeled/scaled result; more outputs do not add independent keys.
@@ -258,10 +359,11 @@ the scalar lifecycle in both engines with signature capability disabled. The
 OFF reactor SHA256 is
 `54327e9805ff18c851d4542e652cdb7601da01bc59467be3d95ecba5a9665210`.
 
-Regression alarms are 240 s for each signature verification, 100 s scalar, 10 s each
+Current regression alarms are 240 s for each signature verification, 180 s scalar, 10 s each
 asset/init/preparation, 1920 MiB linear allocation, 16 MiB repeat growth, 2 s heartbeat
 and cancellation settling. The operation deadline remains 300 s. These are local
 reference alarms, not cryptographic limits, timing guarantees or device minimums.
+The retained cohort used the original 100 s scalar alarm; its record is unchanged.
 The 128 MiB payload cap and 2 GiB module ceiling are unchanged. The
 native v3 format maximum is 134,221,894 B; the browser import and WASM ceiling
 remains 134,221,889 B for both modes. A native-format bound does not grant a

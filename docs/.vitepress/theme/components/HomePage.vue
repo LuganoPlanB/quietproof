@@ -38,6 +38,12 @@
           </p>
         </div>
 
+        <p>
+          <strong>PoKC — Proof of Key Control</strong> proves knowledge of the spend key.
+          <strong>PoSC — Proof of Signature Custody</strong> proves knowledge of a valid,
+          request-bound wallet signature; its prover need not receive the spend key.
+          A signature receipt can be copied, so PoSC does not establish exclusive key control.
+        </p>
         <div
           class="quietproof-benchmark-table"
           role="region"
@@ -48,29 +54,41 @@
             <caption>Observed end-to-end native API performance</caption>
             <thead>
               <tr>
-                <th scope="col">Circuit shape</th>
+                <th scope="col">Relation · 1 claim / 1 key</th>
                 <th scope="col">Prove</th>
                 <th scope="col">Verify</th>
-                <th scope="col">Full envelope</th>
+                <th scope="col">Request .qpr</th>
+                <th scope="col">Proof file .qpf</th>
                 <th scope="col">Quadratic terms</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <th scope="row">1 distinct key</th>
-                <td>29.892 s</td>
-                <td>19.899 s</td>
+                <th scope="row">PoKC · scalar knowledge</th>
+                <td>28.050 s</td>
+                <td>19.526 s</td>
+                <td>187 B</td>
                 <td>44.71 MiB</td>
                 <td>2,067,522</td>
+              </tr>
+              <tr>
+                <th scope="row">PoSC · signature custody</th>
+                <td>42.163 s</td>
+                <td>32.585 s</td>
+                <td>228 B</td>
+                <td>47.42 MiB</td>
+                <td>2,200,485</td>
               </tr>
             </tbody>
           </table>
         </div>
         <p class="quietproof-benchmark-note">
-          Single observations from 21 August 2026 on Linux x86-64, Intel Core i9-12900HK,
-          Debian clang 19.1.7, C++17 hardened release. Verification followed proving in the same
-          process, so its expected-circuit-digest cache was warm. These figures are indicative,
-          not performance requirements. <a :href="withBase('/performance')">Methodology and raw sizes</a>
+          Means of three real rounds per relation on 2 November 2026: Linux x86-64,
+          AMD Ryzen 7 PRO 8700GE, GCC 14.2.0, C++20 Release. One P2WPKH claim;
+          signing excluded. Each relation starts in a fresh process; verification follows
+          proving with warm identity state. Indicative observations, not performance requirements.
+          Request sizes depend on fixture metadata; proof-file sizes include the envelope.
+          <a :href="withBase('/performance')">Ranges, raw sizes, browser comparison and historical PoKC figures</a>
         </p>
 
         <div class="quietproof-contract">
@@ -92,8 +110,9 @@
             <div>
               <dt>Private prover input</dt>
               <dd>
-                One 32-byte spend key matching the key hash shared by every claimed output.
-                Keys stay local and should enter through protected standard input.
+                PoKC uses one 32-byte spend key matching the shared key hash. PoSC uses a
+                private wallet signature receipt for the exact request. Both stay local;
+                wallet signing and proof generation happen outside the browser.
               </dd>
             </div>
             <div>

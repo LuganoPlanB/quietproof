@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { chromium, webkit } from 'playwright';
 import { decodeInspection } from '../../wasm/codec.mjs';
+import { RESOURCE_BUDGETS } from '../../../tests/wasm/resources.mjs';
 
 const origin = process.env.QUIETPROOF_SITE_ORIGIN || 'http://127.0.0.1:4175';
 const fixtures = process.env.QUIETPROOF_VERIFY_FIXTURES;
@@ -23,7 +24,10 @@ const upload = (name, buffer) => ({ name, buffer, mimeType: 'application/octet-s
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 
 for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
-  test(`${name}: real proof results, offline/provider boundaries, expiry and operation invalidation`, { timeout: 900000 }, async () => {
+  // Seven complete verifications, plus a corrupted proof, captures and cancellation.
+  // Allow the revised per-proof reference alarm for each, keeping all assertions.
+  test(`${name}: real proof results, offline/provider boundaries, expiry and operation invalidation`,
+    { timeout: 8 * RESOURCE_BUDGETS.verifyMs['one-key'] + 60000 }, async () => {
     const browser = await engine.launch({ headless: true,
       ...(name === 'webkit' && process.env.QUIETPROOF_WEBKIT_EXECUTABLE ? { executablePath: process.env.QUIETPROOF_WEBKIT_EXECUTABLE } : {}) });
     console.log(JSON.stringify({ engine: name, version: browser.version(), proofSha256: hash(proof), requestSha256: hash(request), expiresAt: provenance.expiresAt }));

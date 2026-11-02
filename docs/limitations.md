@@ -86,7 +86,8 @@ The browser reactor is separately qualified for desktop Chromium and WebKit
 on the [named reference host](/performance#browser-resource-boundary). Firefox,
 physical mobile/low-RAM devices and actual screen-reader use are unqualified.
 The browser proof-file limit is 134221889 bytes (128 MiB plus envelope); observed
-WASM linear allocation reaches about 0.95 GB with a 2 GiB maximum, in addition
+PoKC WASM linear allocation reaches about 0.95 GB; PoSC max16 reaches
+1,301,413,888 B, with a 2 GiB module maximum, in addition
 to file/JS/browser memory. This is not process RSS or a total-RAM guarantee.
 Run one operation at a time and preserve failure/incomplete states.
 
