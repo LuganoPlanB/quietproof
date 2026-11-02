@@ -1,4 +1,4 @@
-name: PoSC Sage reference
+name: PoKC and PoSC Sage references
 
 on:
   pull_request:
@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   reference:
-    name: PoSC Sage and composed constraints
+    name: PoKC and PoSC Sage/C++ fixtures
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     defaults:
@@ -30,15 +30,18 @@ jobs:
           ref: d2b0fc515f8663e38c79a28e8900ce8438e0106e
           path: longfellow-zk
           persist-credentials: false
-      - name: Generate fresh Sage 10.6 vectors and check frozen Python/profile corpus
+      - name: Generate fresh PoKC and PoSC Sage vectors and check committed fixtures
         working-directory: quietproof
         run: |
           mkdir -p "$RUNNER_TEMP/posc"
+          bash scripts/run_pokc_sage.sh
+          bash scripts/run_pokc_sage.sh --emit > "$RUNNER_TEMP/posc/pokc_sage_vectors.json"
+          cmp tests/quietproof/testdata/pokc_sage_vectors.json "$RUNNER_TEMP/posc/pokc_sage_vectors.json"
           python3 scripts/run_posc_sage.py
           python3 scripts/run_posc_sage.py --emit > "$RUNNER_TEMP/posc/posc_sage_vectors.json"
           cmp tests/quietproof/testdata/posc_sage_vectors.json "$RUNNER_TEMP/posc/posc_sage_vectors.json"
           python3 tests/quietproof/posc_reference_contract_test.py
-      - name: Build real composed C++ constraint evaluator
+      - name: Build PoKC and composed PoSC C++ fixture evaluators
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y g++ cmake ninja-build python3
@@ -49,7 +52,11 @@ jobs:
           cmake -S quietproof -B posc-build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/sdk-prefix" -DBUILD_TESTING=ON \
             -DQUIETPROOF_BUILD_RPC=OFF -DQUIETPROOF_BUILD_SIGNATURE_MODE=ON
-          cmake --build posc-build --target quietproof-ecdsa-circuit-test --parallel 2
+          cmake --build posc-build --target quietproof-ecdsa-circuit-test pokc-sage-test --parallel 2
+      - name: Match PoKC Sage fixtures with C++ native and circuit evaluation
+        run: >-
+          ctest --test-dir posc-build -R '^pokc-sage-test$' --output-on-failure --no-tests=error
+          --output-junit "$RUNNER_TEMP/posc/pokc-sage.xml" | tee "$RUNNER_TEMP/posc/pokc-constraints.log"
       - name: Compare fresh Sage with Python and actual C++ assertions
         working-directory: quietproof
         run: |
@@ -60,6 +67,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: quietproof-posc-sage
+          name: quietproof-sage-vectors
           path: ${{ runner.temp }}/posc
           if-no-files-found: error
