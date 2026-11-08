@@ -33,7 +33,7 @@ bool Read(const char* path, size_t maximum, std::vector<uint8_t>* bytes) {
 // real cryptographic proof. Production Core wallet-to-funds coverage is separate.
 class AcceptanceProvider final : public QuietProofChainProvider {
  public:
-  QuietProofSignatureStatementV3 statement;
+  QuietProofSignatureStatementV4 statement;
   uint64_t* now = nullptr;
   uint64_t tip_time = 0;
   bool bad_amount = false, expire_on_lookup = false, stale_on_lookup = false;
@@ -67,7 +67,7 @@ class AcceptanceProvider final : public QuietProofChainProvider {
   }
 };
 void AcceptanceChecks(const std::vector<uint8_t>& request, const PoKSigProofV1& proof,
-                      const QuietProofSignatureStatementV3& statement, uint64_t start) {
+                      const QuietProofSignatureStatementV4& statement, uint64_t start) {
   Check(!statement.has_snapshot && start + 10 < statement.expires_at, "current long-lived test request required");
   char pattern[] = "/tmp/quietproof-signature-acceptance.XXXXXX";
   const char* created = mkdtemp(pattern);
@@ -135,7 +135,7 @@ int main(int argc, char** argv) {
     PoKSigProofV1 proof;
     if (!Read(argv[1], kQuietProofMaxStatementBytes, &request) ||
         !Read(argv[2], kQuietProofMaxEnvelopeBytes, &proof.bytes)) return 1;
-    QuietProofSignatureStatementV3 statement;
+    QuietProofSignatureStatementV4 statement;
     if (!DecodeQuietProofSignatureStatement(request, &statement)) return 1;
     QuietProofSignatureVerifierConfig config;
     config.modes.allow_signature_possession = true;

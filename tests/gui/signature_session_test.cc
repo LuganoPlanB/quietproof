@@ -52,7 +52,7 @@ int main(int argc,char** argv) {
     require(RunWalletSession(old,{},[] { return false; },clock).status == WalletSessionStatus::Failed);
     require(!ProofValidation::Run(request.loaded,{},[] { return false; },[](const auto&) { return true; }).proof);
     require(RequestWindowAt(*request.loaded,clock()) == RequestWindow::Valid);
-    require(InspectRequest(*request.loaded).statement_version == 3);
+    require(InspectRequest(*request.loaded).statement_version == 4);
     std::cout << checks << " GUI PoSC request/receipt/mode/privacy checks passed\n";
   } catch (...) { std::cerr << "GUI signature contract failed; private diagnostics suppressed\n"; return 1; }
 }

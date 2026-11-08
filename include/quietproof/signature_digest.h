@@ -9,7 +9,7 @@ namespace proofs {
 struct QuietProofSignatureInputsV1 {
   QuietProofSignatureProfileV1 profile;
   std::array<uint8_t, 32> z{};  // Raw SHA output bytes; ECDSA interprets these big endian.
-  std::vector<uint8_t> sighash_preimage; // Exactly 90 or 182 bytes, fixed ALL profile.
+  std::vector<uint8_t> sighash_preimage; // BIP322 ALL:90/182 bytes; Bitcoin Signed Message:114 bytes.
   std::array<uint8_t, 32> hash_prevouts{}, hash_sequence{}, hash_outputs{}; // BIP-143 only.
 };
 enum class QuietProofSignatureDigestError {
@@ -38,7 +38,7 @@ static inline bool DeriveQuietProofSignatureInputs(
     return false;
   };
   if (!output) return fail(QuietProofSignatureDigestError::kMalformedStatement);
-  QuietProofSignatureStatementV3 expected;
+  QuietProofSignatureStatementV4 expected;
   QuietProofDecodeError decode_error;
   if (!DecodeQuietProofSignatureStatement(expected_request, &expected, &decode_error))
     return fail(decode_error == QuietProofDecodeError::kUnsupported ?
@@ -46,11 +46,29 @@ static inline bool DeriveQuietProofSignatureInputs(
 #if !defined(QUIETPROOF_HAS_SIGNATURE_MODE) || !QUIETPROOF_HAS_SIGNATURE_MODE
   return fail(QuietProofSignatureDigestError::kSignatureModeDisabled);
 #endif
+  if (!QuietProofSigningProfileImplemented(expected.signing_profile))
+    return fail(QuietProofSignatureDigestError::kUnsupported);
   QuietProofSignatureInputsV1 inputs;
   if (!quietproof_detail::BuildQuietProofSignatureProfile(expected, &inputs.profile))
     return fail(QuietProofSignatureDigestError::kMalformedStatement);
   const auto& profile = inputs.profile;
   auto& preimage = inputs.sighash_preimage;
+  if (expected.signing_profile == QuietProofSigningProfile::kBitcoinMessageEcdsaV1) {
+    // Both lengths fit the one-byte canonical CompactSize form. The signed
+    // application message is always exactly 88 ASCII bytes, regardless of
+    // UTF-8 text lengths inside the canonical request committed by its digest.
+    constexpr char domain[] = "Bitcoin Signed Message:\n";
+    static_assert(sizeof(domain) - 1 == 24);
+    static_assert(kQuietProofSignatureApplicationMessageBytes == 88);
+    preimage.push_back(24);
+    preimage.insert(preimage.end(), domain, domain + 24);
+    preimage.push_back(88);
+    preimage.insert(preimage.end(), profile.application_message.begin(), profile.application_message.end());
+    inputs.z = quietproof_detail::QuietProofSignatureHash256(preimage.data(), preimage.size());
+    *output = std::move(inputs);
+    if (error) *error = QuietProofSignatureDigestError::kNone;
+    return true;
+  }
   preimage.reserve(kQuietProofSignatureWitnessPreimageBytes);
   if (expected.signing_kind == QuietProofScriptKind::kP2pkh) {
     // Legacy ALL input zero: replace only the empty scriptSig with P2PKH C.

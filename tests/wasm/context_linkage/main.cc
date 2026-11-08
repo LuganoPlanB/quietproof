@@ -30,12 +30,12 @@ int main(int argc, char** argv) {
   CHECK(context.Prepare(envelope,p,102));
   CHECK(ConsumeLegacyBrowserContext(context)); // Definition lives in another TU.
 #ifdef QUIETPROOF_TEST_BROWSER_MIXED
-  QuietProofSignatureStatementV3 signature;
-  static_cast<QuietProofStatementV1&>(signature)=s; signature.statement_version=3;
+  QuietProofSignatureStatementV4 signature;
+  static_cast<QuietProofStatementV1&>(signature)=s; signature.statement_version=4;
   signature.signing_kind=QuietProofScriptKind::kP2wpkh;
   CHECK(EncodeQuietProofSignatureStatement(signature,&request));
   p=Policy(signature,request); p.allow_signature_possession=true;
-  QuietProofSignatureEnvelopeMetadataV3 m; m.request=request; m.proof_created_at=101;
+  QuietProofSignatureEnvelopeMetadataV4 m; m.request=request; m.proof_created_at=101;
   m.circuit_digest=PoKSigExpectedCircuitDigest();
   std::vector<uint8_t> proof; CHECK(EncodeQuietProofSignatureEnvelope(m,{1},&proof));
   CHECK(PrepareEnabledBrowserSignature(&context,proof,p,102));

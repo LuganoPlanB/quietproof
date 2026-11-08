@@ -15,6 +15,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import signing_reference as ref
 import bitcoin_core_signing_regtest as core
+from bitcoin_message_test import legacy
 
 
 def main():
@@ -50,9 +51,15 @@ def main():
         assert ref.integer_verify(derived['z'], signature, key)
         tx = core.replace_unlock(derived['tx'], kind, signature, key)
         signed = ref.serialize(tx)
-        receipt = struct.pack('>4sBBH32sI', b'QPA1', 1, 1, 1, derived['d'], len(signed)) + signed
+        receipt = struct.pack('>4sBBHB32sI', b'QPA1', 4, 1, 1, 1, derived['d'], len(signed)) + signed
         cases.append({'name': name, 'request': derived['request'].hex(), 'receipt': receipt.hex(),
                       'z': derived['z'].hex(), 'h': ref.hash160(key).hex()})
+    for name, scalar in [('legacy_even', 1), ('legacy_odd', ref.ORDER - 1)]:
+        template = copy.deepcopy(profile['legacy_vectors'][0]['request'])
+        template.update(not_before=now-60, expires_at=now+21600)
+        _, vector = legacy(template, scalar)
+        cases.append({'name':name,'request':vector['request'],'receipt':vector['receipt'],
+                      'z':vector['z'],'h':ref.hash160(bytes.fromhex(vector['key'])).hex()})
     path = directory/'private-fixtures.json'
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, 'w') as stream:

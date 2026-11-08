@@ -32,7 +32,7 @@ std::vector<uint8_t> Unhex(const std::string& text) {
     bytes.push_back(static_cast<uint8_t>(std::stoul(text.substr(i, 2), nullptr, 16)));
   return bytes;
 }
-std::vector<uint8_t> Encode(const QuietProofSignatureStatementV3& statement) {
+std::vector<uint8_t> Encode(const QuietProofSignatureStatementV4& statement) {
   std::vector<uint8_t> bytes;
   Check(EncodeQuietProofSignatureStatement(statement, &bytes), "encode test request");
   return bytes;
@@ -55,9 +55,9 @@ void Reject(const std::vector<uint8_t>& expected, const std::vector<uint8_t>& pr
 void Run(const nlohmann::json& fixture) {
   for (const auto& vector : fixture.at("vectors")) {
     const auto expected = Unhex(vector.at("request_hex"));
-    QuietProofSignatureStatementV3 statement;
+    QuietProofSignatureStatementV4 statement;
     Check(DecodeQuietProofSignatureStatement(expected, &statement), "decode fixture");
-    QuietProofSignatureEnvelopeMetadataV3 metadata;
+    QuietProofSignatureEnvelopeMetadataV4 metadata;
     metadata.request = expected;
     metadata.proof_created_at = statement.not_before + 1;
     metadata.circuit_digest = PoKSigExpectedCircuitDigest();
@@ -97,11 +97,17 @@ void Run(const nlohmann::json& fixture) {
     }
     auto profile = expected;
     profile[8] = 2;
+    Reject(profile, proof, config,
+        statement.signing_kind == QuietProofScriptKind::kP2pkh ?
+            QuietProofVerifyResult::kInvalidProof : QuietProofVerifyResult::kUnsupported,
+        statement.signing_kind == QuietProofScriptKind::kP2pkh ?
+            "expected_request_mismatch" : "invalid_expected_request");
+    profile[8] = 3;
     Reject(profile, proof, config, QuietProofVerifyResult::kUnsupported, "invalid_expected_request");
     auto bridge_policy = config;
     bridge_policy.policy.purpose = "bridge-authorization";
     Reject(expected, proof, bridge_policy, QuietProofVerifyResult::kBridgeRejected, "signature_bridge_rejected");
-    // Construct a valid scalar bridge request then advertise it as v3. The
+    // Construct a valid scalar bridge request then advertise it as v4. The
     // signature codec must reject the bridge fields before any proof work.
     auto bridge = static_cast<const QuietProofStatementV1&>(statement);
     bridge.statement_version = 2;
@@ -112,8 +118,8 @@ void Run(const nlohmann::json& fixture) {
     bridge.bridge.asset_id = "BTC";
     std::vector<uint8_t> bridge_bytes;
     Check(EncodeQuietProofStatement(bridge, &bridge_bytes), "scalar bridge fixture");
-    bridge_bytes[4] = 3;
-    bridge_bytes.insert(bridge_bytes.begin()+6, {1, 0, 1, static_cast<uint8_t>(statement.signing_kind)});
+    bridge_bytes[4] = 4;
+    bridge_bytes.insert(bridge_bytes.begin()+6, {1, 0, 1, 1, static_cast<uint8_t>(statement.signing_kind)});
     Reject(bridge_bytes, proof, config, QuietProofVerifyResult::kMalformedStatement, "invalid_expected_request");
     Check(nonce_calls == 0, "request rejection touched nonce store");
     Reject(expected, {'Q','P','A','1'}, config, QuietProofVerifyResult::kMalformedStatement, "private_receipt_input");
@@ -140,7 +146,7 @@ void Run(const nlohmann::json& fixture) {
 
 class StateProvider final : public QuietProofChainProvider {
  public:
-  QuietProofSignatureStatementV3 expected;
+  QuietProofSignatureStatementV4 expected;
   std::vector<QuietProofChainEvidence> evidence;
   QuietProofNodeState before, after;
   bool historical = false;
@@ -158,7 +164,7 @@ class StateProvider final : public QuietProofChainProvider {
     return evidence.at(lookups++);
   }
 };
-StateProvider Provider(const QuietProofSignatureStatementV3& expected, uint64_t now) {
+StateProvider Provider(const QuietProofSignatureStatementV4& expected, uint64_t now) {
   StateProvider provider;
   provider.expected = expected;
   provider.before.status = QuietProofNodeStateStatus::kObserved;
@@ -187,7 +193,7 @@ StateProvider Provider(const QuietProofSignatureStatementV3& expected, uint64_t 
   return provider;
 }
 void StateChecks(const nlohmann::json& fixture) {
-  QuietProofSignatureStatementV3 expected;
+  QuietProofSignatureStatementV4 expected;
   Check(DecodeQuietProofSignatureStatement(Unhex(fixture.at("vectors")[0].at("request_hex")), &expected), "state fixture");
   expected.has_snapshot = false;
   expected.snapshot.fill(0);

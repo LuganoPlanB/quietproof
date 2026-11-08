@@ -35,6 +35,7 @@
 #include "bitcoin_rpc_json.h"
 #include "quietproof/detail/bitcoin_core_parse.h"
 #include "quietproof/signature_authorisation.h"
+#include "quietproof/bitcoin_message_import.h"
 
 namespace proofs::bitcoin_rpc_internal {
 namespace {
@@ -1048,7 +1049,7 @@ bool BitcoinCoreRpc::AuthorizeSignature(const std::string& wallet,
   };
   if (!private_receipt || wallet.size() > 1024 || !QuietProofUtf8(wallet))
     return fail(BitcoinRpcErrorCode::kConfiguration, "Invalid signature wallet or output");
-  QuietProofSignatureStatementV3 statement;
+  QuietProofSignatureStatementV4 statement;
   QuietProofSignatureInputsV1 inputs;
   if (!DecodeQuietProofSignatureStatement(expected_request, &statement))
     return fail(BitcoinRpcErrorCode::kConfiguration, "Invalid signature request");
@@ -1057,6 +1058,8 @@ bool BitcoinCoreRpc::AuthorizeSignature(const std::string& wallet,
   if (!DeriveQuietProofSignatureInputs(expected_request, &inputs))
     return fail(BitcoinRpcErrorCode::kConfiguration, "Signature mode is unavailable or request is unsupported");
   const auto& profile = inputs.profile;
+  const bool legacy_message = statement.signing_profile == QuietProofSigningProfile::kBitcoinMessageEcdsaV1;
+  if (!legacy_message) {
   // Independent fixed-shape check BEFORE any wallet authority is exercised.
   // Only the synthetic parent hash is variable in the 61-byte unsigned child.
   std::array<uint8_t, kQuietProofSignatureUnsignedToSignBytes> fixed{};
@@ -1071,6 +1074,7 @@ bool BitcoinCoreRpc::AuthorizeSignature(const std::string& wallet,
     // Claims are real funds, never signing inputs (claim txid is display order).
     if (std::equal(claim.txid.rbegin(), claim.txid.rend(), profile.to_spend_txid.begin()) && claim.vout == 0)
       return fail(BitcoinRpcErrorCode::kConfiguration, "Real claim cannot be the signature input");
+  }
   }
   const auto hex = [](const auto& bytes) {
     constexpr char digits[] = "0123456789abcdef";
@@ -1121,6 +1125,45 @@ bool BitcoinCoreRpc::AuthorizeSignature(const std::string& wallet,
       return fail(BitcoinRpcErrorCode::kMalformed, "Malformed signing address information");
     if (!owned["ismine"].get<bool>() || script != profile.selected_script)
       return fail(BitcoinRpcErrorCode::kUnsupportedWallet, "Selected signing script is unavailable in this wallet");
+    if (legacy_message) {
+      std::vector<uint8_t> pubkey;
+      if (!owned.contains("iscompressed") || !owned["iscompressed"].is_boolean() ||
+          !owned["iscompressed"].get<bool>() || !owned.contains("pubkey") || !owned["pubkey"].is_string() ||
+          owned["pubkey"].get_ref<const std::string&>().size() != 66 ||
+          !DecodeHex(owned["pubkey"].get<std::string>(), &pubkey) || pubkey.size() != 33 ||
+          (owned.contains("iswatchonly") && (!owned["iswatchonly"].is_boolean() || owned["iswatchonly"].get<bool>())))
+        return fail(BitcoinRpcErrorCode::kUnsupportedWallet, "Wallet does not expose an owned compressed P2PKH signing key");
+      std::array<uint8_t, 33> key; std::copy(pubkey.begin(), pubkey.end(), key.begin());
+      P256k1::ECPoint point;
+      std::array<uint8_t, 32> key_hash;
+      SHA256 sha; sha.Update(key.data(), key.size()); sha.DigestData(key_hash.data());
+      if (!quietproof_detail::SignatureReceiptPublicKeyPoint(key, &point) || Ripemd160::digest(key_hash) != profile.h)
+        return fail(BitcoinRpcErrorCode::kMalformed, "Signing public key does not match the request");
+      const std::string message(profile.application_message.begin(), profile.application_message.end());
+      if (stopped()) return false;
+      if (!client.Call("signmessage", nlohmann::json::array({address, message}), false, &response, error, wallet)) {
+        if (error && error->rpc_code == -13) {
+          error->code = BitcoinRpcErrorCode::kWalletLocked;
+          error->message = "Signing wallet is locked; unlock explicitly outside this operation";
+        } else if (error && (error->rpc_code == -3 || error->rpc_code == -4 ||
+                            error->rpc_code == -5 || error->rpc_code == -32601)) {
+          error->code = BitcoinRpcErrorCode::kUnsupportedWallet;
+          error->message = "Wallet cannot sign compressed P2PKH Bitcoin messages";
+        }
+        return false;
+      }
+      if (!response.result.is_string() || response.result.get_ref<const std::string&>().size() != 88)
+        return fail(BitcoinRpcErrorCode::kMalformed, "Malformed compact Bitcoin message signature");
+      std::vector<uint8_t> receipt;
+      QuietProofSignatureAuthorisationV1 verified;
+      if (!ImportQuietProofBitcoinMessageSignature(expected_request, response.result.get_ref<const std::string&>(), &receipt) ||
+          !ImportQuietProofSignatureAuthorisation(expected_request, receipt, &verified) || verified.public_key != key)
+        return fail(BitcoinRpcErrorCode::kMalformed, "Bitcoin message signature failed request-bound verification");
+      if (stopped()) return false;
+      *private_receipt = std::move(receipt);
+      ClearError(error);
+      return true;
+    }
     std::array<uint8_t, 32> display_txid;
     std::reverse_copy(profile.to_spend_txid.begin(), profile.to_spend_txid.end(), display_txid.begin());
     const auto prevouts = nlohmann::json::array({{{"txid", hex(display_txid)}, {"vout", 0},
@@ -1145,7 +1188,9 @@ bool BitcoinCoreRpc::AuthorizeSignature(const std::string& wallet,
       return fail(BitcoinRpcErrorCode::kMalformed, "Malformed signed virtual transaction");
     // .qpa framing and verification use the established L4 protocol. Nothing is
     // returned until shape, DER/low-S/compressed key, HASH160 and ECDSA pass.
-    std::vector<uint8_t> receipt{'Q','P','A','1',1,1,0,1};
+    std::vector<uint8_t> receipt{'Q','P','A','1',kQuietProofSignatureStatementVersion,
+        kQuietProofSignatureMode,0,static_cast<uint8_t>(statement.signing_profile),
+        statement.profile_version};
     receipt.insert(receipt.end(), profile.statement_digest.begin(), profile.statement_digest.end());
     const auto size = static_cast<uint32_t>(transaction.size());
     for (int shift : {24,16,8,0}) receipt.push_back(static_cast<uint8_t>(size >> shift));

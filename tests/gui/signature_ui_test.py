@@ -25,7 +25,7 @@ def run(name,size=(400,640),scale='1',events=(),extra=()):
     (artifacts/(name+'.log')).write_text(result.stdout+result.stderr)
     assert result.returncode==0, f'{name}: GUI failed; see retained log'
     assert struct.unpack_from('<ii',image.read_bytes(),18)==size
-    assert 'version=3' in result.stdout and 'font=Inter' in result.stdout
+    assert 'version=4' in result.stdout and 'font=Inter' in result.stdout
     records.append(dict(name=name,command=command,exit=result.returncode,width=size[0],height=size[1],fontScale=scale,image=str(image)))
     return result.stdout
 
@@ -40,7 +40,7 @@ log=run('prove-and-save',(480,720),'1',events=['tab']*8+['enter','await-proof','
         'destination '+str(public),'control 307','await-save'])
 assert 'generated=1' in log and 'GUI save: retained=1' in log
 assert public.is_file() and public.stat().st_mode&0o777==0o600
-assert public.read_bytes()[:5]==b'QPE1\x03'
+assert public.read_bytes()[:5]==b'QPE1\x04'
 verified=subprocess.run([str(driver),str(private),str(public)],capture_output=True,text=True,timeout=300)
 (artifacts/'public-verify.log').write_text(verified.stdout+verified.stderr)
 assert verified.returncode==0, 'saved GUI PoSC proof failed independent exact-request verification'

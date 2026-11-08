@@ -112,13 +112,13 @@ class ContextTest(unittest.TestCase):
                 self.assertFalse(tripwire.exists())
                 self.assertFalse(nonce.exists())
 
-    def test_v3_format_never_selects_signature_acceptance(self):
+    def test_v4_format_never_selects_signature_acceptance(self):
         frozen = Path(__file__).resolve().parents[2] / 'spec/signature-profile-v1.json'
         statement = bytes.fromhex(json.loads(frozen.read_text())['vectors'][0]['request_hex'])
         # Synthetic circuit identity/proof: transport fixture only, unapproved.
-        proof = self.root / 'v3.qpf'
-        proof.write_bytes(b'QPE1\x03' + struct.pack('>I', len(statement)) + statement +
-                          struct.pack('>QBHH', 1800000100, 1, 1, 1) +
+        proof = self.root / 'v4.qpf'
+        proof.write_bytes(b'QPE1\x04' + struct.pack('>I', len(statement)) + statement +
+                          struct.pack('>QBHBH', 1800000100, 1, 1, 1, 1) +
                           bytes(range(1, 33)) + struct.pack('>IIII', 1, 4, 128, 1) + b'\x01')
         tripwire = self.root / 'provider-called'
         provider = self.root / 'bitcoin-cli'
@@ -371,7 +371,8 @@ class ContextTest(unittest.TestCase):
         for mutate, expected, diagnostic in [
                 (None, 66, 'signature_mode_disabled'),
                 ((6, 0), 65, 'invalid or unsupported signature request'),
-                ((8, 2), 66, 'invalid or unsupported signature request'),
+                ((8, 2), 66, 'signature_mode_disabled'),
+                ((8, 3), 66, 'invalid or unsupported signature request'),
                 ((9, 2), 66, 'invalid or unsupported signature request')]:
             wire = bytearray(original)
             if mutate:

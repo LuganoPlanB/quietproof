@@ -70,7 +70,12 @@ def request_bytes(request):
         require(1 <= len(encoded) <= 256 and all(ord(c) >= 32 and ord(c) != 127 for c in value),
                 'invalid request text')
         return integer(len(encoded), 2, 'big') + encoded
-    result = b'QPS1\x03' + bytes([request['network'], 1, 0, 1, request['signing_kind']])
+    profile = request.get('profile', 1)
+    version = request.get('profile_version', 1)
+    require(profile in (1, 2) and version == 1 and
+            (profile != 2 or request['signing_kind'] == 1), 'unsupported signing tuple')
+    result = b'QPS1\x04' + bytes([request['network'], 1]) + integer(profile, 2, 'big')
+    result += bytes([version, request['signing_kind']])
     result += text(request['verifier']) + text(request['purpose'])
     for name in ('nonce', 'bip322_message_hash'):
         value = bytes.fromhex(request[name])
@@ -205,10 +210,30 @@ def digest_preimage(tx, kind, program, amount=0, index=0, sighash=1):
             integer(tx['locktime'], 4) + integer(sighash, 4))
 
 
+def bitcoin_message_profile(request):
+    canonical = request_bytes(request)
+    require(request.get('profile') == 2 and request['signing_kind'] == 1, 'legacy compressed P2PKH required')
+    d = tagged('QuietProof/statement/v4', canonical)
+    message = b'quietproof:signature:v4:' + d.hex().encode('ascii')
+    preimage = varbytes(b'Bitcoin Signed Message:\n') + varbytes(message)
+    return {'request':canonical,'d':d,'message':message,'preimage':preimage,'z':sha256d(preimage),
+            'script':script_for(1,bytes.fromhex(request['claims'][0]['program']))}
+
+
+def p2pkh_address(network, program):
+    require(network in range(5) and len(program)==20,'address network/program')
+    raw=bytes([0 if network==0 else 111])+program
+    raw+=sha256d(raw)[:4]
+    number=int.from_bytes(raw,'big');text='';alphabet='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+    while number: number,digit=divmod(number,58);text=alphabet[digit]+text
+    return '1'*(len(raw)-len(raw.lstrip(b'\x00')))+text
+
+
 def virtual_profile(request):
     canonical = request_bytes(request)
-    d = tagged('QuietProof/statement/v3', canonical)
-    message = b'quietproof:signature:v1:' + d.hex().encode('ascii')
+    require(request.get('profile', 1) == 1, 'BIP322 procedure required')
+    d = tagged('QuietProof/statement/v4', canonical)
+    message = b'quietproof:signature:v4:' + d.hex().encode('ascii')
     m = tagged('BIP0322-signed-message', message)
     kind, program = request['signing_kind'], bytes.fromhex(request['claims'][0]['program'])
     selected = script_for(kind, program)

@@ -56,7 +56,7 @@ struct SignatureFundsCheck {
 };
 
 inline bool SignatureNodeReady(const QuietProofNodeState& state,
-    const QuietProofSignatureStatementV3& expected,
+    const QuietProofSignatureStatementV4& expected,
     const QuietProofSignatureVerifierConfig& config, uint64_t observed_at, const char** reason) {
   const auto fail = [reason](const char* detail) {
     if (reason) *reason = detail;
@@ -80,7 +80,7 @@ inline bool SignatureNodeReady(const QuietProofNodeState& state,
 // production entry point invokes it AFTER signature verification. Keeping this
 // operation separate also makes every state denial independently testable.
 inline SignatureFundsCheck CheckSignatureFunds(
-    const QuietProofSignatureStatementV3& expected,
+    const QuietProofSignatureStatementV4& expected,
     const QuietProofSignatureVerifierConfig& config, const char** reason) {
   SignatureFundsCheck out;
   const auto fail = [&](QuietProofVerifyResult result, const char* detail) {
@@ -181,7 +181,7 @@ static inline QuietProofVerification VerifyQuietProofSignatureDetailed(
   };
   if (expected_request.empty())
     return fail(QuietProofVerifyResult::kInvalidProof, "missing_expected_request");
-  QuietProofSignatureStatementV3 expected;
+  QuietProofSignatureStatementV4 expected;
   QuietProofDecodeError decode_error;
   if (!DecodeQuietProofSignatureStatement(expected_request, &expected, &decode_error))
     return fail(decode_error == QuietProofDecodeError::kUnsupported ?
@@ -191,7 +191,7 @@ static inline QuietProofVerification VerifyQuietProofSignatureDetailed(
     return fail(QuietProofVerifyResult::kUnsupported, "signature_mode_not_allowed");
   if (config.policy.purpose == "bridge-authorization")
     return fail(QuietProofVerifyResult::kBridgeRejected, "signature_bridge_rejected");
-  QuietProofSignatureEnvelopeMetadataV3 metadata;
+  QuietProofSignatureEnvelopeMetadataV4 metadata;
   QuietProofSignatureEnvelopeError envelope_error;
   if (!InspectQuietProofSignatureEnvelope(bytes, &metadata, &envelope_error))
     return fail(envelope_error == QuietProofSignatureEnvelopeError::kUnsupported ?

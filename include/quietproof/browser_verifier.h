@@ -44,7 +44,7 @@ inline bool DecodeQuietProofBrowserPolicy(const std::vector<uint8_t>& bytes,
     if (!r.bytes(p.expected_request.data(), count)) return false;
     QuietProofStatementV1 s;
     if (p.allow_signature_possession) {
-      QuietProofSignatureStatementV3 signature;
+      QuietProofSignatureStatementV4 signature;
       if (!DecodeQuietProofSignatureStatement(p.expected_request, &signature)) return false;
       s = signature;
     } else if (!DecodeQuietProofStatement(p.expected_request, &s)) return false;
@@ -112,11 +112,11 @@ class QuietProofBrowserVerification {
     if (!signature_enabled_ || !signature_supported_ || !signature_verify_) {
       unsupported_ = true; return Fail("signature_mode_disabled");
     }
-    QuietProofSignatureStatementV3 expected;
+    QuietProofSignatureStatementV4 expected;
     if (policy_.expected_request.empty() ||
         !DecodeQuietProofSignatureStatement(policy_.expected_request, &expected))
       return Fail("Independently retained signature request required");
-    QuietProofSignatureEnvelopeMetadataV3 m;
+    QuietProofSignatureEnvelopeMetadataV4 m;
     QuietProofSignatureEnvelopeError error;
     if (!InspectQuietProofSignatureEnvelope(bytes, &m, &error)) {
       unsupported_ = error == QuietProofSignatureEnvelopeError::kUnsupported;
@@ -127,7 +127,7 @@ class QuietProofBrowserVerification {
       unsupported_ = true; return Fail(QuietProofSignatureEnvelopeErrorName(error));
     }
     // The common projection is used only for public policy/UTXO evidence.
-    // Cryptography and metadata always use the retained canonical v3 bytes.
+    // Cryptography and metadata always use the retained canonical v4 bytes.
     envelope_.statement = expected;
     envelope_.proof_created_at = m.proof_created_at;
     if (expected.has_snapshot) {

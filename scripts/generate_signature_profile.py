@@ -55,6 +55,9 @@ def script_for(kind, program):
 def serialize_request(request):
     """Encode the deliberately small public-fixture model, recording all fields."""
     if (request["network"] not in range(5) or
+            request.get("profile", 1) not in (1, 2) or
+            request.get("profile_version", 1) != 1 or
+            (request.get("profile", 1) == 2 and request["signing_kind"] != 1) or
             request["purpose"] not in ("proof-of-control", "proof-of-funds") or
             request["signing_kind"] not in (0, 1) or
             not 0 <= request["not_before"] < request["expires_at"] < 2**64):
@@ -94,10 +97,11 @@ def serialize_request(request):
         field(name, data)
 
     field("magic", b"QPS1")
-    integer("statement_version", 3, 1)
+    integer("statement_version", 4, 1)
     integer("network", request["network"], 1)
     integer("mode", 1, 1)
-    integer("profile", 1, 2)
+    integer("profile", request.get("profile", 1), 2)
+    integer("profile_version", request.get("profile_version", 1), 1)
     integer("signing_kind", request["signing_kind"], 1)
     text("verifier", request["verifier"], 256)
     text("purpose", request["purpose"], 64)
@@ -146,8 +150,8 @@ def bip143_preimage(version, prevouts, sequences, outpoint, script_code,
 
 def _signing_values(encoded, kind, program):
     """Internal byte construction; also used for deliberately invalid mutations."""
-    d = tagged_hash("QuietProof/statement/v3", encoded)
-    message = b"quietproof:signature:v1:" + d.hex().encode("ascii")
+    d = tagged_hash("QuietProof/statement/v4", encoded)
+    message = b"quietproof:signature:v4:" + d.hex().encode("ascii")
     message_hash = tagged_hash("BIP0322-signed-message", message)
     script = script_for(kind, program)
     to_spend, to_sign, outpoint, output = virtual_transactions(message_hash, script)
@@ -184,7 +188,8 @@ def make_vector(kind):
     program = hashlib.new("ripemd160", sha256(bytes.fromhex(PUBLIC_SEC))).hexdigest()
     request = {
         "network": 3, "verifier": "auditor.example", "purpose": "proof-of-funds",
-        "signing_kind": kind, "nonce": bytes(range(1, 33)).hex(),
+        "signing_kind": kind, "profile": 1, "profile_version": 1,
+        "nonce": bytes(range(1, 33)).hex(),
         "user_message_utf8": "public specification fixture; never wallet funds",
         "not_before": 1_800_000_000, "expires_at": 1_800_000_600,
         "snapshot": None if kind == 1 else {"hash_display": bytes(range(64, 96)).hex(), "height": 321},
@@ -218,22 +223,40 @@ def make_vector(kind):
     other = copy.deepcopy(request)
     other["signing_kind"] ^= 1
     _, _, other_values = derive_request(other)
+    binding = (b"QPE1\x04\x01\x00\x01\x01\x00\x01" + bytes.fromhex(values["d"]) +
+               bytes.fromhex(program) + bytes.fromhex(values["z"]) + bytes(range(1, 33)) +
+               (1).to_bytes(4, "big") + (4).to_bytes(4, "big") + (128).to_bytes(4, "big") +
+               (1_800_000_100).to_bytes(8, "big"))
+    assert len(binding) == 147
     return {"name": "p2wpkh" if kind == 0 else "p2pkh", "request": request,
             "request_hex": encoded.hex(), "request_size": len(encoded), **values,
             "fields": fields, "field_mutations": mutations,
             "byte_mutation_count": len(byte_results),
             "byte_mutation_result_sha256": sha256(b"".join(byte_results)).hex(),
+            "transcript_binding_hex": binding.hex(),
+            "transcript_seed": tagged_hash("QuietProof/signature/transcript/v4", binding).hex(),
             "valid_selected_kind_change": {"d": other_values["d"], "z": other_values["z"]}}
 
 
 def corpus():
+    legacy_request = copy.deepcopy(make_vector(1)["request"])
+    legacy_request["profile"] = 2
+    encoded, fields = serialize_request(legacy_request)
+    digest = tagged_hash("QuietProof/statement/v4", encoded)
+    message = b"quietproof:signature:v4:" + digest.hex().encode("ascii")
+    preimage = varbytes(b"Bitcoin Signed Message:\n") + varbytes(message)
+    legacy = {"name": "p2pkh-bitcoin-message", "request": legacy_request,
+              "request_hex": encoded.hex(), "request_size": len(encoded), "fields": fields,
+              "d": digest.hex(), "application_message_ascii": message.decode("ascii"),
+              "legacy_preimage_hex": preimage.hex(), "legacy_z": sha256d(preimage).hex()}
     return {"format": "quietproof-signature-profile-v1", "status": "public specification fixtures; no signer or production implementation",
             "generator": "scripts/generate_signature_profile.py (stdlib hashlib, direct byte construction)",
             "provenance": {"bips_revision": BIPS_REVISION,
                            "bip0322_sha256": "bdf1e930211356666e11d4961acff7a1675a280fba7b57377b48a1fb2f1b45b9",
                            "bip0143_sha256": "62bc71351563e68baeb12643c68355d217953ae9eb6a6e68b2b0323275b6beec",
                            "core_version": "32.1", "core_source_archive_sha256": "a5f2f61e32cf7f790641c9ec306a3c88ca7b5a556946956b1f35ffd7e27813f9"},
-            "public_test_sec": PUBLIC_SEC, "vectors": [make_vector(1), make_vector(0)]}
+            "request_version": 4, "public_test_sec": PUBLIC_SEC,
+            "vectors": [make_vector(1), make_vector(0)], "legacy_vectors": [legacy]}
 
 
 def main():

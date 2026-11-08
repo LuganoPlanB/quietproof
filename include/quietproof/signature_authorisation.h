@@ -8,7 +8,7 @@
 #include "circuits/ripemd160/ripemd160.h"
 
 namespace proofs {
-constexpr size_t kQuietProofSignatureReceiptHeaderBytes = 44;
+constexpr size_t kQuietProofSignatureReceiptHeaderBytes = 45;
 constexpr size_t kQuietProofSignatureMaxReceiptBytes = 4096;
 
 // Private native witness material. Never log, publish, upload or treat this as
@@ -152,17 +152,10 @@ inline Fp256k1Nat SignatureReceiptNat(const std::array<uint8_t, 32>& big_endian)
   return Fp256k1Nat::of_bytes(little.data());
 }
 
-// Variable-time native public-key/signature verification with the reviewed
-// complete base-SDK group law. This is no proof of circuit constraint soundness.
-inline bool SignatureReceiptEcdsaValid(const std::array<uint8_t, 32>& z,
-    const std::array<uint8_t, 33>& key, const std::array<uint8_t, 32>& r_bytes,
-    const std::array<uint8_t, 32>& s_bytes) {
+inline bool SignatureReceiptPublicKeyPoint(const std::array<uint8_t, 33>& key,
+                                          P256k1::ECPoint* output) {
   const auto& f = p256k1_base;
-  const auto& sf = p256k1_scalar;
-  const auto r = SignatureReceiptNat(r_bytes), s = SignatureReceiptNat(s_bytes);
-  auto half = n256k1_order; half.shiftr(1);
-  if (r == Fp256k1Nat(0) || !(r < n256k1_order) || s == Fp256k1Nat(0) || half < s ||
-      (key[0] != 2 && key[0] != 3)) return false;
+  if (!output || (key[0] != 2 && key[0] != 3)) return false;
   std::array<uint8_t, 32> x_bytes;
   std::copy_n(key.begin() + 1, 32, x_bytes.begin());
   const auto x = SignatureReceiptNat(x_bytes);
@@ -180,6 +173,21 @@ inline bool SignatureReceiptEcdsaValid(const std::array<uint8_t, 32>& z,
   if (f.from_montgomery(y).bit(0) != (key[0] & 1)) return false;
   const P256k1::ECPoint q(xm, y, f.one());
   if (!p256k1.is_on_curve(q)) return false;
+  *output = q;
+  return true;
+}
+
+// Variable-time native verification, not a proof of circuit soundness.
+inline bool SignatureReceiptEcdsaValid(const std::array<uint8_t, 32>& z,
+    const std::array<uint8_t, 33>& key, const std::array<uint8_t, 32>& r_bytes,
+    const std::array<uint8_t, 32>& s_bytes) {
+  const auto& f = p256k1_base;
+  const auto& sf = p256k1_scalar;
+  const auto r = SignatureReceiptNat(r_bytes), s = SignatureReceiptNat(s_bytes);
+  auto half = n256k1_order; half.shiftr(1);
+  if (r == Fp256k1Nat(0) || !(r < n256k1_order) || s == Fp256k1Nat(0) || half < s) return false;
+  P256k1::ECPoint q;
+  if (!SignatureReceiptPublicKeyPoint(key, &q)) return false;
   auto e = SignatureReceiptNat(z);
   if (!(e < n256k1_order)) e.sub(n256k1_order); // e=0 and both digest reduction branches are valid.
   const auto inverse = sf.invertf(sf.to_montgomery(s));
@@ -191,6 +199,64 @@ inline bool SignatureReceiptEcdsaValid(const std::array<uint8_t, 32>& z,
   auto rx = f.from_montgomery(nonce.x);
   if (!(rx < n256k1_order)) rx.sub(n256k1_order); // Includes rare x(R)=r+n, since p<2n.
   return rx == r;
+}
+// Recover Q = r^-1(sR - eG) from the exact compact recovery header. Compressed
+// P2PKH only. High-S is rejected, never normalized or paired with a new header.
+// This variable-time host operation does not change the arithmetic circuit.
+inline bool RecoverBitcoinMessageKey(const std::array<uint8_t, 32>& z,
+    const uint8_t* compact, ParsedSignatureReceipt* output) {
+  if (!compact || !output || compact[0] < 31 || compact[0] > 34) return false;
+  ParsedSignatureReceipt parsed;
+  parsed.kind = QuietProofScriptKind::kP2pkh;
+  std::copy_n(compact + 1, 32, parsed.r.begin());
+  std::copy_n(compact + 33, 32, parsed.s.begin());
+  const auto r = SignatureReceiptNat(parsed.r), s = SignatureReceiptNat(parsed.s);
+  auto half = n256k1_order; half.shiftr(1);
+  if (r == Fp256k1Nat(0) || !(r < n256k1_order) ||
+      s == Fp256k1Nat(0) || half < s) return false;
+  const auto& f = p256k1_base;
+  const auto& sf = p256k1_scalar;
+  const unsigned recovery = compact[0] - 31;
+  auto x = r;
+  if (recovery & 2) {
+    x.add(n256k1_order);
+    if (x < r) return false;  // Fixed-width addition overflow.
+  }
+  if (!(x < f.m_)) return false;
+  const auto xm = f.to_montgomery(x);
+  const auto square = f.addf(f.mulf(f.mulf(xm, xm), xm), f.of_scalar(7));
+  auto exponent = f.m_; exponent.add(Fp256k1Nat(1)); exponent.shiftr(2);
+  auto y = f.one();
+  for (size_t bit = 256; bit-- > 0;) {
+    y = f.mulf(y, y);
+    if (exponent.bit(bit)) y = f.mulf(y, square);
+  }
+  if (f.mulf(y, y) != square) return false;
+  if (f.from_montgomery(y).bit(0) != (recovery & 1)) y = f.negf(y);
+  const P256k1::ECPoint nonce(xm, y, f.one());
+  if (!p256k1.is_on_curve(nonce) ||
+      p256k1.scalar_multf(nonce, n256k1_order).z != f.zero()) return false;
+  auto e = SignatureReceiptNat(z);
+  if (!(e < n256k1_order)) e.sub(n256k1_order);
+  const auto inverse = sf.invertf(sf.to_montgomery(r));
+  const auto sr = sf.from_montgomery(sf.mulf(sf.to_montgomery(s), inverse));
+  const auto er = sf.from_montgomery(sf.negf(sf.mulf(sf.to_montgomery(e), inverse)));
+  auto key = p256k1.addEf(p256k1.scalar_multf(nonce, sr),
+                        p256k1.scalar_multf(p256k1.generator(), er));
+  if (key.z == f.zero()) return false;
+  p256k1.normalize(key);
+  if (!p256k1.is_on_curve(key)) return false;
+  const auto qx = f.from_montgomery(key.x);
+  parsed.public_key[0] = 2 + f.from_montgomery(key.y).bit(0);
+  for (size_t i = 0; i < 32; ++i) {
+    uint8_t byte = 0;
+    for (size_t bit = 0; bit < 8; ++bit)
+      if (qx.bit((31 - i) * 8 + bit)) byte |= uint8_t{1} << bit;
+    parsed.public_key[1 + i] = byte;
+  }
+  if (!SignatureReceiptEcdsaValid(z, parsed.public_key, parsed.r, parsed.s)) return false;
+  *output = parsed;
+  return true;
 }
 }  // namespace quietproof_detail
 
@@ -207,25 +273,39 @@ static inline bool ImportQuietProofSignatureAuthorisation(
   if (!output || receipt.size() < kQuietProofSignatureReceiptHeaderBytes ||
       receipt.size() > kQuietProofSignatureMaxReceiptBytes || std::memcmp(receipt.data(), "QPA1", 4))
     return fail(QuietProofSignatureAuthorisationError::kMalformedReceipt);
+  if (receipt[4] != kQuietProofSignatureStatementVersion)
+    return fail(QuietProofSignatureAuthorisationError::kUnsupported);
   QuietProofReader header(receipt);
-  uint8_t magic[4], version, mode;
+  uint8_t magic[4], version, mode, profile_version;
   uint16_t profile;
   uint32_t size;
   std::array<uint8_t, 32> digest;
   if (!header.bytes(magic,4) || !header.u8(&version) || !header.u8(&mode) || !header.u16(&profile) ||
-      !header.bytes(digest.data(),digest.size()) || !header.u32(&size) || size == 0 ||
+      !header.u8(&profile_version) || !header.bytes(digest.data(),digest.size()) || !header.u32(&size) || size == 0 ||
       size > kQuietProofSignatureMaxReceiptBytes - kQuietProofSignatureReceiptHeaderBytes || size != header.left())
     return fail(QuietProofSignatureAuthorisationError::kMalformedReceipt);
-  if (version != 1 || mode > 1 || profile != kQuietProofSignatureProfile)
+  if (mode > 1 || !QuietProofSigningProfileDescriptorFor(
+          static_cast<QuietProofSigningProfile>(profile), profile_version))
     return fail(QuietProofSignatureAuthorisationError::kUnsupported);
   if (mode != kQuietProofSignatureMode) return fail(QuietProofSignatureAuthorisationError::kMalformedReceipt);
-  QuietProofSignatureStatementV3 expected;
+  QuietProofSignatureStatementV4 expected;
   QuietProofDecodeError decode_error;
   if (!DecodeQuietProofSignatureStatement(expected_request,&expected,&decode_error))
     return fail(decode_error == QuietProofDecodeError::kUnsupported ?
         QuietProofSignatureAuthorisationError::kUnsupported : QuietProofSignatureAuthorisationError::kMalformedStatement);
+  if (profile != static_cast<uint16_t>(expected.signing_profile) ||
+      profile_version != expected.profile_version)
+    return fail(QuietProofSignatureAuthorisationError::kInvalidAuthorization);
+  if (!QuietProofSigningProfileImplemented(expected.signing_profile))
+    return fail(QuietProofSignatureAuthorisationError::kUnsupported);
   quietproof_detail::ParsedSignatureReceipt parsed;
-  if (!quietproof_detail::ParseSignatureReceiptTransaction(receipt.data()+kQuietProofSignatureReceiptHeaderBytes,size,&parsed))
+  const bool legacy = expected.signing_profile == QuietProofSigningProfile::kBitcoinMessageEcdsaV1;
+  const auto* payload = receipt.data() + kQuietProofSignatureReceiptHeaderBytes;
+  if (legacy) {
+    if (size != 65) return fail(QuietProofSignatureAuthorisationError::kMalformedReceipt);
+    if (payload[0] < 31 || payload[0] > 34)
+      return fail(QuietProofSignatureAuthorisationError::kUnsupported);
+  } else if (!quietproof_detail::ParseSignatureReceiptTransaction(payload,size,&parsed))
     return fail(QuietProofSignatureAuthorisationError::kMalformedReceipt);
 #if !defined(QUIETPROOF_HAS_SIGNATURE_MODE) || !QUIETPROOF_HAS_SIGNATURE_MODE
   return fail(QuietProofSignatureAuthorisationError::kSignatureModeDisabled);
@@ -233,8 +313,11 @@ static inline bool ImportQuietProofSignatureAuthorisation(
   QuietProofSignatureInputsV1 inputs;
   if (!DeriveQuietProofSignatureInputs(expected_request,&inputs))
     return fail(QuietProofSignatureAuthorisationError::kMalformedStatement);
-  if (digest != inputs.profile.statement_digest || parsed.kind != expected.signing_kind || !parsed.fixed_fields ||
-      parsed.outpoint != inputs.profile.synthetic_outpoint || parsed.sighash != 1 || parsed.scalar_overflow)
+  if (legacy && !quietproof_detail::RecoverBitcoinMessageKey(inputs.z, payload, &parsed))
+    return fail(QuietProofSignatureAuthorisationError::kInvalidAuthorization);
+  if (digest != inputs.profile.statement_digest || parsed.kind != expected.signing_kind ||
+      (!legacy && (!parsed.fixed_fields || parsed.outpoint != inputs.profile.synthetic_outpoint ||
+                   parsed.sighash != 1 || parsed.scalar_overflow)))
     return fail(QuietProofSignatureAuthorisationError::kInvalidAuthorization);
   std::array<uint8_t, 32> hash;
   SHA256 sha; sha.Update(parsed.public_key.data(),parsed.public_key.size()); sha.DigestData(hash.data());

@@ -18,7 +18,8 @@ RequestReview InspectRequest(const LoadedRequest& request) {
   const auto& signature = *request.signature;
   // Shared inherited display fields only; never invoke PoKC for this relation.
   auto review = InspectRequest(static_cast<const proofs::QuietProofStatementV1&>(signature));
-  review.statement_version = 3; review.format = "quietproof-signature-request-v3";
+  review.statement_version = proofs::kQuietProofSignatureStatementVersion;
+  review.format = "quietproof-signature-request-v4";
   return review;
 }
 namespace {

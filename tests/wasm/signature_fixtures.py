@@ -31,8 +31,8 @@ def public_request(path):
         return int.from_bytes(take(size), 'big')
     def text():
         return take(number(2)).decode('utf-8')
-    assert take(9) == b'QPS1\x03\x00\x01\x00\x01'  # mainnet signature v1
-    request = dict(network=0, signing_kind=number(1), verifier=text(), purpose=text(),
+    assert take(10) == b'QPS1\x04\x00\x01\x00\x01\x01'  # mainnet v4 BIP322/profile version1
+    request = dict(network=0, profile=1, profile_version=1, signing_kind=number(1), verifier=text(), purpose=text(),
                    nonce=take(32).hex(), bip322_message_hash=take(32).hex(),
                    not_before=number(8), expires_at=number(8), snapshot=None)
     assert number(1) == 0 and number(1) == 0  # no snapshot or extensions
@@ -86,7 +86,7 @@ def main():
         signature = core.encode_signature(r, min(s, ref.ORDER - s))
         assert ref.integer_verify(derived['z'], signature, key)
         signed = ref.serialize(core.replace_unlock(derived['tx'], kind, signature, key))
-        receipt = struct.pack('>4sBBH32sI', b'QPA1', 1, 1, 1, derived['d'], len(signed)) + signed
+        receipt = struct.pack('>4sBBHB32sI', b'QPA1', 4, 1, 1, 1, derived['d'], len(signed)) + signed
         cases.append(dict(name=name, request=derived['request'].hex(), receipt=receipt.hex()))
     # The private authorisation input is temporary, owner-only, and never placed
     # among the browser's public fixtures. Only .qpr/.qpf and provenance survive.

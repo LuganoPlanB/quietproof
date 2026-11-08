@@ -44,6 +44,7 @@
 #include "quietproof/challenge.h"
 #include "quietproof/signature_challenge.h"
 #include "quietproof/bip322_import.h"
+#include "quietproof/bitcoin_message_import.h"
 #include "quietproof/signature_address.h"
 #include "quietproof/signature_verifier.h"
 #include "poksig/prover.h"
@@ -87,11 +88,13 @@ void PrintUsage(std::ostream& output) {
          "selects the deprecated legacy verifier.\n"
       << "  quietproof inspect FILE\n"
       << "Proof mode defaults to signature-possession (PoSC). Standard builds include it.\n"
-      << "  quietproof challenge create [--signing-kind p2pkh|p2wpkh] [CHALLENGE OPTIONS]\n"
-      << "    Signing kind follows homogeneous claims; mixed script kinds require --signing-kind.\n"
+      << "  quietproof challenge create [--signing-kind p2pkh|p2wpkh] [--signing-profile bitcoin-message-ecdsa-v1|bip322-ecdsa-v1] [CHALLENGE OPTIONS]\n"
+      << "    PoSC uses v4 only. P2PKH defaults to Bitcoin Signed Message; P2WPKH defaults to BIP322.\n"
+      << "    P2PKH BIP322 Full requires explicit --signing-profile bip322-ecdsa-v1.\n"
+      << "    Mixed script kinds require both --signing-kind and --signing-profile.\n"
       << "  quietproof authorize --request REQUEST --receipt-output PRIVATE.qpa --rpc-wallet NAME [RPC OPTIONS]\n"
       << "  quietproof signing-material --request REQUEST --output MESSAGE.txt [--network NETWORK] [--address ADDRESS]\n"
-      << "  quietproof import-signature --request REQUEST --signature-input PRIVATE --signature-format bip322-simple|bip322-full|sparrow-json --receipt-output PRIVATE.qpa [--network NETWORK] [--address ADDRESS]\n"
+      << "  quietproof import-signature --request REQUEST --signature-input PRIVATE --signature-format bitcoin-message|bip322-simple|bip322-full|sparrow-json --receipt-output PRIVATE.qpa [--network NETWORK] [--address ADDRESS]\n"
       << "  quietproof prove --request REQUEST --output PUBLIC.qpf (--receipt-input PRIVATE.qpa | --rpc-wallet NAME [RPC OPTIONS])\n"
       << "  quietproof verify PUBLIC.qpf --expected-request ISSUED.qpr --nonce-store FILE [--max-tip-age SECONDS] [VERIFY OPTIONS]\n"
       << "  Use --proof-mode key-knowledge explicitly for legacy PoKC challenge/prove/verify (v1/v2).\n"
@@ -247,7 +250,8 @@ PublicProofPrefix ProbePublicProofPrefix(const std::string& path) {
   close(descriptor);
   if (size >= 4 && proofs::QuietProofIsPrivateReceiptInput(prefix.data(), size))
     return PublicProofPrefix::kPrivateReceipt;
-  if (size == 5 && std::memcmp(prefix.data(), "QPE1", 4) == 0 && prefix[4] == 3)
+  if (size == 5 && std::memcmp(prefix.data(), "QPE1", 4) == 0 &&
+      prefix[4] == proofs::kQuietProofSignatureStatementVersion)
     return PublicProofPrefix::kSignatureEnvelope;
   return PublicProofPrefix::kOther;
 }
@@ -510,17 +514,18 @@ int Utxos(int argc, char** argv) {
 int ChallengeCreate(int argc, char** argv) {
   std::set<std::string> allowed = {
       "--network", "--verifier", "--purpose", "--message", "--claim",
-      "--output", "--expires-in", "--proof-mode", "--signing-kind"};
+      "--output", "--expires-in", "--proof-mode", "--signing-kind", "--signing-profile"};
   allowed.insert(kRpcOptions.begin(), kRpcOptions.end());
   allowed.insert(kDiscoveryOptions.begin(), kDiscoveryOptions.end());
   Options options;
   if (!ParseOptions(argc, argv, 3, allowed, &options)) return Usage();
-  std::string mode = "signature-possession", signing_kind;
+  std::string mode = "signature-possession", signing_kind, signing_profile;
   if (!One(options, "--proof-mode", &mode, false) ||
       (mode != "key-knowledge" && mode != "signature-possession") ||
-      !One(options, "--signing-kind", &signing_kind, false)) return Usage();
+      !One(options, "--signing-kind", &signing_kind, false) ||
+      !One(options, "--signing-profile", &signing_profile, false)) return Usage();
   const bool signature_mode = mode == "signature-possession";
-  if ((!signature_mode && options.count("--signing-kind")) ||
+  if ((!signature_mode && (options.count("--signing-kind") || options.count("--signing-profile"))) ||
       (options.count("--signing-kind") && signing_kind != "p2pkh" && signing_kind != "p2wpkh")) return Usage();
   if (signature_mode && !proofs::kQuietProofSignatureModeEnabled) return SignatureUnavailable();
   std::string network_name, verifier, purpose, message, output_path,
@@ -575,6 +580,12 @@ int ChallengeCreate(int argc, char** argv) {
     }
   }
   if (signature_mode) {
+    const bool mixed = std::any_of(parsed_claims.begin(), parsed_claims.end(),
+        [kind = parsed_claims.front().script_kind](const auto& claim) { return claim.script_kind != kind; });
+    if (mixed && (!options.count("--signing-kind") || !options.count("--signing-profile"))) {
+      std::cerr << "mixed script kinds require --signing-kind and --signing-profile\n";
+      return kUsage;
+    }
     if (!options.count("--signing-kind")) {
       const auto kind = parsed_claims.front().script_kind;
       if (std::any_of(parsed_claims.begin(), parsed_claims.end(), [kind](const auto& claim) {
@@ -589,7 +600,17 @@ int ChallengeCreate(int argc, char** argv) {
     selected.request = challenge_options;
     selected.signing_kind = signing_kind == "p2pkh" ? proofs::QuietProofScriptKind::kP2pkh
                                                      : proofs::QuietProofScriptKind::kP2wpkh;
-    proofs::QuietProofSignatureStatementV3 statement;
+    if (options.count("--signing-profile")) {
+      if (!proofs::QuietProofParseSigningProfile(signing_profile, &selected.signing_profile)) {
+        std::cerr << "unknown signing profile\n"; return kUnsupported;
+      }
+    } else if (!proofs::QuietProofDefaultSigningProfile(selected.signing_kind, &selected.signing_profile)) {
+      std::cerr << "unsupported signing kind\n"; return kUnsupported;
+    }
+    if (!proofs::QuietProofSigningProfileCompatible(selected.signing_profile, 1, selected.signing_kind)) {
+      std::cerr << "unsupported signing profile and signing kind combination\n"; return kUnsupported;
+    }
+    proofs::QuietProofSignatureStatementV4 statement;
     std::vector<uint8_t> request;
     if (!proofs::CreateQuietProofSignatureChallenge(parsed_claims, selected, &statement) ||
         !proofs::EncodeQuietProofSignatureStatement(statement, &request)) {
@@ -655,8 +676,9 @@ int Prove(int argc, char** argv) {
   proofs::QuietProofDecodeError error = proofs::QuietProofDecodeError::kMalformed;
   if (!ReadBounded(request_path, proofs::kQuietProofMaxStatementBytes, &request) ||
       !proofs::DecodeQuietProofStatement(request, &statement, &error)) {
-    if (request.size() >= 5 && std::memcmp(request.data(), "QPS1", 4) == 0 && request[4] == 3) {
-      proofs::QuietProofSignatureStatementV3 signature;
+    if (request.size() >= 5 && std::memcmp(request.data(), "QPS1", 4) == 0 &&
+        request[4] == proofs::kQuietProofSignatureStatementVersion) {
+      proofs::QuietProofSignatureStatementV4 signature;
       if (!proofs::DecodeQuietProofSignatureStatement(request, &signature, &error)) {
         std::cerr << "invalid or unsupported signature request\n";
         return error == proofs::QuietProofDecodeError::kUnsupported ? kUnsupported : kData;
@@ -830,7 +852,12 @@ int Verify(int argc, char** argv) {
     }
     if (!ReadSignatureFile(proof_path, proofs::kQuietProofSignatureMaxEnvelopeBytes, false, &bytes))
       return PrintResult({proofs::QuietProofVerifyResult::kMalformedStatement, {}});
-    proofs::QuietProofSignatureStatementV3 statement;
+    if ((expected.size() >= 5 && std::memcmp(expected.data(), "QPS1", 4) == 0 && expected[4] == 3) ||
+        (bytes.size() >= 5 && std::memcmp(bytes.data(), "QPE1", 4) == 0 && bytes[4] == 3)) {
+      std::cerr << "superseded PoSC v3 artifact; reissue a v4 request/signature/receipt/proof\n";
+      return PrintResult({proofs::QuietProofVerifyResult::kUnsupported, {}});
+    }
+    proofs::QuietProofSignatureStatementV4 statement;
     if (options.count("--network") &&
         proofs::DecodeQuietProofSignatureStatement(expected, &statement) &&
         statement.network != asserted_network) {
@@ -893,7 +920,8 @@ int Verify(int argc, char** argv) {
   const char* reason = nullptr;
   if (!proofs::DecodeQuietProofEnvelopeWithReason(wire, &envelope, &error, &reason)) {
     const bool new_format = proofs::QuietProofIsPrivateReceiptInput(wire.data(), wire.size()) ||
-        (wire.size() >= 5 && std::memcmp(wire.data(), "QPE1", 4) == 0 && wire[4] == 3);
+        (wire.size() >= 5 && std::memcmp(wire.data(), "QPE1", 4) == 0 &&
+         wire[4] == proofs::kQuietProofSignatureStatementVersion);
     if (new_format && reason) std::cerr << reason << '\n';
     return PrintResult({error == proofs::QuietProofDecodeError::kUnsupported
                             ? proofs::QuietProofVerifyResult::kUnsupported
@@ -950,7 +978,41 @@ int Verify(int argc, char** argv) {
 
 int Inspect(const std::string& path) {
   std::vector<uint8_t> bytes;
-  if (!ReadBounded(path, proofs::kQuietProofMaxEnvelopeBytes, &bytes)) return kData;
+  if (!ReadBounded(path, proofs::kQuietProofSignatureMaxEnvelopeBytes, &bytes)) return kData;
+  if (proofs::QuietProofIsPrivateReceiptInput(bytes.data(), bytes.size())) {
+    std::cerr << "private_receipt_input: receipts are private authorization material\n"; return kData;
+  }
+  const bool signature_request = bytes.size() >= 5 && std::memcmp(bytes.data(), "QPS1", 4) == 0 && bytes[4] >= 3;
+  const bool signature_proof = bytes.size() >= 5 && std::memcmp(bytes.data(), "QPE1", 4) == 0 && bytes[4] >= 3;
+  if (signature_request || signature_proof) {
+    if (bytes[4] == 3) {
+      std::cerr << "superseded PoSC v3 artifact; reissue a v4 request/signature/receipt/proof\n"; return kUnsupported;
+    }
+    proofs::QuietProofSignatureStatementV4 request;
+    proofs::QuietProofSignatureEnvelopeMetadataV4 metadata;
+    proofs::QuietProofSignatureEnvelopeError envelope_error;
+    proofs::QuietProofDecodeError decode_error;
+    if (signature_proof) {
+      if (!proofs::InspectQuietProofSignatureEnvelope(bytes, &metadata, &envelope_error)) {
+        std::cerr << proofs::QuietProofSignatureEnvelopeErrorName(envelope_error) << '\n';
+        return envelope_error == proofs::QuietProofSignatureEnvelopeError::kUnsupported ? kUnsupported : kData;
+      }
+      if (!DecodeSignatureRequest(metadata.request, &request, &decode_error)) return kData;
+    } else if (!DecodeSignatureRequest(bytes, &request, &decode_error))
+      return decode_error == proofs::QuietProofDecodeError::kUnsupported ? kUnsupported : kData;
+    auto output = SignatureRequestSummary(request);
+    output["format"] = signature_proof ? "quietproof-posc-proof-v4" : "quietproof-posc-request-v4";
+    output["proof_mode"] = "signature-possession";
+    output["proof_verified"] = false;
+    output["signature_mode_available"] = proofs::kQuietProofSignatureModeEnabled;
+    output["proof_created_at"] = signature_proof ? nlohmann::json(metadata.proof_created_at) : nlohmann::json(nullptr);
+    if (signature_proof) {
+      output["circuit_digest"] = ArrayHex(metadata.circuit_digest);
+      output["circuit_approved"] = proofs::PoKSigCircuitIdentityApproved(metadata.circuit_digest);
+      output["proof_bytes"] = metadata.proof_size;
+    }
+    std::cout << output.dump() << '\n'; return 0;
+  }
   proofs::QuietProofEnvelopeV1 envelope;
   if (proofs::DecodeQuietProofEnvelope(bytes, &envelope)) {
     std::cout << proofs::QuietProofInspectJson(envelope) << '\n';

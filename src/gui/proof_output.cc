@@ -13,7 +13,7 @@ namespace quietproof::gui {
 ProofValidation ProofValidation::RunSignature(std::shared_ptr<const LoadedRequest> request,
     const std::vector<uint8_t>& bytes, uint64_t now, const std::function<bool()>& canceled) {
   if (canceled()) return {{},"Proof validation canceled"};
-  proofs::QuietProofSignatureEnvelopeMetadataV3 metadata;
+  proofs::QuietProofSignatureEnvelopeMetadataV4 metadata;
   if (!request || !request->signature || !proofs::InspectQuietProofSignatureEnvelope(bytes,&metadata) ||
       metadata.request != request->bytes)
     return {{},"Generated signature proof does not match the exact reviewed request"};

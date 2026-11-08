@@ -56,11 +56,11 @@ static inline bool PoKSigVerifyProof(
     const std::vector<uint8_t>& expected_request, const PoKSigProofV1& proof,
     uint64_t now, PoKSigOptionsV1 options, PoKSigError* error = nullptr) {
   const auto fail = [error](PoKSigError code) { if (error) *error = code; return false; };
-  QuietProofSignatureEnvelopeMetadataV3 metadata;
+  QuietProofSignatureEnvelopeMetadataV4 metadata;
   QuietProofSignatureEnvelopeError transport;
   if (!InspectQuietProofSignatureEnvelope(proof.bytes, &metadata, &transport))
     return fail(quietproof_detail::PoKSigEnvelopeError(transport));
-  QuietProofSignatureStatementV3 expected;
+  QuietProofSignatureStatementV4 expected;
   QuietProofDecodeError decoded;
   if (!DecodeQuietProofSignatureStatement(expected_request, &expected, &decoded))
     return fail(decoded == QuietProofDecodeError::kUnsupported ?

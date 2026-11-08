@@ -96,13 +96,13 @@ int main(int argc, char** argv) {
     CHECK(!DecodeQuietProofBrowserSignatureOptions(malformed,&decoded,&claims));
     QuietProofStatementV1 common; QuietProofChallengeError error;
     CHECK(quietproof_detail::CreateQuietProofChallengeWithSources(claims,decoded.request,&common,&error,clock,random));
-    QuietProofSignatureStatementV3 statement;
+    QuietProofSignatureStatementV4 statement;
     static_cast<QuietProofStatementV1&>(statement)=common;
-    statement.statement_version=3; statement.signing_kind=claim.script_kind;
+    statement.statement_version=4; statement.signing_kind=claim.script_kind;
     std::vector<uint8_t> request,proof,inspection;
     CHECK(EncodeQuietProofSignatureStatement(statement,&request));
     CHECK(QuietProofBrowserInspect(request,false,&inspection));
-    QuietProofSignatureEnvelopeMetadataV3 metadata; metadata.request=request;
+    QuietProofSignatureEnvelopeMetadataV4 metadata; metadata.request=request;
     metadata.proof_created_at=1700000001; metadata.circuit_digest=PoKSigExpectedCircuitDigest();
     CHECK(EncodeQuietProofSignatureEnvelope(metadata,{1,2,3},&proof));
     CHECK(QuietProofBrowserInspect(proof,true,&inspection));

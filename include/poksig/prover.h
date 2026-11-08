@@ -26,7 +26,7 @@ static inline bool PoKSigProve(
   const auto clock = std::chrono::system_clock::now();
   const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(clock.time_since_epoch()).count();
   if (!output) return fail(PoKSigError::kMalformedStatement);
-  QuietProofSignatureStatementV3 expected;
+  QuietProofSignatureStatementV4 expected;
   QuietProofDecodeError decoded;
   if (!DecodeQuietProofSignatureStatement(expected_request, &expected, &decoded))
     return fail(decoded == QuietProofDecodeError::kUnsupported ?
@@ -35,6 +35,8 @@ static inline bool PoKSigProve(
   return fail(PoKSigError::kSignatureModeDisabled);
 #else
   if (!options.allow_signature_possession) return fail(PoKSigError::kSignatureModeNotAllowed);
+  if (!QuietProofSigningProfileImplemented(expected.signing_profile))
+    return fail(PoKSigError::kUnsupported);
   if (seconds <= 0 || static_cast<uint64_t>(seconds) < expected.not_before ||
       static_cast<uint64_t>(seconds) >= expected.expires_at) return fail(PoKSigError::kInvalidAuthorization);
   QuietProofSignatureInputsV1 inputs;
@@ -70,11 +72,13 @@ static inline bool PoKSigProve(
   for (const auto& value : encoded) filler.push_back(value);
   witness.fill_witness(filler);
   if (filler.size() != state.circuit->ninputs) return fail(PoKSigError::kInvalidAuthorization);
-  QuietProofSignatureEnvelopeMetadataV3 metadata;
+  QuietProofSignatureEnvelopeMetadataV4 metadata;
   metadata.request = expected_request;
+  metadata.profile = static_cast<uint16_t>(expected.signing_profile);
+  metadata.profile_version = expected.profile_version;
   metadata.proof_created_at = static_cast<uint64_t>(seconds);
   metadata.circuit_digest = PoKSigExpectedCircuitDigest();
-  std::array<uint8_t, 146> binding;
+  std::array<uint8_t, 147> binding;
   if (!quietproof_detail::SignatureTranscriptBinding(expected_request, metadata,
       metadata.proof_created_at, &binding)) return fail(PoKSigError::kInvalidAuthorization);
   const auto seed = QuietProofTaggedHash(kPoKSigTranscriptDomain, binding.data(), binding.size());

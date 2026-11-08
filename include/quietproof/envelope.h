@@ -64,8 +64,9 @@ inline bool DecodeQuietProofEnvelopeWithReason(
     if (reason) *reason = "private_receipt_input";
     return false;
   }
-  if (bytes.size() >= 5 && std::memcmp(bytes.data(), "QPE1", 4) == 0 && bytes[4] == 3) {
-    QuietProofSignatureEnvelopeMetadataV3 metadata;
+  if (bytes.size() >= 5 && std::memcmp(bytes.data(), "QPE1", 4) == 0 &&
+      bytes[4] == kQuietProofSignatureStatementVersion) {
+    QuietProofSignatureEnvelopeMetadataV4 metadata;
     QuietProofSignatureEnvelopeError signature_error;
     const bool inspected = InspectQuietProofSignatureEnvelope(bytes, &metadata, &signature_error);
     if (error) *error = inspected || signature_error == QuietProofSignatureEnvelopeError::kUnsupported ?
@@ -94,8 +95,8 @@ inline bool DecodeQuietProofEnvelopeWithReason(
   QuietProofEnvelopeV1 out;
   QuietProofDecodeError statement_error = QuietProofDecodeError::kMalformed;
   if (statement.size() >= 5 && statement[4] == kQuietProofSignatureStatementVersion) {
-    QuietProofSignatureStatementV3 signature;
-    // v3 is a known incompatible statement in either old envelope. Unknown
+    QuietProofSignatureStatementV4 signature;
+    // PoSC v4 is an incompatible statement in either PoKC envelope. Unknown
     // nested IDs retain unsupported attribution before the compatibility check.
     if (!DecodeQuietProofSignatureStatement(statement, &signature, &statement_error) &&
         statement_error == QuietProofDecodeError::kUnsupported) {

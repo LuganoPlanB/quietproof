@@ -19,7 +19,7 @@ def fixtures(root, cli):
     signed = adapter.mathematical_result(request)
     (root/'request.qpr').write_bytes(signed['profile']['request'])
     tx = bytes.fromhex(signed['tx_hex']) if 'tx_hex' in signed else adapter.ref.serialize(signed['tx'])
-    receipt = struct.pack('>4sBBH32sI', b'QPA1',1,1,1,signed['profile']['d'],len(tx))+tx
+    receipt = struct.pack('>4sBBHB32sI', b'QPA1',4,1,1,1,signed['profile']['d'],len(tx))+tx
     for name,data in [('receipt.qpa',receipt),('wrong.qpa',receipt[:8]+bytes([receipt[8]^1])+receipt[9:]),
                       ('oversized.qpa',b'QPA1'+b'x'*4093)]:
         (root/name).write_bytes(data); (root/name).chmod(0o600)

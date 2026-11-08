@@ -23,20 +23,20 @@ std::vector<uint8_t> Unhex(const std::string& text) {
     out.push_back(static_cast<uint8_t>(std::stoul(text.substr(i, 2), nullptr, 16)));
   return out;
 }
-std::vector<uint8_t> Encode(const QuietProofSignatureStatementV3& s) {
+std::vector<uint8_t> Encode(const QuietProofSignatureStatementV4& s) {
   std::vector<uint8_t> bytes;
-  Require(EncodeQuietProofSignatureStatement(s, &bytes), "encode valid v3");
+  Require(EncodeQuietProofSignatureStatement(s, &bytes), "encode valid v4");
   return bytes;
 }
 void RejectWire(const std::vector<uint8_t>& bytes, QuietProofDecodeError expected,
-                const QuietProofSignatureStatementV3& sentinel) {
+                const QuietProofSignatureStatementV4& sentinel) {
   auto decoded = sentinel;
   auto error = QuietProofDecodeError::kNone;
   Require(!DecodeQuietProofSignatureStatement(bytes, &decoded, &error), "invalid wire accepted");
   Require(error == expected, "wrong wire failure category");
   Require(Encode(decoded) == Encode(sentinel), "failed decode changed output");
 }
-void RejectValue(const QuietProofSignatureStatementV3& s) {
+void RejectValue(const QuietProofSignatureStatementV4& s) {
   std::vector<uint8_t> output{0xaa};
   const auto before = output;
   std::array<uint8_t, 32> digest;
@@ -49,7 +49,7 @@ void RejectValue(const QuietProofSignatureStatementV3& s) {
 }
 void TestFixture(const nlohmann::json& vector) {
   const auto bytes = Unhex(vector.at("request_hex"));
-  QuietProofSignatureStatementV3 statement;
+  QuietProofSignatureStatementV4 statement;
   auto error = QuietProofDecodeError::kMalformed;
   Require(DecodeQuietProofSignatureStatement(bytes, &statement, &error) &&
       error == QuietProofDecodeError::kNone && Encode(statement) == bytes,
@@ -66,21 +66,21 @@ void TestFixture(const nlohmann::json& vector) {
       error == QuietProofDecodeError::kUnsupported &&
       !QuietProofStatementValid(statement) && !EncodeQuietProofStatement(statement, &old_output) &&
       old_output == std::vector<uint8_t>{0xaa} &&
-      !QuietProofStatementDigest(statement, &digest), "v3 reached old statement API");
+      !QuietProofStatementDigest(statement, &digest), "v4 reached old statement API");
   for (size_t n = 0; n < bytes.size(); ++n)
     RejectWire({bytes.begin(), bytes.begin() + n}, QuietProofDecodeError::kMalformed, statement);
   auto changed = bytes;
   changed.push_back(0);
   RejectWire(changed, QuietProofDecodeError::kMalformed, statement);
   RejectWire(std::vector<uint8_t>(4097, 0), QuietProofDecodeError::kMalformed, statement);
-  for (size_t offset : {size_t{4}, size_t{5}, size_t{6}, size_t{7}, size_t{8}, size_t{9}}) {
+  for (size_t offset : {size_t{4}, size_t{5}, size_t{6}, size_t{7}, size_t{8}, size_t{9}, size_t{10}}) {
     changed = bytes;
     changed[offset] = 0xff;
     RejectWire(changed, QuietProofDecodeError::kUnsupported, statement);
   }
   changed = bytes; changed[6] = 0;
   RejectWire(changed, QuietProofDecodeError::kMalformed, statement);
-  changed[8] = 2;
+  changed[8] = 255;
   RejectWire(changed, QuietProofDecodeError::kUnsupported, statement);
   for (const auto& field : vector.at("fields")) {
     const auto name = field.at("field").get<std::string>();
@@ -103,7 +103,7 @@ void TestFixture(const nlohmann::json& vector) {
   // Every accepted single-byte mutation has one exact encoding and a distinct d.
   for (size_t i = 0; i < bytes.size(); ++i) {
     changed = bytes; changed[i] ^= 1;
-    QuietProofSignatureStatementV3 mutated;
+    QuietProofSignatureStatementV4 mutated;
     if (!DecodeQuietProofSignatureStatement(changed, &mutated)) continue;
     std::array<uint8_t, 32> mutated_digest;
     Require(Encode(mutated) == changed && QuietProofSignatureStatementDigest(mutated, &mutated_digest) &&
@@ -134,7 +134,7 @@ void TestFixture(const nlohmann::json& vector) {
   }
   bad = statement; bad.statement_version = 2; RejectValue(bad);
   // Decode the same invalid common-field cases rather than only testing the
-  // in-memory validator. Each record is fixed-width 65 bytes in v3.
+  // in-memory validator. Each record is fixed-width 65 bytes in v4.
   const auto count_field = std::find_if(vector.at("fields").begin(), vector.at("fields").end(),
       [](const auto& field) { return field.at("field") == "claim_count"; });
   const size_t count_offset = count_field->at("offset").template get<size_t>();
@@ -149,7 +149,7 @@ void TestFixture(const nlohmann::json& vector) {
   RejectWire(changed, QuietProofDecodeError::kMalformed, statement);
   changed = bytes; std::fill_n(changed.begin() + first + 36, 8, 0);
   RejectWire(changed, QuietProofDecodeError::kMalformed, statement);
-  changed = bytes; changed[count_offset + 1] = 1; changed.resize(second); changed[9] = 1;
+  changed = bytes; changed[count_offset + 1] = 1; changed.resize(second); changed[10] = 1;
   RejectWire(changed, QuietProofDecodeError::kMalformed, statement);
   auto max = statement;
   max.claims.assign(16, statement.claims[0]);
@@ -172,13 +172,13 @@ void TestFixture(const nlohmann::json& vector) {
                  [&](const char*) { progress = true; }) && !progress,
       "signature request reached scalar proof API");
   std::vector<uint8_t> metadata;
-  // L8 adds public v3 metadata inspection in either build. Inspection carries
+  // L8 adds public v4 metadata inspection in either build. Inspection carries
   // the exact request and no proof/circuit result; the scalar prove/verify and
   // envelope APIs above and below must continue rejecting signature statements.
   Require(QuietProofBrowserInspect(bytes, false, &metadata) && metadata.size() == bytes.size() + 61 &&
       std::equal(metadata.begin(), metadata.begin() + 4, std::array<uint8_t,4>{'Q','W','I','1'}.begin()) &&
       metadata[4] == 0 && std::equal(bytes.begin(), bytes.end(), metadata.begin() + 61),
-      "public v3 inspection did not preserve the unverified request");
+      "public v4 inspection did not preserve the unverified request");
   for (uint8_t version : {uint8_t{1}, uint8_t{2}}) {
     std::vector<uint8_t> wire{'Q','P','E','1',version};
     QuietProofAppendU32(&wire, static_cast<uint32_t>(bytes.size()));
@@ -188,13 +188,13 @@ void TestFixture(const nlohmann::json& vector) {
     for (uint32_t n : {1u,4u,128u,1u}) QuietProofAppendU32(&wire,n);
     wire.push_back(1);
     Require(!DecodeQuietProofEnvelope(wire, &envelope, &error) && error == QuietProofDecodeError::kMalformed,
-        "old envelope reinterpreted v3");
+        "old envelope reinterpreted v4");
     bool called = false;
     QuietProofVerifierConfig config;
     config.verify_proof = [&](const auto&) { called = true; return true; };
     Require(VerifyQuietProof(wire, config).result == QuietProofVerifyResult::kMalformedStatement && !called,
         "cross-mode envelope reached verifier callback");
-    wire[9 + 9] = 2;
+    wire[9 + 10] = 2;
     Require(!DecodeQuietProofEnvelope(wire, &envelope, &error) && error == QuietProofDecodeError::kUnsupported,
         "unknown nested signing kind misclassified");
   }
@@ -213,7 +213,7 @@ void TestFixture(const nlohmann::json& vector) {
   auto reversed = statement.claims;
   std::reverse(reversed.begin(), reversed.end());
   if (kQuietProofSignatureModeEnabled) {
-    Require(build(reversed, options) && output.statement_version == 3 &&
+    Require(build(reversed, options) && output.statement_version == 4 &&
         output.not_before == 100 && output.expires_at == 400 && output.claims == statement.claims &&
         random_calls == 1 && clock_calls == 1, "explicit signature challenge failed");
     Require(CreateQuietProofSignatureChallenge(statement.claims, options, &output), "production builder failed");
