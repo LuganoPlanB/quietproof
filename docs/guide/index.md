@@ -33,6 +33,8 @@ are available separately. Please contact us for further information.
 
 [Native signature custody](/guide/signature-possession) covers the default PoSC build,
 wallet signing or external signature import, private receipts and exact-request verification.
+[Sparrow on signet](/guide/sparrow) follows actual Sparrow signing, private signature
+import and public-chain verification with a disposable wallet.
 [Build and try it](/guide/getting-started) retains an explicit legacy PoKC tutorial using a public disposable scalar.
 
 ## Operate it carefully
