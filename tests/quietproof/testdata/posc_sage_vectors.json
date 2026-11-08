@@ -2855,7 +2855,6 @@
     "p": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f"
   },
   "format": "quietproof-posc-sage-v1",
-  "generation_note": "The 122 profile-independent rows retain the historical SageMath 10.6 baseline. The 12 v4 profile-dependent rows and profile bytes were refreshed using the pure public-request functions from spec/posc_reference.sage with hashlib and the independent Python integer relation. No fresh Sage runtime execution is claimed by this refresh; run scripts/run_posc_sage.py for that separate gate.",
   "malformed_serialization_cases_outside_relation": [
     "digest_short",
     "digest_long",

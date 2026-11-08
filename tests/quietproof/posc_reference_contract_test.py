@@ -33,6 +33,14 @@ class PoSCReferenceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, message):
                 reference.validate_fixture(fixture)
 
+    def test_fixture_contains_only_deterministic_model_fields(self):
+        # CI compares the fixture byte-for-byte with fresh Sage output.
+        # Historical generation provenance belongs in external evidence.
+        self.assertEqual(set(self.document), {
+            'cases', 'domains', 'format', 'malformed_serialization_cases_outside_relation',
+            'name', 'profile_wire_version', 'profiles', 'public_test_data', 'sage_version', 'scope',
+        })
+
     def test_all_sage_rows_have_independent_python_agreement(self):
         document, rows, expected, unrepresentable = reference.validate_fixture(FIXTURE)
         self.assertEqual(len(document['cases']), 134)
