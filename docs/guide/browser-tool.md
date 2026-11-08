@@ -24,7 +24,7 @@ business decision or establishes exclusive control, ownership or solvency.
 | Claim count | One or two addresses sharing a key hash; select 1–16 exact outputs with one key fingerprint. No automatic output selection. |
 | File sizes | PoKC (key control) and PoSC (signature custody) both exchange a small public `.qpr` request and a large `.qpf` proof envelope. Recorded one-claim browser fixtures: PoKC **199 B / 46,879,508 B**; PoSC **192 B / 49,727,698 B** (request / proof file). Request text differs; these are fixture sizes, not fixed format overheads. See the [comparison and max16 sizes](/performance#browser-comparison-pokc-and-posc). |
 | Unsupported | P2SH, P2WSH, P2TR, uncompressed-key P2PKH and other scripts; historical snapshot and bridge verification. Metadata inspection is not acceptance. |
-| Browsers | Qualified desktop Chromium and WebKit. Firefox is unsupported and unqualified. |
+| Browsers | Current v4 routing was qualified in isolated desktop Chromium. Earlier WebKit qualification does not establish current v4 coverage; Firefox remains unqualified. |
 | Resources | PoKC proof files are roughly 44.71 MiB; PoSC proof files roughly 47.42 MiB. Both can take minutes. Measured PoKC linear allocation is about 0.95 GB and PoSC max16 peaks at 1,301,413,888 B; the module maximum is 2 GiB, **plus** browser, file and JavaScript memory. These are not process RSS or total-RAM requirements. |
 
 Use a desktop with ample available memory and run one proof at a time. A
@@ -62,7 +62,11 @@ verifier/purpose and a message hash. Send it through an appropriate channel and
 restrict retention: it links a counterparty to disclosed coins.
 
 Standard artifacts default to **Signature custody (PoSC)** and show a signing
-kind. Retain the exact downloaded request. **Private-key knowledge (PoKC)** is
+kind and profile. P2PKH defaults to Bitcoin Signed Message; P2WPKH to BIP322.
+Mixed-kind requests need explicit signer/profile selection. The single PoSC
+format is v4; reissue old v3 exchanges. Retain the exact downloaded request.
+See the measured [wallet/profile matrix](./sparrow#observed-compatibility).
+**Private-key knowledge (PoKC)** is
 an explicit legacy choice. A capability-disabled build reports unsupported and
 never changes the selected mode automatically. PoSC proves signature knowledge
 and permits same-request delegation; neither

@@ -1,7 +1,7 @@
 # Native wallet prover on Linux
 
 The optional QuietProof Prover defaults to signature custody (PoSC). It reviews
-a public v3 `.qpr`, consumes an owner-only private `.qpa` receipt after explicit
+a public v4 `.qpr`, consumes an owner-only private `.qpa` receipt after explicit
 approval, and saves a locally verified public `.qpf`. Signature custody may be
 delegated; it does not prove private-key knowledge or exclusive funds control.
 Use the CLI or [browser request tool](browser-tool.md) to create requests.
@@ -45,7 +45,9 @@ WASI/browser builds remain separate and cannot enable this native GUI.
 Obtain the exact request and its receipt through native
 [`signing-material` / `import-signature` or `authorize`](signature-possession.md).
 Open the public request, keep **PoSC (default)** selected, and review its network,
-verifier, purpose, expiry, amounts and outpoints. Enter the receipt's absolute
+verifier, purpose, expiry, amounts and outpoints. Check the signing kind and profile against your
+retained request. P2PKH defaults to Bitcoin Signed Message; P2WPKH to BIP322.
+The request fixes that selection, and old v3 artifacts require reissuance. Enter the receipt's absolute
 path and choose **Prove with receipt**. The file must be regular, owned by the
 current user, with no group/other permissions. This worker makes no wallet RPC
 calls and never unlocks a wallet or exports a key. Missing or incompatible

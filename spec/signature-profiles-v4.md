@@ -1,5 +1,9 @@
 # PoSC v4 signing profiles
 
+For wallet selection and executed transport/proof coverage see the
+[Sparrow matrix](../docs/guide/sparrow.md#observed-compatibility) and
+[stock Core workflow](../docs/guide/core-signing.md).
+
 This is the sole supported PoSC request, receipt and proof contract. Superseded
 v3 requests/proofs and their v1 private receipts must be reissued; they are not
 converted or accepted. PoKC v1/v2 remains a separate explicit proof mode.

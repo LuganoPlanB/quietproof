@@ -67,6 +67,13 @@ export default defineConfig({
                     ["README.md#posc-signature-custody", "/technical/sage#posc-signature-custody"],
                     ["./README#posc-signature-custody", "/technical/sage#posc-signature-custody"],
                   ])
+                : sourcePath.endsWith("technical/signature-profiles-v4.md")
+                  ? new Map([
+                      ["../docs/guide/sparrow.md#observed-compatibility", "/guide/sparrow#observed-compatibility"],
+                      ["./../docs/guide/sparrow#observed-compatibility", "/guide/sparrow#observed-compatibility"],
+                      ["../docs/guide/core-signing.md", "/guide/core-signing"],
+                      ["./../docs/guide/core-signing", "/guide/core-signing"],
+                    ])
                 : sourcePath.endsWith("technical/sage.md")
                   ? new Map([
                       ["quietproof-signature-v1.md", "/technical/signature-profile"],
@@ -124,6 +131,7 @@ export default defineConfig({
           { text: "Browser request and verifier", link: "/guide/browser-tool" },
           { text: "Default native PoSC workflow", link: "/guide/signature-possession" },
           { text: "Sparrow on signet", link: "/guide/sparrow" },
+          { text: "Stock Core signing", link: "/guide/core-signing" },
           { text: "Linux prover GUI", link: "/guide/native-gui" },
           { text: "How a proof works", link: "/guide/how-it-works" },
           { text: "Auditor workflow", link: "/guide/auditor-workflow" },

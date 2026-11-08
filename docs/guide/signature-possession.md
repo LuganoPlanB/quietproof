@@ -11,6 +11,12 @@ receipt can delegate that same request to another native prover. Use
 `--proof-mode key-knowledge` explicitly for legacy PoKC challenge/prove/verify.
 Request or proof versions never select a different mode on your behalf.
 
+PoSC uses **v4 only**. Reissue old v3 requests and their signatures, receipts
+and proofs. Compressed P2PKH defaults to `bitcoin-message-ecdsa-v1`; P2WPKH
+defaults to `bip322-ecdsa-v1`. See measured [stock Core](./core-signing) and
+[Sparrow](./sparrow#observed-compatibility) instructions. Both procedures use one
+unchanged ECDSA/HASH160 circuit, 53 public inputs and one proof per request.
+
 ## Build the standard capability
 
 Use the pinned base SDK installed as described in the README. No optional SDK
@@ -62,10 +68,10 @@ core generatetoaddress 2 "$MINER" >/dev/null
 The verifier retains `expected.qpr` independently before sending the prover a
 copy. The selected kind must occur in the claims and be available in the selected
 wallet. Homogeneous claims infer that kind when `--signing-kind` is omitted;
-mixed claims require an explicit choice. For P2PKH, create a `legacy` address and select `p2pkh`; a
+mixed claims require an explicit signing kind and profile. For P2PKH, create a `legacy` address and select `p2pkh`; a
 `wpkh` descriptor does not imply a `pkh` alias. Review network, audience, purpose,
 nonce/expiry, amounts and exact claims through trusted request creation records.
-Native CLI `inspect` currently does **not** support v3 requests/proofs; browser
+Native CLI `inspect` currently does **not** support PoSC requests/proofs; browser
 metadata inspection is a separate public capability, not authorisation.
 
 ## Local wallet proving or private receipt delegation
@@ -78,7 +84,8 @@ signer. Export the exact 88-byte application message:
   --output "$DEMO/message.txt"
 ```
 
-Have a supported signer sign those exact bytes without adding a newline. Keep
+Sign `quietproof:signature:v4:` plus all 64 lowercase digest hex digits, without
+a newline. The human request label is not the signing message. Keep
 its signature in a current-owner owner-only file, then import it:
 
 ```sh
@@ -87,10 +94,12 @@ its signature in a current-owner owner-only file, then import it:
   --receipt-output "$DEMO/private.qpa"
 ```
 
-The importer accepts supported BIP322 Simple/Full or `sparrow-json` wrappers;
+For a default P2PKH request use `--signature-format bitcoin-message` instead.
+The importer accepts Bitcoin Signed Message, BIP322 Simple/Full or `sparrow-json` wrappers;
 metadata cannot override request/address/network checks. Sparrow2.5.6 produces
-compatible P2WPKH Simple signatures; its P2PKH legacy message signatures are not
-compatible BIP322 signatures. Taproot/Schnorr has no Quietproof proof relation.
+compatible P2WPKH Simple and compressed-P2PKH Standard/Electrum signatures for
+their respective profiles. P2PKH BIP322 Full is an explicit request alternative
+qualified with Core; Sparrow cannot produce Full. Taproot/Schnorr has no Quietproof proof relation.
 Follow [Sparrow on signet](./sparrow) for the tested disposable-wallet walkthrough;
 the detailed compatibility matrix is recorded in repository `scripts/sparrow_signer.md`.
 Use the imported receipt in the offline proving command below. No wallet or RPC
@@ -118,8 +127,9 @@ names because existing destinations are never overwritten:
 ```
 
 Only the selected stock wallet signs. Unlock it separately if necessary; this
-path never unlocks, exports keys, funds or broadcasts. The checked transaction
-is fixed and synthetic with zero values, not a spend of the real claims. A
+path never unlocks, exports keys, funds or broadcasts. BIP322 uses a fixed
+synthetic zero-value transaction; the P2PKH default uses `signmessage`. Neither
+spends the real claims. A
 signing failure cannot switch modes, script kinds or export the key.
 
 `private.qpa` is plaintext witness capability, bounded to4096 bytes and accepted
@@ -162,10 +172,10 @@ Only public `.qpr` and `.qpf` files belong in the
 request; browser provider qualification is trusted/non-atomic and always
 `authorizes:false`, without validated-node or global replay acceptance. Native
 proving, real receipts and wallet RPC stay native. The [native GUI](native-gui.md)
-defaults to reviewing a v3 request and proving with its private receipt.
+defaults to reviewing a v4 request and proving with its private receipt.
 
 Stop only the tutorial's owned node and remove its disposable data with its
-existing cleanup block. [Measured limits](/performance#signature-possession-measurements)
+existing cleanup block. [Measured limits](/performance#posc-signature-possession-measurements)
 are host-specific observations. The original L5.3 integrated malicious
 fresh-proof/advice attacks remain user-waived, unexecuted/unqualified; local
 review is not an external audit or universal soundness theorem.
