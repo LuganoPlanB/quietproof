@@ -1,5 +1,6 @@
 #include "proof_output.h"
 #include "pokc/verifier.h"
+#include "poksig/verifier.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -9,12 +10,25 @@
 #include <unistd.h>
 
 namespace quietproof::gui {
+ProofValidation ProofValidation::RunSignature(std::shared_ptr<const LoadedRequest> request,
+    const std::vector<uint8_t>& bytes, uint64_t now, const std::function<bool()>& canceled) {
+  if (canceled()) return {{},"Proof validation canceled"};
+  proofs::QuietProofSignatureEnvelopeMetadataV3 metadata;
+  if (!request || !request->signature || !proofs::InspectQuietProofSignatureEnvelope(bytes,&metadata) ||
+      metadata.request != request->bytes)
+    return {{},"Generated signature proof does not match the exact reviewed request"};
+  proofs::PoKSigOptionsV1 options; options.allow_signature_possession = true;
+  if (!proofs::PoKSigVerifyProof(request->bytes,proofs::PoKSigProofV1{bytes},now,options))
+    return {{},"Generated signature proof failed local cryptographic verification"};
+  if (canceled()) return {{},"Proof validation canceled"};
+  return {std::shared_ptr<const VerifiedProof>(new VerifiedProof(std::move(request),bytes,metadata.proof_created_at)),{}};
+}
 ProofValidation ProofValidation::Run(std::shared_ptr<const LoadedRequest> request,
     const proofs::QuietProofEnvelopeV1& envelope, const std::function<bool()>& canceled,
     const ProofVerifier& test_verifier) {
   if (canceled()) return {{},"Proof validation canceled"};
   std::vector<uint8_t> reviewed, actual;
-  if (!request || !proofs::EncodeQuietProofStatement(request->statement,&reviewed) ||
+  if (!request || request->signature || !proofs::EncodeQuietProofStatement(request->statement,&reviewed) ||
       reviewed != request->bytes || !proofs::EncodeQuietProofStatement(envelope.statement,&actual) || actual != reviewed)
     return {{},"Generated proof does not match the exact reviewed request"};
   if (!proofs::QuietProofEnvelopeTimeValid(envelope) ||

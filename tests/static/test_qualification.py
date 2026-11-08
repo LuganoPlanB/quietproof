@@ -86,8 +86,9 @@ class QualificationTests(unittest.TestCase):
                     '--native-off', str(root / 'offline'), '--evidence', str(root / 'evidence')]
             if mode is not None:
                 args += ['--mode', mode]
+            if not signature:
+                args.append('--no-signature-mode')
             if signature:
-                args.append('--signature-mode')
                 disabled = root / 'disabled-site'
                 disabled.mkdir()
                 (disabled / 'build-provenance.json').write_text(json.dumps({'base': '/', 'wasm': {'signatureMode': False}}))

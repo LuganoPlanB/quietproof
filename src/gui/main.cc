@@ -30,7 +30,9 @@ int main(int argc, char** argv) {
       if (arg == "--help") {
         std::cout << "Quietproof native prover\n"
                      "  --theme light|dark  --width 400..4096  --height 640..4096\n"
-                     "  --font-scale 1|1.25|1.5  --builtin-font\n"
+                     "  --font-scale 1|1.25|1.5|2  --builtin-font\n"
+                     "  --proof-mode signature-possession|key-knowledge (default: signature-possession)\n"
+                     "  --receipt-input private-receipt.qpa (native only; proving needs approval)\n"
                      "  --settings  --request request-file\n"
                      "  --smoke-test [--screenshot output.bmp] [--pixel-scale 1|2]\n"
                      "               [--test-events events.txt] [--test-now unix-seconds]\n";
@@ -49,8 +51,15 @@ int main(int argc, char** argv) {
         if (scale == "1") options.font_scale = 1.0f;
         else if (scale == "1.25") options.font_scale = 1.25f;
         else if (scale == "1.5") options.font_scale = 1.5f;
+        else if (scale == "2") options.font_scale = 2.0f;
         else throw std::runtime_error("Unsupported font scale");
         options.font_override = true;
+      } else if (arg == "--proof-mode") {
+        const auto mode = value();
+        if (mode != "signature-possession" && mode != "key-knowledge") throw std::runtime_error("Unsupported proof mode");
+        options.signature_mode = mode == "signature-possession";
+      } else if (arg == "--receipt-input") {
+        options.receipt = value();
       } else if (arg == "--smoke-test") {
         options.smoke_test = true;
       } else if (arg == "--builtin-font") {

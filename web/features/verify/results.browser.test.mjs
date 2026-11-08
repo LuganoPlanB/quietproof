@@ -91,10 +91,12 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
         await route.fulfill({ body, headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' } });
       });
       await page.goto(origin + '/verify');
+      await page.getByLabel('Proof mode (chosen independently)', {exact:true}).selectOption('key-knowledge');
       await page.getByRole('button', { name: 'Verify offline', exact: true }).waitFor();
       await page.waitForFunction(() => !document.querySelector('.quietproof-verify button[type=submit]').disabled);
       const proofInput = page.getByLabel('Proof file (.qpf)', { exact: true });
       const policyInput = page.getByLabel('Expected policy source');
+      await policyInput.selectOption('none'); // Exercise the explicit legacy missing-policy rejection.
       const selectedNetwork = page.getByLabel('Verification network (chosen independently)');
       const online = page.getByRole('checkbox', { name: 'After valid cryptography', exact: false });
       const crypto = page.locator('[data-result=crypto]'), policy = page.locator('[data-result=policy]'), explorer = page.locator('[data-result=explorer]');

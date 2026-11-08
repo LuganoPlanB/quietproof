@@ -20,7 +20,7 @@ with tempfile.TemporaryDirectory(prefix='quietproof-request-') as temporary:
         script = artifacts / (name + '.events')
         script.write_text('\n'.join(events))
         image = artifacts / (name + '.bmp')
-        command = [str(executable), '--smoke-test', '--screenshot', str(image),
+        command = [str(executable),'--proof-mode','key-knowledge', '--smoke-test', '--screenshot', str(image),
                    '--test-events', str(script), *map(str, args)]
         result = subprocess.run(command, capture_output=True, text=True, env=environment, timeout=10)
         (artifacts / (name + '.log')).write_text(result.stdout + result.stderr)
@@ -42,22 +42,22 @@ with tempfile.TemporaryDirectory(prefix='quietproof-request-') as temporary:
         width, height = size
         args = ['--theme', theme, '--width', width, '--height', height, '--font-scale', scale,
                 '--request', fixtures / ('valid-v1.qpr' if screen == 'open' else 'malformed.qpr')]
-        events = ['tab'] * 4 + ['enter'] if screen == 'open' else []
+        events = ['tab'] * 6 + ['enter'] if screen == 'open' else []
         state = run(f'{screen}-{theme}-{width}x{height}-{scale}', args, events)
         assert state == ((1, 0, 1, 1) if screen == 'open' else (0, 5, 1, 0)), state
 
     path = str(fixtures / 'valid-v2.qpr')
     text_events = ['text ' + path[i:i+24] for i in range(0, len(path), 24)]
-    assert run('path-entry', events=['tab'] * 3 + text_events + ['enter']) == (1, 0, 1, 0)
+    assert run('path-entry', events=['tab'] * 5 + text_events + ['enter']) == (1, 0, 1, 0)
     unicode_path = str(fixtures / 'Prüfung-東京.qpr')
     unicode_events = ['text ' + unicode_path[i:i+8] for i in range(0, len(unicode_path), 8)]
-    assert run('unicode-path-entry', events=['tab'] * 3 + unicode_events + ['enter']) == (1, 0, 1, 0)
+    assert run('unicode-path-entry', events=['tab'] * 5 + unicode_events + ['enter']) == (1, 0, 1, 0)
     run('edit-then-display', ['--theme', 'light'],
-        ['tab'] * 3 + ['text a', 'click 400 35'] + ['tab'] * 5 + ['enter'])
+        ['tab'] * 5 + ['text a', 'click 400 35'] + ['tab'] * 5 + ['enter'])
     assert 'view=settings theme=dark' in (artifacts / 'edit-then-display.log').read_text()
     assert run('chooser-cancel', ['--request', fixtures / 'valid-v1.qpr'],
-               ['tab'] * 4 + ['enter', 'tab', 'tab', 'enter']) == (1, 0, 1, 0)
-    assert run('chooser-escape', events=['tab'] * 4 + ['enter', 'escape']) == (0, 0, 0, 0)
+               ['tab'] * 6 + ['enter', 'tab', 'tab', 'enter']) == (1, 0, 1, 0)
+    assert run('chooser-escape', events=['tab'] * 6 + ['enter', 'escape']) == (0, 0, 0, 0)
     assert run('replace-invalid', ['--request', fixtures / 'valid-v1.qpr'],
                ['drop ' + str(fixtures / 'malformed.qpr')]) == (0, 5, 2, 0)
     assert run('drop-unicode', events=['drop ' + str(fixtures / 'Prüfung-東京.qpr')]) == (1, 0, 1, 0)
@@ -68,7 +68,7 @@ with tempfile.TemporaryDirectory(prefix='quietproof-request-') as temporary:
     selection.mkdir()
     (selection / 'a.qpr').write_bytes((fixtures / 'valid-v1.qpr').read_bytes())
     assert run('chooser-select', ['--request', selection / 'a.qpr'],
-               ['tab'] * 4 + ['enter', 'tab', 'tab', 'tab', 'enter']) == (1, 0, 2, 0)
+               ['tab'] * 6 + ['enter', 'tab', 'tab', 'tab', 'enter']) == (1, 0, 2, 0)
 
 print(f'GUI request UI: {checks} rendered checks passed; 16 open/error matrix captures, '
       'path entry, chooser select/cancel, SDL drop, replacement and disabled proving')

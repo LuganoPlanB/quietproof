@@ -66,20 +66,20 @@ def main():
             script=coin['scriptPubKey']['hex'];require(script.startswith('0014') and len(script)==44,'unexpected funded script')
             claim=f"{txid}:{coin['n']}:100000000:{script[4:]}"
             request=evidence/'installed.qpr';proof=evidence/'installed.qpf'
-            run('create-request',[cli,'challenge','create','--network','regtest','--claim',claim,
+            run('create-request',[cli,'challenge','create','--proof-mode','key-knowledge','--network','regtest','--claim',claim,
                 '--verifier','installed.example','--purpose','proof-of-control','--message','Isolated installed GUI qualification',
                 '--expires-in','86400','--output',request])
             preferences=root/'data/Plan-B/quietproof';preferences.mkdir(parents=True)
             fields=['127.0.0.1',str(node.port),'',str(node.cookie),'encrypted','3000','3000']
             settings=preferences/'node.conf';settings.write_text('quietproof-node=1\n'+''.join(f'{i} {json.dumps(v)}\n' for i,v in enumerate(fields)));settings.chmod(0o600)
             events=['capture '+str(evidence/'installed-review.bmp'),'control 3','control 11']+['wait']*20+[
-                'control 2','control 304']+['wait']*20+['capture '+str(evidence/'installed-unlock.bmp'),
+                'control 2']+['tab']*7+['enter']+['wait']*20+['capture '+str(evidence/'installed-unlock.bmp'),
                 'private-synthetic','enter','await-proof','capture '+str(evidence/'installed-result.bmp'),
                 'control 11','destination '+str(proof),'control 307','await-save','capture '+str(evidence/'installed-save.bmp')]
             events_file=evidence/'installed.events';events_file.write_text('\n'.join(events)+'\n')
             require(node.call('getwalletinfo',wallet='encrypted')['unlocked_until']==0,'wallet not initially locked')
             with virtual_display(root,environment):
-                value=run('installed-wallet-workflow',[gui,'--smoke-test','--request',request,'--theme','light',
+                value=run('installed-wallet-workflow',[gui,'--proof-mode','key-knowledge','--smoke-test','--request',request,'--theme','light',
                     '--font-scale','1','--width','480','--height','720','--test-events',events_file],timeout=360)
             result['xvfbReaped']=True
             require(f'GUI assets: font={prefix}/share/quietproof/fonts/Inter.ttf renderer=software' in value.stdout,'installed font/renderer identity differs')
@@ -89,7 +89,7 @@ def main():
             extracted=evidence/'extracted.qpr'
             run('extract-exact-request',[driver,proof,extracted,'--prepare-request'])
             require(extracted.read_bytes()==request.read_bytes(),'installed proof differs from reviewed request')
-            value=run('verify-current',[cli,'verify',proof,'--network','regtest','--verifier','installed.example',
+            value=run('verify-current',[cli,'verify',proof,'--proof-mode','key-knowledge','--network','regtest','--verifier','installed.example',
                 '--purpose','proof-of-control','--nonce-store',root/'nonces','--rpc-url',node.url,'--rpc-cookie',node.cookie])
             require(json.loads(value.stdout)['result']=='valid_current','installed CLI did not verify exact current outpoint')
             for name in ('review','unlock','result','save'):

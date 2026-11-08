@@ -71,7 +71,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
         return route.fulfill({ response, body: prefix + await response.text() + suffix });
       });
       async function capture(state, feature, detail) {
-        for (const [width,height] of [[390,844],[1440,900]]) for (const scale of [100,200]) {
+        for (const [width,height] of [[375,812],[1440,900]]) for (const scale of [100,200]) {
           await page.setViewportSize({ width,height });
           await page.evaluate(scale => {
             let style=document.querySelector('#qp-a11y-scale');
@@ -98,6 +98,8 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
         await page.evaluate(()=>document.querySelector('#qp-a11y-scale')?.remove());
       }
       await page.goto(origin+'/tool');
+      if (process.env.QUIETPROOF_SIGNATURE_MODE === '0')
+        await page.getByLabel('Proof mode',{exact:true}).selectOption('key-knowledge');
       const requestFeature=page.getByRole('region',{name:'Create a request',exact:true});
       const lookup=page.getByRole('button',{name:'Look up outputs',exact:true}); await lookup.waitFor();
       await capture('request-empty',requestFeature,lookup);
@@ -122,11 +124,12 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
       await capture('verify-empty',feature,verify);
       await page.getByLabel('Proof file (.qpf)',{exact:true}).focus(); await page.keyboard.press('Tab');
       assert.equal(await page.evaluate(()=>document.activeElement.id),'qp-verify-proof-mode');
-      assert.equal(await page.getByLabel('Proof mode (chosen independently)',{exact:true}).inputValue(),'key-knowledge');
+      assert.equal(await page.getByLabel('Proof mode (chosen independently)',{exact:true}).inputValue(),'signature-possession');
       await page.keyboard.press('Tab');
       assert.equal(await page.getByRole('button',{name:'Check signature support',exact:true}).evaluate(el=>el===document.activeElement),true);
       await page.keyboard.press('Tab');
       assert.equal(await page.evaluate(()=>document.activeElement.id),'qp-policy');
+      await page.getByLabel('Proof mode (chosen independently)',{exact:true}).selectOption('key-knowledge');
       await page.getByLabel('Expected policy source').selectOption('request');
       await page.getByLabel('Expected request file (.qpr)',{exact:true}).setInputFiles(upload('expected.qpr',request));
       await page.getByLabel('Proof file (.qpf)',{exact:true}).setInputFiles(upload('public.qpf',proof));

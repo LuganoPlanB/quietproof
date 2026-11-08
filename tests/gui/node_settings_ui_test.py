@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix='quietproof-node-ui-') as directory:
         script = artifacts / (name + '.events')
         script.write_text('\n'.join(events) + '\n')
         image = artifacts / (name + '.bmp')
-        result = subprocess.run([str(executable), '--smoke-test', '--screenshot', str(image),
+        result = subprocess.run([str(executable),'--proof-mode','key-knowledge', '--smoke-test', '--screenshot', str(image),
                                  '--test-events', str(script), *args], env=env,
                                 capture_output=True, text=True, timeout=15)
         (artifacts / (name + '.log')).write_text(result.stdout + result.stderr)

@@ -21,7 +21,8 @@ def main():
     parser.add_argument('--wasi-sdk', type=Path,
                         default=Path(os.environ.get('WASI_SDK_PATH', '/opt/wasi-sdk')))
     parser.add_argument('--jobs', type=int, default=2)
-    parser.add_argument('--signature-mode', action='store_true')
+    parser.add_argument('--signature-mode', action=argparse.BooleanOptionalAction, default=True,
+                        help='Include PoSC (default); --no-signature-mode builds legacy PoKC only')
     args = parser.parse_args()
     if args.jobs < 1:
         parser.error('--jobs must be positive')

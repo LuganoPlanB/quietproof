@@ -8,10 +8,13 @@ target_compile_options(quietproof-gui-request PRIVATE
   $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>)
 
 find_package(Threads REQUIRED)
-add_library(quietproof-gui-node STATIC node_settings.cc node_probe.cc preferences.cc wallet_session.cc private_input.cc proof_session.cc proof_output.cc output_worker.cc)
+add_library(quietproof-gui-node STATIC node_settings.cc node_probe.cc preferences.cc wallet_session.cc private_input.cc proof_session.cc signature_session.cc proof_output.cc output_worker.cc)
 target_compile_features(quietproof-gui-node PUBLIC cxx_std_20)
 target_link_libraries(quietproof-gui-node PUBLIC LongfellowZKQuietProof::rpc Threads::Threads quietproof-gui-request SDL2::SDL2)
 target_include_directories(quietproof-gui-node PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+if(QUIETPROOF_BUILD_SIGNATURE_MODE)
+  target_link_libraries(quietproof-gui-node PUBLIC LongfellowZKQuietProof::signature)
+endif()
 target_compile_options(quietproof-gui-node PRIVATE
   $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic>)
 
@@ -52,6 +55,21 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 
 if(BUILD_TESTING)
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  if(QUIETPROOF_BUILD_SIGNATURE_MODE)
+    add_executable(quietproof-gui-signature-session-test ${PROJECT_SOURCE_DIR}/tests/gui/signature_session_test.cc)
+    target_link_libraries(quietproof-gui-signature-session-test PRIVATE quietproof-gui-node)
+    add_test(NAME quietproof-gui-signature-session-test COMMAND ${Python3_EXECUTABLE}
+      ${PROJECT_SOURCE_DIR}/tests/gui/signature_session_fixture.py
+      $<TARGET_FILE:quietproof-gui-signature-session-test> $<TARGET_FILE:quietproof-cli>
+      ${CMAKE_CURRENT_BINARY_DIR}/signature-fixtures)
+    set_tests_properties(quietproof-gui-signature-session-test PROPERTIES TIMEOUT 120)
+    add_test(NAME quietproof-gui-signature-ui-test COMMAND ${Python3_EXECUTABLE}
+      ${PROJECT_SOURCE_DIR}/tests/gui/signature_ui_test.py $<TARGET_FILE:quietproof-prover-gui>
+      $<TARGET_FILE:quietproof-gui-signature-session-test> $<TARGET_FILE:quietproof-cli>
+      ${CMAKE_CURRENT_BINARY_DIR}/signature-ui-artifacts)
+    set_tests_properties(quietproof-gui-signature-ui-test PROPERTIES TIMEOUT 900 RUN_SERIAL TRUE LABELS "proof-heavy")
+  endif()
   add_executable(quietproof-gui-node-settings-test ${PROJECT_SOURCE_DIR}/tests/gui/node_settings_test.cc)
   target_link_libraries(quietproof-gui-node-settings-test PRIVATE quietproof-gui-node)
   add_test(NAME quietproof-gui-node-settings-test COMMAND quietproof-gui-node-settings-test

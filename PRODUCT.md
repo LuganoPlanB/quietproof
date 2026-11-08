@@ -19,11 +19,11 @@ Newcomers may understand Bitcoin addresses and balances without understanding pu
 
 ## Product Purpose
 
-Explain and document QuietProof: a challenge-bound, off-chain proof that a prover knows the spend key corresponding to one compressed-key hash across native P2WPKH/P2PKH outputs without revealing private keys or compressed public keys.
+Explain and document QuietProof: a challenge-bound, off-chain proof of signature custody (PoSC) for one compressed-key hash across native P2WPKH/P2PKH outputs. The default prover knows a valid wallet signature for the exact request; a wallet owner can delegate it without exporting the spend key. The public proof reveals neither the signature nor the private or compressed public key. PoKC private-key knowledge remains an explicit legacy choice.
 
 The site should explain custody, disclosed proof-of-funds, collateral and protocol admission, with technical documentation. Describe key privacy accurately: proofs expose coins, amounts, and wallet links; recipients can trace them and associate known identities.
 
-QuietProof is a proof-of-key-control primitive, not a complete proof-of-reserves or solvency system. The site must make that boundary unmistakable.
+Signature custody does not establish private-key knowledge, exclusive control, signing time, reserved funds or solvency. A private receipt permits re-proving the same request. The site must make those boundaries unmistakable.
 
 ## Brand Personality
 

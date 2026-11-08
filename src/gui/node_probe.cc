@@ -5,7 +5,7 @@
 
 namespace quietproof::gui {
 std::optional<proofs::BitcoinRpcKeyMatch> MatchRequest(const LoadedRequest& request) {
-  if (request.statement.claims.empty()) return {};
+  if (request.signature || request.statement.claims.empty()) return {};
   proofs::BitcoinRpcKeyMatch match;
   match.program = request.statement.claims[0].program;
   for (const auto& claim : request.statement.claims) {

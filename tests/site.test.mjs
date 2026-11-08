@@ -63,7 +63,7 @@ test("the homepage gives a factual operating profile", () => {
   const home = read("docs/.vitepress/theme/components/HomePage.vue");
 
   assert.match(home, /Built for deliberate attestations/);
-  assert.match(home, /not a\s+transaction path or a high-frequency request loop/);
+  assert.match(home, /Computation can take minutes/);
   assert.match(home, /Observed end-to-end native API performance/);
   assert.match(home, /PoKC — Proof of Key Control/);
   assert.match(home, /PoSC — Proof of Signature Custody/);

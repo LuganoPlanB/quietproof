@@ -78,7 +78,7 @@ def platform_checks(args):
         def run(name,events):
             script=evidence/(name+'.events');script.write_text('\n'.join(events)+'\n')
             image=evidence/(name+'.bmp')
-            command=[str(build/'quietproof-prover-gui'),'--smoke-test','--request',str(request),
+            command=[str(build/'quietproof-prover-gui'),'--proof-mode','key-knowledge','--smoke-test','--request',str(request),
                 '--theme','light','--font-scale','1','--test-events',str(script),'--screenshot',str(image)]
             started=now(); value=subprocess.run(command,env=env,capture_output=True,text=True,timeout=30)
             (evidence/(name+'.log')).write_text(value.stdout+value.stderr)
@@ -200,7 +200,7 @@ def main():
         def ui(name, request, events, pixel=1):
             script = evidence/(name+'.events')
             script.write_text('\n'.join(events)+'\n')
-            result = run(name, [gui, '--smoke-test', '--request', request, '--test-events', script,
+            result = run(name, [gui, '--proof-mode', 'key-knowledge', '--smoke-test', '--request', request, '--test-events', script,
                                '--theme','light','--font-scale','1',
                                '--width', '480', '--height', '720', '--pixel-scale', str(pixel)], timeout=360)
             captures = re.findall(r'^GUI capture: (\d+) retained=(\d) confirm=(\d) dialog=(\d) busy=(\d) status=(\d)$',result.stdout,re.M)
@@ -226,7 +226,7 @@ def main():
             events.append('capture '+str(path))
             manifest['screenshots'].append({'name':name, 'path':str(path), 'theme':theme,
                 'logicalWidth':size[0], 'logicalHeight':size[1], 'fontScale':font, 'pixelScale':pixel})
-        opening = ['control 3', 'control 11']+['wait']*20+['control 2', 'control 304']
+        opening = ['control 3', 'control 11']+['wait']*20+['control 2']+['tab']*7+['enter']
         try:
             node.start()
             manifest['ownedProcesses'] = [node.process.pid]
@@ -253,7 +253,7 @@ def main():
                         'funded script differs from selected scenario')
                 claim=f"{txid}:{coin['n']}:100000000:"+(script_kind+':' if script_kind=='p2pkh' else '')+program
                 request = root/(wallet+'.qpr')
-                run(wallet+'-request', [cli, 'challenge', 'create', '--network', 'regtest',
+                run(wallet+'-request', [cli, 'challenge', 'create', '--proof-mode', 'key-knowledge', '--network', 'regtest',
                     '--claim', claim, '--verifier', 'roots-e2e.example',
                     '--purpose', 'proof-of-control', '--message', 'Isolated Roots qualification',
                     '--expires-in', '86400', '--output', request])
@@ -292,11 +292,11 @@ def main():
                 extracted = root/(wallet+'-extracted.qpr')
                 run(wallet+'-extract', [driver, proof, extracted, '--prepare-request'])
                 require(extracted.read_bytes()==request.read_bytes(), 'GUI changed exact reviewed request')
-                value=run(wallet+'-verify', [cli,'verify',proof,'--verifier','roots-e2e.example',
+                value=run(wallet+'-verify', [cli,'verify',proof,'--proof-mode','key-knowledge','--verifier','roots-e2e.example',
                     '--purpose','proof-of-control','--network','regtest','--nonce-store',root/(wallet+'.nonces'),
                     '--rpc-url',node.url,'--rpc-cookie',node.cookie],timeout=180)
                 require(json.loads(value.stdout)['result']=='valid_current', 'real-chain verification failed')
-                run(wallet+'-wrong-network', [cli,'verify',proof,'--verifier','roots-e2e.example',
+                run(wallet+'-wrong-network', [cli,'verify',proof,'--proof-mode','key-knowledge','--verifier','roots-e2e.example',
                     '--purpose','proof-of-control','--network','signet','--nonce-store',root/(wallet+'-wrong.nonces'),
                     '--rpc-url',node.url,'--rpc-cookie',node.cookie],expected=67)
                 (evidence/(wallet+'.qpf')).write_bytes(proof.read_bytes())
@@ -307,7 +307,7 @@ def main():
             signed=node.call('signrawtransactionwithwallet',raw,wallet='plain')
             require(signed['complete'], 'owned test spend signing failed')
             node.call('sendrawtransaction',signed['hex'])
-            spent=run('plain-spent-outpoint',[cli,'verify',root/'plain.qpf','--verifier','roots-e2e.example',
+            spent=run('plain-spent-outpoint',[cli,'verify',root/'plain.qpf','--proof-mode','key-knowledge','--verifier','roots-e2e.example',
                 '--purpose','proof-of-control','--network','regtest','--nonce-store',root/'spent.nonces',
                 '--rpc-url',node.url,'--rpc-cookie',node.cookie],timeout=180,expected=5)
             require(json.loads(spent.stdout)['result']=='state_inconclusive' and not (root/'spent.nonces').exists(),
@@ -347,7 +347,7 @@ def main():
             with virtual_display(root,environment):
                 script=evidence/'xvfb-review.events'
                 script.write_text('tab\nbacktab\npagedown\npageup\n')
-                run('virtual-x11-review',[gui,'--smoke-test','--request',requests['plain'],'--test-events',script,
+                run('virtual-x11-review',[gui,'--proof-mode','key-knowledge','--smoke-test','--request',requests['plain'],'--test-events',script,
                     '--theme','light','--font-scale','1',
                     '--screenshot',evidence/'virtual-x11-review.bmp'])
                 manifest['screenshots'].append({'name':'virtual-x11-review','path':str(evidence/'virtual-x11-review.bmp'),

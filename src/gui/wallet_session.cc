@@ -40,6 +40,10 @@ WalletSessionResult RunWalletSession(const WalletSessionJob& job,
     void Run() { if (!used) { used = true; if (callback) callback(); } }
     ~PasswordUsed() { Run(); }
   } consumed{password_used};
+  if (job.request && job.request->signature) {
+    result.error = {Code::kConfiguration,0,{},"PoSC uses a private signature receipt; legacy key acquisition is unavailable for this request"};
+    return result;
+  }
   bool cleanup_needed = false;
   auto configuration = job.configuration.rpc;
   // Bound individual key/unlock/cleanup calls independently of advanced settings.

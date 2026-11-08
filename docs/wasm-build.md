@@ -58,6 +58,12 @@ record. Use a fresh work directory when switching compiler installations:
 CMake can retain its old compiler, so the driver rejects a mismatched cache.
 No native dependency prefix is used for the reactor.
 
+PoSC signature support is enabled by default in `build_wasm.py`,
+`build_static.py` and `qualify_static.py`. A deliberate legacy-only build must
+pass `--no-signature-mode` consistently to the reactor and static packaging;
+its default PoSC UI reports unsupported, and explicit PoKC remains available.
+Capability and proof-mode choices stay independent of imported file versions.
+
 ## Build and preview the complete static artifact
 
 From the same repository and shell, with a clean reviewed checkout:
@@ -230,7 +236,7 @@ QWC1 creation options contain network u8 (0 mainnet or 2 signet), lifetime u64,
 verifier/purpose/message as u16-length UTF-8 strings, claim count u16, and typed
 claim records (txid[32], vout u32, sats u64, script kind u8, program[20]). Integers
 are big endian. A lifetime is required (1–86400 seconds); there is no silent
-extension. The C++ core sorts and validates claims, selects v1 or typed v2, hashes
+extension. The legacy PoKC C++ path sorts and validates claims, selects v1 or typed v2, hashes
 the message and obtains a fresh nonce and untrusted time through checked WASI
 imports. It returns existing canonical QPS1 `.qpr` bytes. No production message
 can select a nonce, clock source, private key or prover operation.
@@ -280,7 +286,7 @@ Only mainnet/signet current requests are supported; snapshot and bridge modes
 are inspectable but rejected for verification. Maximum lifetime is 86400 seconds.
 
 `prepare` validates encoding and policy but exposes no fetchable manifest.
-`verify` calls the exact native `PoKCProofSupported` and `PoKCVerifyProof`
+The explicit legacy PoKC `verify` path calls the exact native `PoKCProofSupported` and `PoKCVerifyProof`
 functions, including circuit digest, parameter, transcript and trailing-proof
 checks. They live in `pokc/verifier.h`; native proving includes that same header.
 There are no dummy verification callbacks and native `VerifyQuietProof` is

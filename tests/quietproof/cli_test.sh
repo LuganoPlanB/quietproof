@@ -31,7 +31,7 @@ grep -q 'signet' "${test_dir}/help.out" || fail "help omits signet"
 grep -q 'prove you control bitcoin without revealing your public key' \
   "${test_dir}/help.out" || fail "help omits the QuietProof tagline"
 
-"${quietproof_bin}" challenge create \
+"${quietproof_bin}" challenge create --proof-mode key-knowledge \
   --network signet \
   --verifier auditor.example \
   --purpose proof-of-funds \
@@ -48,7 +48,7 @@ grep -q '"network":"signet"' "${test_dir}/inspect.json" ||
 grep -q '"verifier":"auditor.example"' "${test_dir}/inspect.json" ||
   fail "verifier identity did not round-trip"
 
-if "${quietproof_bin}" challenge create \
+if "${quietproof_bin}" challenge create --proof-mode key-knowledge \
   --network signet \
   --verifier auditor.example \
   --purpose proof-of-funds \
@@ -58,7 +58,7 @@ if "${quietproof_bin}" challenge create \
   fail "existing request was overwritten"
 fi
 
-"${quietproof_bin}" challenge create \
+"${quietproof_bin}" challenge create --proof-mode key-knowledge \
   --network testnet4 \
   --verifier auditor.example \
   --purpose proof-of-control \
@@ -69,7 +69,7 @@ fi
 grep -q '"network":"testnet4"' "${test_dir}/testnet4.json" ||
   fail "testnet4 request did not round-trip"
 
-if "${quietproof_bin}" challenge create \
+if "${quietproof_bin}" challenge create --proof-mode key-knowledge \
   --network signet \
   --verifier auditor.example \
   --purpose proof-of-funds \
@@ -79,19 +79,19 @@ if "${quietproof_bin}" challenge create \
   fail "zero-value claim was accepted"
 fi
 
-if "${quietproof_bin}" prove --secret=01 --request "${request}" \
+if "${quietproof_bin}" prove --proof-mode key-knowledge --secret=01 --request "${request}" \
   --output "${test_dir}/proof.qpf" >/dev/null 2>&1; then
   fail "secret argv was accepted"
 fi
 
 # Discovery flags on manual requests and every RPC flag on prove are rejected.
 for flag in --rpc-url --rpc-cookie --rpc-datadir --rpc-timeout --rpc-scan-timeout --rpc-wallet --min-confirmations; do
-  if "${quietproof_bin}" challenge create --network signet \
+  if "${quietproof_bin}" challenge create --proof-mode key-knowledge --network signet \
       --verifier auditor.example --purpose proof-of-funds --message reserve-test \
       --claim "${claim}" --output "${test_dir}/flags.qpr" "${flag}" unused >/dev/null 2>&1; then
     fail "manual challenge accepted ${flag}"
   fi
-  if "${quietproof_bin}" prove --request "${request}" \
+  if "${quietproof_bin}" prove --proof-mode key-knowledge --request "${request}" \
       --output "${test_dir}/flags.qpf" "${flag}" unused >/dev/null 2>&1; then
     fail "prove accepted ${flag}"
   fi

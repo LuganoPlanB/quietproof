@@ -64,7 +64,7 @@ class ContextTest(unittest.TestCase):
         nonce = self.root / 'nonces'
         for path in inputs:
             with self.subTest(path=path.name):
-                result = subprocess.run([BINARY, 'verify', str(path), '--nonce-store', str(nonce)],
+                result = subprocess.run([BINARY, 'verify', str(path), '--proof-mode', 'key-knowledge', '--nonce-store', str(nonce)],
                                         text=True, capture_output=True, timeout=10)
                 self.assertEqual((result.returncode, result.stdout, result.stderr),
                                  (65, malformed, '') if RPC_ENABLED else (64, '', native))
@@ -73,11 +73,11 @@ class ContextTest(unittest.TestCase):
         # validation followed it. Keep both precedences and exact usage output.
         usage = subprocess.run([BINARY, 'verify'], text=True, capture_output=True, timeout=10)
         for options in (['--network', 'not-a-network'], ['--unknown-option', '1']):
-            result = subprocess.run([BINARY, 'verify', str(inputs[0]), '--nonce-store', str(nonce), *options],
+            result = subprocess.run([BINARY, 'verify', str(inputs[0]), '--proof-mode', 'key-knowledge', '--nonce-store', str(nonce), *options],
                                     text=True, capture_output=True, timeout=10)
             self.assertEqual((result.returncode, result.stdout, result.stderr),
                              (usage.returncode, usage.stdout, usage.stderr))
-        result = subprocess.run([BINARY, 'verify', str(inputs[0]), '--nonce-store', str(nonce),
+        result = subprocess.run([BINARY, 'verify', str(inputs[0]), '--proof-mode', 'key-knowledge', '--nonce-store', str(nonce),
                                  '--min-confirmations', 'invalid'], text=True, capture_output=True, timeout=10)
         self.assertEqual((result.returncode, result.stdout, result.stderr),
                          (usage.returncode, usage.stdout, usage.stderr) if RPC_ENABLED else (64, '', native))
@@ -101,7 +101,7 @@ class ContextTest(unittest.TestCase):
         for path in (proof, minimal, large):
             for args in ([], ['--bitcoin-cli', str(provider)]):
                 result = subprocess.run([BINARY, 'verify', str(path),
-                                         '--nonce-store', str(nonce), *args],
+                                         '--proof-mode', 'key-knowledge', '--nonce-store', str(nonce), *args],
                                         text=True, capture_output=True, timeout=10)
                 self.assertEqual(result.returncode, 65, result.stderr)
                 self.assertEqual(json.loads(result.stdout)['result'], 'malformed_statement')
@@ -126,7 +126,7 @@ class ContextTest(unittest.TestCase):
         provider.chmod(0o700)
         nonce = self.root / 'nonces'
         for args in ([], ['--bitcoin-cli', str(provider)]):
-            result = subprocess.run([BINARY, 'verify', str(proof), '--nonce-store', str(nonce), *args],
+            result = subprocess.run([BINARY, 'verify', str(proof), '--proof-mode', 'key-knowledge', '--nonce-store', str(nonce), *args],
                                     text=True, capture_output=True, timeout=10)
             self.assertEqual(result.returncode, 66, result.stderr)
             self.assertEqual(json.loads(result.stdout)['result'], 'unsupported')
@@ -135,7 +135,7 @@ class ContextTest(unittest.TestCase):
 
     def create(self, *args):
         return subprocess.run([
-            BINARY, 'challenge', 'create', '--network', 'signet',
+            BINARY, 'challenge', 'create', '--proof-mode', 'key-knowledge', '--network', 'signet',
             '--claim', CLAIM, '--output', str(self.request), *args,
         ], text=True, capture_output=True, timeout=10)
 
@@ -199,7 +199,7 @@ class ContextTest(unittest.TestCase):
         nonce = self.root / 'nonces'
         result = subprocess.run([
             BINARY, 'verify', str(proof), '--bitcoin-cli', '/bin/false',
-            '--nonce-store', str(nonce), *args,
+            '--proof-mode', 'key-knowledge', '--nonce-store', str(nonce), *args,
         ], text=True, capture_output=True, timeout=60)
         self.assertFalse(nonce.exists())
         self.assertNotEqual(result.returncode, 0)
@@ -222,7 +222,7 @@ class ContextTest(unittest.TestCase):
 
 
     def create_claims(self, claims, *args):
-        arguments = [BINARY, 'challenge', 'create', '--network', 'signet',
+        arguments = [BINARY, 'challenge', 'create', '--proof-mode', 'key-knowledge', '--network', 'signet',
                      '--output', str(self.request)]
         for claim in claims:
             arguments += ['--claim', claim]
@@ -338,7 +338,7 @@ class ContextTest(unittest.TestCase):
         for secret, diagnostic in [('0' * 63 + '1', 'uncompressed'),
                                    ('0' * 64, 'nonzero'), ('private-key-fixture', 'Invalid key input')]:
             with self.subTest(diagnostic=diagnostic):
-                result = subprocess.run([BINARY, 'prove', '--request', str(self.request),
+                result = subprocess.run([BINARY, 'prove', '--proof-mode', 'key-knowledge', '--request', str(self.request),
                                          '--output', str(proof)], input=secret + '\n',
                                         text=True, capture_output=True, timeout=10)
                 self.assertEqual(result.returncode, 65)
@@ -380,7 +380,7 @@ class ContextTest(unittest.TestCase):
             output = self.root / 'never-created.qpf'
             for wallet in ([], ['--rpc-wallet', 'must-not-contact', '--address', 'invalid']):
                 with self.subTest(mutate=mutate, wallet=bool(wallet)):
-                    result = subprocess.run([BINARY, 'prove', '--request', str(self.request),
+                    result = subprocess.run([BINARY, 'prove', '--proof-mode', 'key-knowledge', '--request', str(self.request),
                                              '--output', str(output), *wallet],
                                             input='', text=True, capture_output=True, timeout=10)
                     self.assertEqual(result.returncode, expected, result.stderr)

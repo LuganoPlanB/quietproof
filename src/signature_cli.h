@@ -173,9 +173,9 @@ int SignatureAuthorize(int argc, char** argv) {
   auto allowed = kRpcOptions;
   allowed.insert({"--proof-mode", "--request", "--receipt-output", "--rpc-wallet", "--network"});
   Options options;
-  std::string mode;
+  std::string mode = "signature-possession";
   if (!ParseOptions(argc, argv, 2, allowed, &options) ||
-      !One(options, "--proof-mode", &mode) || mode != "signature-possession") return Usage();
+      !One(options, "--proof-mode", &mode, false) || mode != "signature-possession") return Usage();
   return SignatureOperation(options, true);
 }
 
@@ -189,9 +189,9 @@ int SignatureExternal(int argc, char** argv, bool importing) {
         "--receipt-output", "--network", "--address"} : std::set<std::string>{
         "--proof-mode", "--request", "--output", "--network", "--address"};
     Options options;
-    std::string mode, request_path, output_path, network_name, address, input_path, format;
+    std::string mode = "signature-possession", request_path, output_path, network_name, address, input_path, format;
     if (!ParseOptions(argc, argv, 2, allowed, &options) ||
-        !One(options, "--proof-mode", &mode) || mode != "signature-possession" ||
+        !One(options, "--proof-mode", &mode, false) || mode != "signature-possession" ||
         !One(options, "--request", &request_path) ||
         !One(options, importing ? "--receipt-output" : "--output", &output_path) ||
         !One(options, "--network", &network_name, false) || !One(options, "--address", &address, false) ||

@@ -30,7 +30,7 @@ def main():
             (prefs/'node.conf').write_text(configuration); (prefs/'node.conf').chmod(0o600)
             request=root/'proof.qpr'; subprocess.run([str(driver),'--write-request',str(request)],check=True,capture_output=True,timeout=5)
             env=dict(os.environ,SDL_VIDEODRIVER='dummy',SDL_RENDER_DRIVER='software',XDG_DATA_HOME=directory,HOME=directory)
-            opening=['control 3','control 11']+['wait']*12+['control 2','control 304']+['wait']*12+['private-synthetic','enter']
+            opening=['control 3','control 11']+['wait']*12+['control 2']+['tab']*7+['enter']+['wait']*12+['private-synthetic','enter']
             for cancel,theme,size,scale in itertools.product((False,True),('light','dark'),((400,640),(480,720)),('1','1.5')):
                 server.idle(); server.scenario='close'; server.calls=[]; server.states=0; server.unlocks=0; server.violation=None
                 server.entered.clear(); server.release.clear()
@@ -41,7 +41,7 @@ def main():
                 events=opening+['wait']*3+(['control 305'] if cancel else [])+['wait']*3
                 script.write_text('\n'.join(events)+'\n')
                 image=artifacts/(name+'.bmp')
-                command=[str(executable),'--smoke-test','--theme',theme,'--width',str(size[0]),'--height',str(size[1]),
+                command=[str(executable),'--proof-mode','key-knowledge','--smoke-test','--theme',theme,'--width',str(size[0]),'--height',str(size[1]),
                          '--font-scale',scale,'--request',str(request),'--test-events',str(script),'--screenshot',str(image)]
                 process=subprocess.Popen(command,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
                 try:

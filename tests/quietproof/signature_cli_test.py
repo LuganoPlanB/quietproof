@@ -33,7 +33,7 @@ def main():
     parser.add_argument('--oracle', type=Path)
     args = parser.parse_args()
     count, proofs = 0, 0
-    mode = ['--proof-mode', 'signature-possession']
+    mode = []  # Exercise the ordinary CLI default throughout the real workflow.
     with tempfile.TemporaryDirectory(prefix='quietproof-signature-cli-') as temp:
         root = Path(temp)
         base = copy.deepcopy(core.public_profiles()['vectors'][0]['request'])
@@ -99,6 +99,24 @@ def main():
             return ['verify', output, *mode, '--nonce-store', nonce_store,
                     '--verifier', base['verifier'], '--purpose', base['purpose'], *extra]
 
+        def issued_fixture(template):
+            """Use actual no-mode challenge bytes as the independent signing input."""
+            issued = root/'issued.qpr'
+            summary = json.loads(run(create(kind=template['signing_kind'], target=issued)).stdout)
+            request = copy.deepcopy(template)
+            wire = issued.read_bytes()
+            offset = 10
+            for _ in range(2):
+                size = int.from_bytes(wire[offset:offset+2], 'big')
+                offset += 2+size
+            request.update(nonce=wire[offset:offset+32].hex(),
+                           not_before=summary['request_created_at'], expires_at=summary['expires_at'],
+                           bip322_message_hash=ref.tagged('BIP0322-signed-message', b'CLI delegation').hex())
+            require(summary['proof_mode'] == 'signature-possession' and wire == ref.request_bytes(request),
+                    'no-mode challenge differs from independent signature encoder')
+            fixture(request)
+            return request
+
         try:
             fixture(base)
             # Bounded synthetic framing exercises only request/policy dispatch;
@@ -115,10 +133,10 @@ def main():
                 require(b'missing_expected_request' in missing.stderr, 'missing expected request classification')
                 for age in ('0', '-1', 'invalid'):
                     run(verify(['--expected-request', request_path, '--max-tip-age', age]), 64)
-                run(['verify', output, '--nonce-store', nonce_store, '--max-tip-age', '60'], 64)
-                run(['verify', output, '--expected-request', request_path, '--nonce-store', nonce_store], 64)
-                require(run(['verify', output, '--nonce-store', nonce_store], 66).returncode == 66,
-                        'envelope activated signature mode')
+                run(['verify', output, '--proof-mode', 'key-knowledge', '--nonce-store', nonce_store, '--max-tip-age', '60'], 64)
+                run(['verify', output, '--proof-mode', 'key-knowledge', '--expected-request', request_path, '--nonce-store', nonce_store], 64)
+                require(run(['verify', output, '--proof-mode', 'key-knowledge', '--nonce-store', nonce_store], 66).returncode == 66,
+                        'explicit legacy mode accepted a signature envelope')
                 changed_path = root/'other-request.qpr'
                 for field in ('nonce', 'verifier', 'network', 'signing_kind', 'claims'):
                     changed = copy.deepcopy(base)
@@ -148,6 +166,38 @@ def main():
             output.unlink()
             help_result = run(['--help'])
             require(all(s in help_result.stdout for s in (b'private authorisation capability', b'delegate', b'.qpf is public', b'signing time')), 'help claim/delegation wording')
+            require(b'defaults to signature-possession' in help_result.stdout and
+                    b'--proof-mode key-knowledge' in help_result.stdout, 'default/legacy help missing')
+            saved = copy.deepcopy(base)
+            for kind in (0, 1):
+                homogeneous = copy.deepcopy(saved)
+                homogeneous['claims'] = [c for c in homogeneous['claims'] if c['script_kind'] == kind]
+                require(homogeneous['claims'], 'missing homogeneous script-kind fixture')
+                inferred = root/f'inferred-{kind}.qpr'
+                command = ['challenge', 'create', '--network', 'regtest', '--output', inferred,
+                           *claim_options(homogeneous)]
+                result = run(command, 66 if args.disabled else 0)
+                if not args.disabled:
+                    require(inferred.read_bytes()[:5] == b'QPS1\x03' and inferred.read_bytes()[9] == kind and
+                            json.loads(result.stdout)['proof_mode'] == 'signature-possession', 'signing-kind inference')
+                legacy = root/f'legacy-{kind}.qpr'
+                legacy_command = list(command)
+                legacy_command[legacy_command.index('--output') + 1] = legacy
+                run([*legacy_command, '--proof-mode', 'key-knowledge'])
+                require(legacy.read_bytes()[4] == (1 if kind == 0 else 2), 'explicit legacy request version')
+                run(['prove', '--request', legacy, '--receipt-input', receipt_path, '--output', output],
+                    66 if args.disabled else 65)
+                run(['prove', '--proof-mode', 'key-knowledge', '--request', legacy, '--output', output], 65)
+            for command in (create(), prove(['--receipt-input', receipt_path]), authorize(),
+                            verify(['--expected-request', request_path])):
+                run([*command, '--proof-mode', ''], 64)
+            if not args.disabled:
+                mixed = root/'ambiguous.qpr'
+                run(['challenge', 'create', '--network', 'regtest', '--output', mixed,
+                     *claim_options(saved)], 64)
+                require(not mixed.exists(), 'ambiguous signing-kind wrote a request')
+                explicit = root/'explicit-signature.qpr'
+                run(create(target=explicit, extra=['--proof-mode', 'signature-possession']))
             if args.disabled:
                 run(create(), 66)
                 run(prove(['--receipt-input', receipt_path]), 66)
@@ -162,7 +212,7 @@ def main():
                     wallet, coins = core.mature_fixture(node, 'cli-production')
                     base = core.request_for_coins(wallet, coins, 1)
                     base['not_before'], base['expires_at'] = int(time.time()) - 60, int(time.time()) + 3600
-                    fixture(base)
+                    base = issued_fixture(base)
                     peer.node, peer.wallet = node, wallet['wallet']
                     before = core.state_snapshot(node, wallet['wallet'])
                     # Export the request's private capability independently of
@@ -180,7 +230,7 @@ def main():
                     # Offline native prover has only public .qpr and private
                     # .qpa; the peer is stopped, and RPC OFF has no transport.
                     base['signing_kind'] = 0
-                    fixture(base)
+                    base = issued_fixture(base)
                     peer.shutdown()
                     cookie.unlink()
                     delegated_env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'),
@@ -237,13 +287,13 @@ def main():
                 run(create(kind=0, target=witness_request))
                 require(witness_request.read_bytes()[9] == 0, 'selected witness signing kind was not encoded')
                 run(create(), 74)
-                run(create(extra=['--proof-mode', 'signature-possession']), 64)
+                run(create(extra=['--proof-mode', 'signature-possession', '--proof-mode', 'signature-possession']), 64)
                 old = root/'scalar.qpr'
-                scalar = ['challenge', 'create', '--network', 'regtest', '--output', old, *claim_options(base)]
+                scalar = ['challenge', 'create', '--proof-mode', 'key-knowledge', '--network', 'regtest', '--output', old, *claim_options(base)]
                 run(scalar)
-                require(old.read_bytes()[4] == 2, 'typed key-knowledge default changed')
+                require(old.read_bytes()[4] == 2, 'explicit typed key-knowledge changed')
                 run(['prove', *mode, '--request', old, '--output', output, '--receipt-input', receipt_path], 65)
-                run(['prove', '--request', request_path, '--output', output], 66)
+                run(['prove', '--proof-mode', 'key-knowledge', '--request', request_path, '--output', output], 66)
                 run(prove(), 64)
                 run(prove(['--receipt-input', receipt_path, '--rpc-wallet', peer.wallet]), 64)
                 run(prove(['--receipt-input', receipt_path, *endpoint]), 64)

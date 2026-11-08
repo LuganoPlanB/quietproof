@@ -49,6 +49,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
           ? route.fulfill({ contentType: 'text/javascript', body: "self.onmessage=({data})=>self.postMessage({id:data.id,type:data.type==='initialize'?'ready':'error',message:'Injected worker error'});" })
           : route.continue());
         await page.goto(origin + '/tool');
+        await page.getByLabel('Proof mode', {exact:true}).selectOption('key-knowledge');
         const create = page.getByRole('button', { name: 'Create request', exact: true });
         await create.waitFor(); assert.equal(await create.isDisabled(), true);
         assert.equal(wasmFetches, 0);

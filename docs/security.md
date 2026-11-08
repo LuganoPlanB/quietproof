@@ -47,14 +47,16 @@ Bitcoin provider/snapshot/finality policy, and any bridge lock and mint
 system.  No row in this document turns those external assumptions into a
 cryptographic guarantee.
 
-## Optional signature-possession mode
+## Default signature custody (PoSC)
 
-The [signature profile](../spec/quietproof-signature-v1.md) is implemented behind
-`QUIETPROOF_BUILD_SIGNATURE_MODE` (default OFF). Native creation, authorisation,
-proving and acceptance require explicit signature-mode selection. Browser builds
-also opt in; the native GUI retains its existing scalar workflow. There is no
-bridge authorisation in this mode. Existing scalar/multisignature bytes, circuit
-identities, commands and defaults retain their meaning.
+The [signature profile](../spec/quietproof-signature-v1.md) is enabled by default
+with `QUIETPROOF_BUILD_SIGNATURE_MODE=ON`. Native CLI and browser operations
+select PoSC by default, with independently retained exact expected-request bytes
+required for verification. The native GUI defaults to private receipt import.
+Intentional signature-disabled builds report unsupported without key fallback;
+explicit legacy PoKC remains available. Low-level PoKC APIs keep their existing
+relation and bytes; low-level signature verifier policy still requires explicit
+local opt-in. There is no bridge authorization in PoSC.
 
 | Claim or boundary | Enforcing component and evidence | Residual limitation |
 | --- | --- | --- |

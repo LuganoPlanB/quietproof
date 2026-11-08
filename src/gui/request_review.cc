@@ -4,6 +4,23 @@
 #include <cstdio>
 
 namespace quietproof::gui {
+RequestWindow RequestWindowAt(const LoadedRequest& request, int64_t now) {
+  if (!request.signature) return RequestWindowAt(request.statement,now);
+  const auto& statement = *request.signature;
+  if (!proofs::QuietProofSignatureStatementValid(statement)) return RequestWindow::Invalid;
+  if (now < 0) return RequestWindow::ClockUnavailable;
+  if (static_cast<uint64_t>(now) < statement.not_before) return RequestWindow::NotYetValid;
+  if (static_cast<uint64_t>(now) >= statement.expires_at) return RequestWindow::Expired;
+  return RequestWindow::Valid;
+}
+RequestReview InspectRequest(const LoadedRequest& request) {
+  if (!request.signature) return InspectRequest(request.statement);
+  const auto& signature = *request.signature;
+  // Shared inherited display fields only; never invoke PoKC for this relation.
+  auto review = InspectRequest(static_cast<const proofs::QuietProofStatementV1&>(signature));
+  review.statement_version = 3; review.format = "quietproof-signature-request-v3";
+  return review;
+}
 namespace {
 template <size_t N>
 std::string Hex(const std::array<uint8_t,N>& bytes) {
@@ -37,7 +54,7 @@ const char* RequestWindowName(RequestWindow window) {
 }
 const char* RequestWindowMessage(RequestWindow window) {
   switch (window) {
-    case RequestWindow::Valid: return "Time window valid. Wallet readiness unchecked.";
+    case RequestWindow::Valid: return "Request time window valid.";
     case RequestWindow::NotYetValid: return "Request not yet valid. Proving unavailable.";
     case RequestWindow::Expired: return "Request expired. Proving unavailable.";
     case RequestWindow::ClockUnavailable: return "Check your device clock. Proving unavailable.";

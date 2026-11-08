@@ -61,10 +61,11 @@ The request discloses outpoints, amounts, script kinds, key fingerprints,
 verifier/purpose and a message hash. Send it through an appropriate channel and
 restrict retention: it links a counterparty to disclosed coins.
 
-Signature-enabled artifacts expose an explicit proof-mode selector and signing
-kind. Select signature possession only for the intended wallet workflow; retain
-the exact downloaded request. Scalar key knowledge remains the default. This
-mode proves signature knowledge and permits same-request delegation; neither
+Standard artifacts default to **Signature custody (PoSC)** and show a signing
+kind. Retain the exact downloaded request. **Private-key knowledge (PoKC)** is
+an explicit legacy choice. A capability-disabled build reports unsupported and
+never changes the selected mode automatically. PoSC proves signature knowledge
+and permits same-request delegation; neither
 mode proves signing time, exclusive control or solvency. See the
 [native signature workflow](./signature-possession).
 
@@ -73,11 +74,12 @@ mode proves signing time, exclusive control or solvency. See the
 The prover uses a compatible native QuietProof build; see
 [native build and isolated regtest tutorial](./getting-started). Replace the
 downloaded filename below with its actual path. The following block is the
-existing scalar workflow:
+explicit legacy scalar workflow; use the [native PoSC workflow](./signature-possession)
+for the default request and private receipt:
 
 ```sh
 build/quietproof inspect request.qpr
-build/quietproof prove --request request.qpr --output proof.qpf
+build/quietproof prove --proof-mode key-knowledge --request request.qpr --output proof.qpf
 build/quietproof inspect proof.qpf
 ```
 

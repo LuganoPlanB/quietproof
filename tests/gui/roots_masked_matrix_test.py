@@ -70,7 +70,7 @@ def main():
             program=coin['scriptPubKey']['hex'][4:]
             require(len(program)==40 and coin['scriptPubKey']['hex']=='0014'+program,'real P2WPKH output missing')
             request=root/'matrix.qpr'
-            run('request',[cli,'challenge','create','--network','regtest','--claim',
+            run('request',[cli,'challenge','create','--proof-mode','key-knowledge','--network','regtest','--claim',
                 f"{transaction['txid']}:{coin['n']}:{amount}:{program}",'--verifier','matrix.example',
                 '--purpose','proof-of-control','--expires-in','86400','--output',request])
             (evidence/'matrix.qpr').write_bytes(request.read_bytes())
@@ -88,10 +88,10 @@ def main():
                         'logicalWidth':size[0],'logicalHeight':size[1],'fontScale':font,'pixelScale':pixel})
                     return 'capture '+str(path)
                 events=[shot('request'),'control 3','control 11']+['wait']*20+[shot('node'),
-                    'control 2','control 304']+['wait']*20+['private-synthetic','copy','cut','paste','undo','redo',
+                    'control 2']+['tab']*7+['enter']+['wait']*20+['private-synthetic','copy','cut','paste','undo','redo',
                     'tab','backtab','pagedown',shot('masked')]
                 script=evidence/(name+'.events');script.write_text('\n'.join(events)+'\n')
-                value=run(name,[gui,'--smoke-test','--request',request,'--theme',theme,'--font-scale',font,
+                value=run(name,[gui,'--proof-mode','key-knowledge','--smoke-test','--request',request,'--theme',theme,'--font-scale',font,
                     '--width',str(size[0]),'--height',str(size[1]),'--pixel-scale',str(pixel),'--test-events',script])
                 require(re.search(r'GUI wallet: prompt=1 masked=1 cleared=1 busy=0 focus=0 scroll=\d+',value.stdout),
                         name+': masked-input ownership or keyboard focus failed')

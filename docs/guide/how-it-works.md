@@ -22,7 +22,9 @@ The verifier identifies the disclosed Bitcoin outputs it expects to check. For e
 - script kind, native P2WPKH or compressed-key P2PKH; and
 - the 20-byte compressed-public-key HASH160.
 
-The prover supplies one spend key. All outputs must share its key hash across script kinds, up to 16 claims in total.
+Default PoSC uses a signature for the exact request. All outputs share one
+compressed-key hash, up to 16 claims. Signature custody may be delegated; it
+does not establish private-key knowledge or exclusive funds control.
 
 ## 1. The verifier creates a fresh request
 
@@ -35,42 +37,47 @@ The request names the verifier and purpose, selects the Bitcoin network, lists t
   --purpose proof-of-funds \
   --message '2026-Q3 custody check' \
   --expires-in 300 \
-  --claim TXID:0:100000:p2pkh:KEY_HASH \
+  --claim TXID:0:100000:p2wpkh:KEY_HASH \
   --output request.qpr
 ```
 
 Context flags are optional: verifier defaults to `unscoped`, purpose to `proof-of-funds`, message to empty. Verification requires matching verifier/purpose values; specify both for scoped proofs.
 
-The four-part `TXID:VOUT:SATOSHIS:PROGRAM` form remains P2WPKH. The five-part
-form accepts `p2wpkh` or `p2pkh`; repeat `--claim` for mixed outputs. Any P2PKH
-claim selects statement v2. Statement v1 stays implicitly P2WPKH; new proofs
-use envelope v2. Older verifiers without typed-statement support return
-`unsupported`. Uncompressed-key P2PKH is unsupported.
+The four-part `TXID:VOUT:SATOSHIS:PROGRAM` form means P2WPKH. The five-part
+form accepts `p2wpkh` or `p2pkh`. Default PoSC creates a v3 request; homogeneous
+claims infer the BIP322 signing kind, while mixed claims need an explicit
+`--signing-kind p2wpkh` or `p2pkh`. Uncompressed keys and Taproot are unsupported.
+Explicit `--proof-mode key-knowledge` selects legacy PoKC v1/v2 instead.
 
 ## 2. The prover reviews and proves
 
-`inspect` shows `request_created_at` and expiry; new proofs also carry
-`proof_created_at` (prover start). Both are bound local-clock Unix timestamps,
-not independent evidence of creation time. Legacy proofs have no proof timestamp.
+Review the exact issued request, its claims, audience, purpose, nonce and expiry.
+Native CLI `inspect` currently supports legacy v1/v2 only; public v3 metadata can
+be reviewed in the browser or native GUI. Review is not authorization.
 
-The prover inspects the canonical request before using any key:
+For an external supported signer, export the exact application message and
+import its signature into a private receipt:
 
 ```sh
-./quietproof inspect request.qpr
-./quietproof prove --request request.qpr --output proof.qpf
+./quietproof signing-material --request request.qpr --output message.txt
+./quietproof import-signature --request request.qpr \
+  --signature-input private-signature.txt --signature-format bip322-simple \
+  --receipt-output private.qpa
+./quietproof prove --request request.qpr --receipt-input private.qpa --output proof.qpf
 ```
 
-`prove` reads one 32-byte hexadecimal secret from protected standard input for each distinct key hash. Interactive input disables terminal echo, and each secret is matched to its derived compressed-key hash.
+The signing bytes must not gain a newline. Protect the signature and receipt as
+owner-only files; never upload them to the browser. The receipt is a delegated
+witness capability. The proof constrains the existing ECDSA/BIP322 relation and
+keeps the signature and public key private. No private scalar is required by
+this prover. Local stock-wallet signing is also supported through explicit
+native RPC parameters; see the [native PoSC guide](signature-possession.md).
+Signing failure never retrieves a private key or changes proof mode.
 
-::: danger Keep spend keys out of process metadata
-Never provide a secret through command arguments, an environment variable, or shell history. Automation should use a protected pipe whose producer does not log its output.
-:::
-
-Inside the proof, PoKC constrains the secret scalar, derives the secp256k1 point, encodes the compressed public key canonically, applies SHA-256 and RIPEMD-160, and checks that the result equals the public key hash. The public key remains private witness data.
-A P2PKH script cannot establish whether its hidden key was compressed; proving
-checks that relation. Public outpoints, hashes and amounts remain linkable.
-Earlier spends or key reuse may already expose the key; this proof cannot undo
-that exposure or provide anonymity.
+Legacy PoKC proving requires explicit `--proof-mode key-knowledge` and protected
+scalar input. Its existing relation constrains the scalar, derives the compressed
+secp256k1 key and checks HASH160. Neither mode hides public outpoints, amounts or
+key hashes; earlier spends and key reuse may already expose the public key.
 
 ## 3. The verifier checks proof and evidence
 
@@ -86,6 +93,7 @@ A complete verification checks several independent layers:
 
 ```sh
 ./quietproof verify proof.qpf \
+  --expected-request request.qpr \
   --network signet \
   --verifier auditor.example \
   --purpose proof-of-funds \
@@ -107,10 +115,10 @@ Those are native/integrated-provider outcomes. The static browser tool always
 leaves acceptance to a separate application and reports explorer observations
 without upgrading them to either strict outcome.
 
-Even then, the application has learned current challenge-bound key knowledge plus the selected chain evidence. It has not learned exclusive ownership, solvency, identity, or that funds are locked.
+Even then, the application has learned current challenge-bound signature custody plus the selected chain evidence. It has not learned exclusive ownership, solvency, identity, or that funds are locked.
 
 ## What is stored
 
-For an auditable exchange, retain the request, proof, verification result, node identity, chain tip, software and circuit digest, and policy version in an append-only audit log. Keep secrets out of every stored artifact.
+For an auditable exchange, retain the request, proof, verification result, node identity, chain tip, software and circuit digest, and policy version in an append-only audit log. Keep signatures, receipts and keys out of public artifacts and audit logs.
 
 [See the auditor-specific workflow →](/guide/auditor-workflow)

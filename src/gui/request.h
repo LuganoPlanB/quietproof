@@ -14,6 +14,12 @@ struct LoadedRequest {
   const std::filesystem::path path;
   const std::vector<uint8_t> bytes;
   const proofs::QuietProofStatementV1 statement;
+  // Separate relation; statement is populated only for legacy PoKC.
+  const std::optional<proofs::QuietProofSignatureStatementV3> signature = {};
+  proofs::QuietProofNetwork Network() const { return signature ? signature->network : statement.network; }
+  const std::string& Verifier() const { return signature ? signature->verifier : statement.verifier; }
+  const auto& Claims() const { return signature ? signature->claims : statement.claims; }
+  uint8_t Version() const { return signature ? 3 : statement.statement_version; }
 };
 enum class RequestError { None, Unreadable, TooLarge, ProofFile, Unsupported, Malformed };
 struct RequestState {

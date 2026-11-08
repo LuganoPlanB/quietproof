@@ -12,6 +12,7 @@ namespace quietproof::gui {
 struct WalletSessionJob;
 struct WalletSessionResult;
 struct ProofJob;
+struct SignatureJob;
 class PrivateInput;
 enum class ProofStage { Preflight, Unlock, Validation, Prove, Completion, Verify };
 enum class ProofPhase { None, Circuit, Inputs, Commitment, Generation, Serialization };
@@ -63,6 +64,7 @@ class NodeProbeWorker {
   bool Start(NodeProbeJob);
   bool StartWallet(WalletSessionJob, std::unique_ptr<PrivateInput>);
   bool StartProof(ProofJob, std::unique_ptr<PrivateInput>);
+  bool StartSignature(SignatureJob);
   bool StartValidation(ValidationJob, ProofVerifier test_verifier = {});
   bool StartSave(SaveJob, SaveHooks hooks = {});
   std::unique_ptr<SaveResult> PollSave();

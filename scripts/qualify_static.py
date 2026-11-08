@@ -49,7 +49,7 @@ def main():
     parser.add_argument('--evidence', type=Path, required=True, help='New, nonexistent directory')
     parser.add_argument('--base', default='/')
     parser.add_argument('--allow-dirty', action='store_true')
-    parser.add_argument('--signature-mode', action='store_true')
+    parser.add_argument('--signature-mode', action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument('--disabled-site', type=Path,
                         help='Separately packaged signature-OFF site for full capability separation checks')
     parser.add_argument('--disabled-subpath-site', type=Path,
@@ -174,8 +174,7 @@ def main():
     def packaged_build(base, name):
         command = ['python3', 'scripts/build_static.py', '--cross-work', cross,
                    '--sdk-source', args.sdk_source.resolve(), '--base', base]
-        if args.signature_mode:
-            command.append('--signature-mode')
+        command.append('--signature-mode' if args.signature_mode else '--no-signature-mode')
         if args.allow_dirty:
             command.append('--allow-dirty')
         for path in args.source_addition:

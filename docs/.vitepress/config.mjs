@@ -122,9 +122,11 @@ export default defineConfig({
         items: [
           { text: "Guide overview", link: "/guide/" },
           { text: "Browser request and verifier", link: "/guide/browser-tool" },
+          { text: "Default native PoSC workflow", link: "/guide/signature-possession" },
+          { text: "Linux prover GUI", link: "/guide/native-gui" },
           { text: "How a proof works", link: "/guide/how-it-works" },
           { text: "Auditor workflow", link: "/guide/auditor-workflow" },
-          { text: "Build and try it", link: "/guide/getting-started" },
+          { text: "Build and legacy PoKC tutorial", link: "/guide/getting-started" },
           { text: "Operations", link: "/operations" },
           { text: "Linux releases", link: "/releases" },
         ],

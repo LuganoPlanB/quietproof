@@ -44,6 +44,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
         ? route.fulfill({ status: 404, body: 'missing' }) : assetMode === 'corrupt'
           ? route.fulfill({ body: Buffer.from([0, 1, 2, 3]), contentType: 'application/wasm' }) : route.continue());
       await page.goto(origin + base + '/tool');
+      await page.getByLabel('Proof mode', { exact: true }).selectOption('key-knowledge');
       const lookup = page.getByRole('button', { name: 'Look up outputs', exact: true });
       await lookup.waitFor();
       assert.equal(requests.filter(r => r.url.startsWith('https://')).length, 0, 'no remote access before action');
@@ -99,6 +100,8 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
         assert.equal(await page.locator('.quietproof-claims input').count(), 0);
       }
       await page.goto(origin + base + '/verify');
+      await page.getByLabel('Proof mode (chosen independently)', { exact: true }).selectOption('key-knowledge');
+      await page.getByLabel('Expected policy source').selectOption('none');
       const before = requests.filter(r => r.url.startsWith('https://blockstream.info/')).length;
       await page.getByLabel('Proof file (.qpf)', { exact: true }).setInputFiles({ name: `${attack}.qpf`, mimeType: 'application/octet-stream', buffer: Buffer.from([1, 2, 3]) });
       await page.getByRole('button', { name: 'Inspect proof and policy', exact: true }).click();

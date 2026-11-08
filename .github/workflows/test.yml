@@ -105,7 +105,7 @@ jobs:
       - name: Build isolated WASI reactor
         run: >-
           python3 quietproof/scripts/build_wasm.py --sdk-source longfellow-zk
-          --work-dir "$RUNNER_TEMP/wasm" --wasi-sdk "$RUNNER_TEMP/wasi-sdk" --jobs 2
+          --work-dir "$RUNNER_TEMP/wasm" --wasi-sdk "$RUNNER_TEMP/wasi-sdk" --jobs 2 --no-signature-mode
       - name: Install locked website dependencies and required browsers
         working-directory: quietproof
         run: |
@@ -115,9 +115,9 @@ jobs:
         if: matrix.signature && inputs.mode == 'full'
         working-directory: quietproof
         run: |
-          python3 scripts/build_static.py --sdk-source ../longfellow-zk --cross-work "$RUNNER_TEMP/wasm" --base /
+          python3 scripts/build_static.py --sdk-source ../longfellow-zk --cross-work "$RUNNER_TEMP/wasm" --base / --no-signature-mode
           cp -a docs/.vitepress/dist "$RUNNER_TEMP/disabled-site"
-          python3 scripts/build_static.py --sdk-source ../longfellow-zk --cross-work "$RUNNER_TEMP/wasm" --base /quietproof/
+          python3 scripts/build_static.py --sdk-source ../longfellow-zk --cross-work "$RUNNER_TEMP/wasm" --base /quietproof/ --no-signature-mode
           cp -a docs/.vitepress/dist "$RUNNER_TEMP/disabled-subpath-site"
       - name: Build signature-enabled isolated WASI reactor
         if: matrix.signature
@@ -139,6 +139,8 @@ jobs:
             if [[ "$QUALIFICATION_MODE" == full ]]; then
               options+=(--disabled-site "$RUNNER_TEMP/disabled-site" --disabled-subpath-site "$RUNNER_TEMP/disabled-subpath-site")
             fi
+          else
+            options+=(--no-signature-mode)
           fi
           python3 scripts/qualify_static.py --sdk-source ../longfellow-zk \
             --cross-work "$cross" --native-on ../native-ON --native-off ../native-OFF \
@@ -149,7 +151,7 @@ jobs:
         run: |
           cross="$RUNNER_TEMP/wasm"
           options=()
-          if [[ "$SIGNATURE_MODE" == ON ]]; then cross="$RUNNER_TEMP/wasm-signature"; options+=(--signature-mode); fi
+          if [[ "$SIGNATURE_MODE" == ON ]]; then cross="$RUNNER_TEMP/wasm-signature"; else options+=(--no-signature-mode); fi
           python3 quietproof/tests/cmake/wasm_build_test.py --cross-work "$cross" \
             --work "$RUNNER_TEMP/build-contracts" --native-prefix "$RUNNER_TEMP/longfellow-prefix" \
             --wasi-sdk "$RUNNER_TEMP/wasi-sdk" "${options[@]}"
@@ -161,7 +163,7 @@ jobs:
       - name: Upload smoke-checked static artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.signature && 'quietproof-static-signature' || 'quietproof-static' }}
+          name: ${{ matrix.signature && 'quietproof-static' || 'quietproof-static-key-knowledge' }}
           path: quietproof/docs/.vitepress/dist
           if-no-files-found: error
       - name: Retain selected-gate evidence and explicit omissions

@@ -20,7 +20,7 @@ with tempfile.TemporaryDirectory(prefix='quietproof-review-') as temporary:
         script = artifacts / (name + '.events')
         script.write_text('\n'.join(events))
         image = artifacts / (name + '.bmp')
-        result = subprocess.run([str(executable), '--smoke-test', '--request', str(fixtures / fixture),
+        result = subprocess.run([str(executable),'--proof-mode','key-knowledge', '--smoke-test', '--request', str(fixtures / fixture),
                                  '--test-now', str(now), '--test-events', str(script),
                                  '--screenshot', str(image), *map(str, args)],
                                 capture_output=True, text=True, env=environment, timeout=10)
@@ -40,7 +40,7 @@ with tempfile.TemporaryDirectory(prefix='quietproof-review-') as temporary:
         checks += 1
         return (int(version), window, int(expanded), int(claims)), controls, result.stdout
 
-    expand = ['tab'] * 5 + ['enter']
+    expand = ['tab'] * 7 + ['enter']
     for theme, size, scale, density, screen in itertools.product(
             ('light', 'dark'), ((400, 640), (480, 720), (600, 900)),
             ('1', '1.25', '1.5'), (1, 2), ('request', 'expanded')):

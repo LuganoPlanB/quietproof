@@ -1,9 +1,10 @@
 # Native wallet prover on Linux
 
-The optional QuietProof Prover opens an existing public `.qpr` request, reviews
-its exact contents, obtains one selected wallet key after approval, and saves a
-locally cryptographically verified `.qpf`. It does not create a request or import
-keys. Use the CLI or [browser request tool](browser-tool.md) to create requests.
+The optional QuietProof Prover defaults to signature custody (PoSC). It reviews
+a public v3 `.qpr`, consumes an owner-only private `.qpa` receipt after explicit
+approval, and saves a locally verified public `.qpf`. Signature custody may be
+delegated; it does not prove private-key knowledge or exclusive funds control.
+Use the CLI or [browser request tool](browser-tool.md) to create requests.
 Only native P2WPKH and compressed-key P2PKH outputs sharing one key hash are
 supported, at most 16 per request. Different keys need separate proofs.
 
@@ -39,7 +40,23 @@ GUI defaults OFF. `QUIETPROOF_BUILD_GUI=OFF` preserves the headless CLI/library
 build and avoids SDL discovery. `QUIETPROOF_BUILD_RPC=OFF` also requires GUI OFF.
 WASI/browser builds remain separate and cannot enable this native GUI.
 
-## Connect, review and approve
+## Review and prove with a private receipt
+
+Obtain the exact request and its receipt through native
+[`signing-material` / `import-signature` or `authorize`](signature-possession.md).
+Open the public request, keep **PoSC (default)** selected, and review its network,
+verifier, purpose, expiry, amounts and outpoints. Enter the receipt's absolute
+path and choose **Prove with receipt**. The file must be regular, owned by the
+current user, with no group/other permissions. This worker makes no wallet RPC
+calls and never unlocks a wallet or exports a key. Missing or incompatible
+receipts fail without switching modes.
+
+Keep private receipts in native tools; only public `.qpr` and `.qpf` belong in
+browser uploads. Choose **PoKC (legacy)** explicitly for v1/v2 requests. Request
+versions never change modes; a mismatch disables proving. Signature-disabled
+builds report unsupported for PoSC. Request replacement clears approval/results.
+
+## Explicit legacy PoKC wallet access
 
 Start your trusted Roots node independently. A compatible local binary is enough
 for disposable regtest qualification; never use your funded wallet for tests.
@@ -47,7 +64,7 @@ The GUI does not start, stop, import into or rescan a wallet. Open a request wit
 the chooser, drag/drop or `--request`; check network, verifier, purpose, message,
 time window, amounts and exact outpoints before approval. Request replacement
 invalidates previous approval and readiness. Display offers light/dark themes
-and 100%, 125%, 150% fonts; minimum window is 400 by 640 logical pixels.
+and 100%, 125%, 150%, 200% fonts; minimum window is 400 by 640 logical pixels.
 
 In Node, Test connection authenticates and checks wallet capabilities. Select
 the intended loaded wallet. Connection success alone does not establish proof
@@ -68,7 +85,7 @@ fields. Nonsecret connection choices and display preferences persist under
 SDL's Linux data directory, normally `$XDG_DATA_HOME/Plan-B/quietproof` or
 `$HOME/.local/share/Plan-B/quietproof`, in owner-only files.
 
-## Wallet password and cancellation
+## Legacy wallet password and cancellation
 
 RPC cookie authentication and a wallet encryption password are different.
 The wallet password belongs only in the private masked unlock dialog after
@@ -124,7 +141,8 @@ the in-memory retained proof. Files never upload automatically.
 
 ## Observed qualification and limits
 
-Disposable, peerless, loopback-only regtest qualification used Bitcoin Roots
+Earlier explicit legacy PoKC qualification used disposable, peerless,
+loopback-only regtest with Bitcoin Roots
 `v31.1-roots.5`, source ref `93348f8530aadce4562aef40272b1e0af3e3478b`, binary
 SHA256 `46e5a080b4eb7b5bef8c986a6ab276924af7d9004e80856d942fd5c6f333ff55`.
 Binary identity is pinned; a preexisting test-source delta means rebuild identity
@@ -136,7 +154,8 @@ save recovery. The opt-in qualification scripts are
 require explicit existing node binaries and own disposable datadirs/processes.
 
 Bitcoin Core 30.3 capability rejection was exercised live; ordinary Core lacks
-the Roots key-export extension. Full Core wallet proving is deferred. The
+the Roots key-export extension. Legacy key-export proving with Core is unsupported. Default PoSC can instead
+consume a native receipt acquired through supported signing. The
 separate experimental `scripts/prove_core_wallet.py` follows another workflow;
 it is not launched by or required by this GUI. CLI RPC qualification also covers
 Core 28.3/30.3. Never infer export support merely from a Core version number.

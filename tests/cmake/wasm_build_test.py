@@ -14,7 +14,7 @@ def main():
     parser.add_argument('--work', type=Path, required=True)
     parser.add_argument('--native-prefix', type=Path, required=True)
     parser.add_argument('--wasi-sdk', type=Path, default=Path('/opt/wasi-sdk'))
-    parser.add_argument('--signature-mode', action='store_true')
+    parser.add_argument('--signature-mode', action=argparse.BooleanOptionalAction, default=True)
     args = parser.parse_args()
     source = Path(__file__).resolve().parents[2]
     work = args.work.resolve()

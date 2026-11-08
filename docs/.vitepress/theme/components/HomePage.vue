@@ -4,10 +4,10 @@
       <div class="planb-hero__overlay" aria-hidden="true"></div>
       <div class="planb-container planb-hero__inner">
         <div class="quietproof-hero__copy">
-          <p class="planb-eyebrow">Off-chain proof of key control</p>
+          <p class="planb-eyebrow">Off-chain proof of signature custody</p>
           <h1 id="quietproof-title">Prove you control bitcoin. Keep your keys quiet.</h1>
           <p class="planb-lede">
-            Prove control of disclosed bitcoin without moving it or revealing keys.
+            Answer a custody challenge for disclosed bitcoin without moving it or revealing keys.
             Recipients can trace the coins and associate them with a known identity.
           </p>
           <div class="quietproof-actions">
@@ -21,7 +21,8 @@
           <code>bc1q ···· 7k3p</code>
           <p>
             A common Bitcoin address contains a fingerprint of a public key. QuietProof can show
-            that you know the matching spend key without revealing either key.
+            custody of a valid wallet signature for that fingerprint and your exact request,
+            without revealing the signature or either key. A wallet owner can delegate that signature.
           </p>
         </aside>
       </div>
@@ -32,17 +33,17 @@
         <div class="quietproof-section-heading">
           <h2 id="profile-title">Built for deliberate attestations</h2>
           <p>
-            QuietProof v1 works off-chain in tens of seconds and produces proof envelopes measured
-            in tens of megabytes. It fits audits, qualification, and preflight checks—not a
-            transaction path or a high-frequency request loop.
+            QuietProof works off-chain and produces proof envelopes measured in tens of megabytes.
+            Computation can take minutes. It fits audits, qualification and preflight checks.
           </p>
         </div>
 
         <p>
-          <strong>PoKC — Proof of Key Control</strong> proves knowledge of the spend key.
-          <strong>PoSC — Proof of Signature Custody</strong> proves knowledge of a valid,
+          <strong>PoSC — Proof of Signature Custody</strong> is the default and proves knowledge of a valid,
           request-bound wallet signature; its prover need not receive the spend key.
-          A signature receipt can be copied, so PoSC does not establish exclusive key control.
+          A signature receipt can be copied, so PoSC does not establish exclusive key control,
+          private-key knowledge or signing time.
+          <strong>PoKC — Proof of Key Control</strong> proves knowledge of the spend key and remains an explicit legacy choice.
         </p>
         <div
           class="quietproof-benchmark-table"
@@ -155,7 +156,7 @@
         <div class="quietproof-section-heading quietproof-section-heading--wide">
           <h2 id="jobs-title">Useful before anyone moves money</h2>
           <p>
-            The proof creates an off-chain preflight step: establish key control first, then decide
+            The proof creates an off-chain preflight step: review signature custody first, then decide
             whether a transaction, contract, audit, or protocol session should begin.
           </p>
         </div>
@@ -163,7 +164,7 @@
           <article>
             <p class="quietproof-job-list__context">Custody & audit</p>
             <h3>Answer a fresh auditor challenge</h3>
-            <p>Demonstrate current key knowledge for disclosed custody outputs without exposing their public keys.</p>
+            <p>Demonstrate request-bound signature custody for disclosed outputs without exposing their public keys.</p>
           </article>
           <article>
             <p class="quietproof-job-list__context">Deals & credit</p>
@@ -173,7 +174,7 @@
           <article>
             <p class="quietproof-job-list__context">Collaborative protocols</p>
             <h3>Check capability before admission</h3>
-            <p>Verify that proposed participants control their inputs before a CoinJoin or other coordinated transaction begins.</p>
+            <p>Check request-authorizing signatures for proposed inputs before a CoinJoin or other coordinated transaction begins.</p>
           </article>
         </div>
         <a class="quietproof-inline-link" :href="withBase('/use-cases')">Explore all use cases <span aria-hidden="true">→</span></a>
