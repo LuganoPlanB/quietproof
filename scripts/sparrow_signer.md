@@ -12,8 +12,13 @@ rejected. Wallet storage is Sparrow's unencrypted `.mv.db` format, protected by
 owner-only directories and files; keep the directory private and outside Git.
 The helper creates random seeds internally and never prints them. Each wallet
 directory has a network-bound disposable marker and one script kind. Existing
-unmarked wallets are rejected. The selected receive key is account 0, external
-branch 0, index 0; the `address` command reports the full derivation path.
+unmarked wallets are rejected. The default receive key is account 0, external
+branch 0, index 0. Explicit `--key-path m/1/0` selects the same account's owned
+change branch, index 0; `m/0/0` preserves the default. Other paths are rejected,
+and wallet creation requires the default receive path. `address` reports the
+full derivation; signing requires that selected key's exact address. Existing
+wallet operations open a private temporary copy, preserving the supplied
+wallet and marker byte-for-byte. Both selections remain entirely offline.
 
 ```sh
 umask 077

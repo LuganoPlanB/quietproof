@@ -2,6 +2,7 @@
 """Opt-in integration tests against an explicitly supplied installed Sparrow image."""
 import argparse
 import base64
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -119,6 +120,34 @@ class SparrowSignerTest(unittest.TestCase):
             self.assertEqual(owned['address'], self.addresses[kind])
             purpose = {'p2wpkh': 84, 'p2pkh': 44, 'p2tr': 86}[kind]
             self.assertEqual(owned['derivation'], f"m/{purpose}'/1'/0'/0/0")
+
+    def test_explicit_owned_change_signs_and_preserves_original(self):
+        wallet = self.wallets['p2pkh']
+        before = {p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in wallet.iterdir()}
+        response = self.invoke('address','--wallet-dir',wallet,'--script-kind','p2pkh',
+                               '--key-path','m/1/0')
+        change = json.loads(response.stdout)
+        self.assertEqual(change['keyPath'],'m/1/0')
+        self.assertEqual(change['derivation'],"m/44'/1'/0'/1/0")
+        self.assertNotEqual(change['address'],self.addresses['p2pkh'])
+        common = self.args_for('p2pkh','standard')+['--address',change['address'],'--key-path','m/1/0']
+        output = self.case/'change-signature.json'
+        self.invoke('sign',*common,'--output',output)
+        self.invoke('verify',*common,'--signature',output)
+        self.invoke('verify',*common,'--key-path','m/0/0','--signature',output,success=False)
+        self.invoke('sign',*common,'--address',self.addresses['p2pkh'],
+                    '--output',self.case/'wrong-owner.json',success=False)
+        self.assertEqual(before,{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in wallet.iterdir()})
+
+    def test_wrong_or_unsupported_key_path_rejected(self):
+        for path in ['m/1/1','m/2/0','m/0/0/0','m/44h/1h/0h/1/0','../m/1/0','']:
+            with self.subTest(path=path):
+                output=self.case/'invalid-path.json'
+                self.invoke('sign',*self.args_for('p2pkh','standard'),'--key-path',path,
+                            '--output',output,success=False)
+                self.assertFalse(output.exists())
+        self.invoke('create','--wallet-dir',self.case/'invalid-create','--key-path','m/1/0',success=False)
+        self.assertFalse((self.case/'invalid-create').exists())
 
     def test_used_receive_address_remains_signable_after_history_reload(self):
         wallet = self.case / 'history-wallet'
