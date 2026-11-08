@@ -5,6 +5,7 @@ Only public requests/configuration and witness-free results enter diagnostics.
 Signed receipts stay in temporary owner-only files and are independently checked.
 """
 import argparse
+import base64
 import copy
 import json
 import os
@@ -25,13 +26,18 @@ import signing_reference as ref
 
 
 def mathematical_result(request, odd=False):
-    profile = ref.virtual_profile(request)
+    legacy = request.get('profile',1) == 2
+    profile = ref.bitcoin_message_profile(request) if legacy else ref.virtual_profile(request)
     r = ref.GENERATOR[0]
     secret = ref.ORDER - 1 if odd else 1
     s = (int.from_bytes(profile['z'], 'big') + r * secret) % ref.ORDER
+    high = s > ref.ORDER//2
     s = min(s, ref.ORDER - s)
     key = bytes([3 if odd else 2]) + r.to_bytes(32, 'big')
     signature = core.encode_signature(r, s)
+    if legacy:
+        compact = bytes([31+int(high)])+r.to_bytes(32,'big')+s.to_bytes(32,'big')
+        return dict(profile=profile,compact=compact,signature=signature,pubkey=key,r=r,s=s)
     tx = core.replace_unlock(profile['tx'], request['signing_kind'], signature, key)
     return dict(profile=profile, tx=tx, signature=signature, pubkey=key, r=r, s=s)
 
@@ -48,6 +54,7 @@ class Peer(ThreadingHTTPServer):
         self.result = None
         self.profile = None
         self.wallet = ''
+        self.pubkey = None
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -60,7 +67,9 @@ class Handler(BaseHTTPRequestHandler):
         method, params = request['method'], request['params']
         server.records.append((method, self.path))
         try:
-            if method not in ('getblockchaininfo', 'getwalletinfo', 'getaddressinfo', 'signrawtransactionwithwallet'):
+            legacy = server.profile.get('legacy',False)
+            signing_method = 'signmessage' if legacy else 'signrawtransactionwithwallet'
+            if method not in ('getblockchaininfo', 'getwalletinfo', 'getaddressinfo', signing_method):
                 server.errors.append('forbidden production adapter RPC')
                 raise RuntimeError('forbidden production adapter RPC')
             if method != 'getblockchaininfo' and (not self.path.startswith('/wallet/') or
@@ -74,6 +83,10 @@ class Handler(BaseHTTPRequestHandler):
                 if params != expected:
                     server.errors.append('unsafe signing arguments blocked before forwarding')
                     raise RuntimeError('unsafe signing arguments blocked before forwarding')
+            if method == 'signmessage':
+                if params != [server.profile['address'],server.profile['message'].decode('ascii')]:
+                    server.errors.append('wrong signmessage address/exact message')
+                    raise RuntimeError('unsafe message arguments')
             if server.scenario == 'timeout':
                 time.sleep(0.15)
             if server.scenario == 'disconnect':
@@ -102,12 +115,20 @@ class Handler(BaseHTTPRequestHandler):
                                           else server.profile['script'].hex())}
                 if server.scenario == 'bad-address-info':
                     value['ismine'] = 1
+                if legacy:
+                    value.update(iscompressed=True,pubkey=server.pubkey.hex())
+                    if server.scenario=='uncompressed-key': value['iscompressed']=False
+                    if server.scenario=='bad-key': value['pubkey']='04'+server.pubkey[1:].hex()
+                    if server.scenario=='wrong-key': value['pubkey']=('03' if server.pubkey[0]==2 else '02')+server.pubkey[1:].hex()
+                    if server.scenario=='missing-pubkey': value.pop('pubkey')
+                    if server.scenario=='watch-only-address': value['iswatchonly']=True
+                    if server.scenario=='bad-compressed-flag': value['iscompressed']=1
             else:
                 value = server.result
             response = {'jsonrpc': '2.0', 'id': request['id'], 'result': value}
-            if server.scenario == 'rpc-error' and method == 'signrawtransactionwithwallet':
+            if server.scenario in ('rpc-error','unsupported-method','unsupported-key') and method == signing_method:
                 response = {'jsonrpc': '2.0', 'id': request['id'],
-                            'error': {'code': -13, 'message': 'server-secret-never-print'}}
+                            'error': {'code': {'rpc-error':-13,'unsupported-method':-32601,'unsupported-key':-5}[server.scenario], 'message': 'server-secret-never-print'}}
         except Exception:
             # Deliberately redact exceptions, which can contain wallet witnesses.
             if server.node is None:
@@ -150,7 +171,10 @@ def main():
             peer.records.clear()
             peer.errors.clear()
             peer.wallet = wallet
-            peer.profile = ref.virtual_profile(request)
+            legacy = request.get('profile',1)==2
+            peer.profile = ref.bitcoin_message_profile(request) if legacy else ref.virtual_profile(request)
+            if legacy:
+                peer.profile.update(legacy=True,address=ref.p2pkh_address(request['network'],bytes.fromhex(request['claims'][0]['program'])))
             output = root / f'{count}.qpa'
             config = dict(request=(ref.request_bytes(request) if raw is None else raw).hex(),
                           url=f'http://127.0.0.1:{peer.server_port}/', cookie=str(cookie),
@@ -161,26 +185,35 @@ def main():
             if result.returncode != (0 if expected else 2):
                 raise RuntimeError(f'adapter case {count}: wrong exit {result.returncode}; status {result.stdout.decode().strip()}; RPC records {peer.records}; fixture errors {peer.errors}')
             if any(marker in result.stdout + result.stderr for marker in
-                   (b'cookie-secret', b'server-secret', peer.result.get('hex', '').encode() if isinstance(peer.result, dict) and peer.result.get('hex') else b'never-matches-secret')):
+                   (b'cookie-secret', b'server-secret', peer.result.encode() if isinstance(peer.result,str) and peer.result else peer.result.get('hex', '').encode() if isinstance(peer.result, dict) and peer.result.get('hex') else b'never-matches-secret')):
                 raise RuntimeError(f'adapter case {count}: private diagnostic disclosure')
             if peer.errors:
                 raise RuntimeError(f'adapter case {count}: outgoing RPC contract mismatch')
             if not expected:
                 if output.exists():
                     raise RuntimeError(f'adapter case {count}: partial receipt')
+                if legacy and peer.scenario in ['locked','rpc-error','watch-only','external-signer','unsupported-method','unsupported-key']:
+                    category=int(result.stdout.decode().split()[1])
+                    if category != (16 if peer.scenario in ['locked','rpc-error'] else 18):
+                        raise RuntimeError('legacy wallet error category changed')
                 return list(peer.records)
             if output.stat().st_mode & 0o777 != 0o600:
                 raise RuntimeError('private receipt permissions')
             receipt = output.read_bytes()
             p = peer.profile
-            if len(receipt) < 44 or receipt[:8] != b'QPA1\x01\x01\x00\x01' or receipt[8:40] != p['d']:
+            if len(receipt) < 45 or receipt[:9] != b'QPA1\x04\x01\x00'+bytes([2 if legacy else 1,1]) or receipt[9:41] != p['d']:
                 raise RuntimeError('receipt framing/digest disagreement')
-            if struct.unpack('>I', receipt[40:44])[0] != len(receipt) - 44:
+            if struct.unpack('>I', receipt[41:45])[0] != len(receipt) - 45:
                 raise RuntimeError('receipt length disagreement')
-            if args.oracle:
-                ref.validate_signed_response(request, {'complete': True, 'hex': receipt[44:].hex()}, args.oracle)
+            if legacy:
+                compact=base64.b64decode(peer.result,validate=True)
+                if receipt[45:]!=compact or not ref.integer_verify(p['z'],core.encode_signature(
+                        int.from_bytes(compact[1:33],'big'),int.from_bytes(compact[33:],'big')),peer.pubkey):
+                    raise RuntimeError('independent compact receipt verification failed')
+            elif args.oracle:
+                ref.validate_signed_response(request, {'complete': True, 'hex': receipt[45:].hex()}, args.oracle)
             else:
-                tx = ref.parse_transaction(receipt[44:])
+                tx = ref.parse_transaction(receipt[45:])
                 signature, key, _, _ = ref.extract_unlock(tx, request['signing_kind'])
                 tx['inputs'][0].update(script=b'', witness=())
                 if ref.serialize(tx) != p['unsigned'] or ref.hash160(key) != bytes.fromhex(request['claims'][0]['program']) or not ref.integer_verify(p['z'], signature, key):
@@ -192,6 +225,8 @@ def main():
                 for request in requests:
                     if run(request, False):
                         raise RuntimeError('disabled adapter contacted wallet')
+                if run(core.public_profiles()['legacy_vectors'][0]['request'],False):
+                    raise RuntimeError('disabled legacy adapter contacted wallet')
             elif args.core32:
                 with core.Node(args.core32) as node:
                     peer.node = node
@@ -260,6 +295,34 @@ def main():
                         raise RuntimeError('oversized wallet reached RPC')
                     # Explicit unnamed wallet is supported without listwallets.
                     run(source, wallet='')
+                legacy_source=copy.deepcopy(core.public_profiles()['legacy_vectors'][0]['request'])
+                for odd in [False,True]:
+                    request=copy.deepcopy(legacy_source)
+                    for claim in request['claims']:
+                        claim['program']=ref.hash160(bytes([3 if odd else 2])+ref.GENERATOR[0].to_bytes(32,'big')).hex()
+                    result=mathematical_result(request,odd);peer.pubkey=result['pubkey'];peer.result=base64.b64encode(result['compact']).decode();peer.scenario='ok'
+                    trace=run(request)
+                    if [m for m,_ in trace]!=['getblockchaininfo','getwalletinfo','getaddressinfo','signmessage']:
+                        raise RuntimeError('legacy profile did not select exactly signmessage')
+                    original=peer.result
+                    compact=result['compact']
+                    high=compact[:33]+(ref.ORDER-int.from_bytes(compact[33:],'big')).to_bytes(32,'big')
+                    wrong=copy.deepcopy(request);wrong['nonce']='42'*32
+                    wrong_signature=base64.b64encode(mathematical_result(wrong,odd)['compact']).decode()
+                    for value in [None,{},'',original+'\n','A'*88,base64.b64encode(high).decode(),
+                                  base64.b64encode(bytes([27])+compact[1:]).decode(),wrong_signature]:
+                        peer.result=value;run(request,False)
+                    peer.result=original
+                    for scenario in ['watch-only','external-signer','locked','missing-key','wrong-script','wrong-chain',
+                                     'bad-wallet-info','bad-address-info','uncompressed-key','bad-key','wrong-key',
+                                     'missing-pubkey','watch-only-address','bad-compressed-flag','rpc-error','unsupported-method','unsupported-key']:
+                        peer.scenario=scenario;trace=run(request,False)
+                        if scenario not in ['rpc-error','unsupported-method','unsupported-key'] and any(m=='signmessage' for m,_ in trace):
+                            raise RuntimeError('unsupported legacy wallet reached signmessage')
+                    peer.scenario='ok'
+                    for stop_at in range(1,6): run(request,False,stop_at=stop_at)
+                peer.scenario='ok'
+                run(legacy_source,False,raw=ref.request_bytes(legacy_source)[:4]+b'\x03'+ref.request_bytes(legacy_source)[5:])
         finally:
             peer.shutdown()
             peer.server_close()

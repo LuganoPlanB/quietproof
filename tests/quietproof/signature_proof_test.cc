@@ -64,8 +64,9 @@ void Run(const nlohmann::json& fixture, const std::filesystem::path& directory, 
             error == PoKSigError::kSignatureModeDisabled && proof.bytes == sentinel.bytes, "disabled direct prover");
       Check(!PoKSigProveReceipt(request, receipt, &proof, {true}, &error) &&
             error == PoKSigError::kSignatureModeDisabled && proof.bytes == sentinel.bytes, "disabled receipt prover");
-      QuietProofSignatureEnvelopeMetadataV3 metadata;
+      QuietProofSignatureEnvelopeMetadataV4 metadata;
       metadata.request = request; metadata.proof_created_at = Now(); metadata.circuit_digest = PoKSigExpectedCircuitDigest();
+      metadata.profile = (uint16_t(request[7]) << 8) | request[8];
       Check(EncodeQuietProofSignatureEnvelope(metadata, {1}, &proof.bytes), "disabled metadata transport");
       Reject(request, proof, PoKSigError::kSignatureModeDisabled);
       continue;
@@ -95,14 +96,14 @@ void Run(const nlohmann::json& fixture, const std::filesystem::path& directory, 
     const auto name = test.at("name").get<std::string>();
     Write(directory/(name+".qpf"), proof.bytes);
     Write(directory/(name+".qpr"), request);
-    QuietProofSignatureEnvelopeMetadataV3 metadata;
+    QuietProofSignatureEnvelopeMetadataV4 metadata;
     Check(InspectQuietProofSignatureEnvelope(proof.bytes, &metadata) &&
           metadata.proof_size <= kQuietProofSignatureMaxProofBytes && metadata.circuit_digest == PoKSigExpectedCircuitDigest(), "actual serialized size/identity");
     Check(PoKSigVerifyProof(request, proof, Now(), {true}, &error) && error == PoKSigError::kNone, "real composed verification");
     ++real_proofs;
     Reject(request, proof, PoKSigError::kSignatureModeNotAllowed, true, {});
     Reject({}, proof, PoKSigError::kMalformedStatement);
-    QuietProofSignatureStatementV3 statement;
+    QuietProofSignatureStatementV4 statement;
     Check(DecodeQuietProofSignatureStatement(request, &statement), "request decode");
     auto changed = statement; changed.nonce[0] ^= 1;
     std::vector<uint8_t> changed_request;
@@ -122,16 +123,27 @@ void Run(const nlohmann::json& fixture, const std::filesystem::path& directory, 
     Check(EncodeQuietProofSignatureEnvelope(rebound_metadata, body, &rebound.bytes), "rebound hash transport");
     Reject(changed_request, rebound, PoKSigError::kInvalidProof, false);
     const size_t tail = 9 + request.size();
-    for (size_t offset : {tail+13, tail+45, tail+49, tail+53}) {
+    if (statement.signing_kind == QuietProofScriptKind::kP2pkh) {
+      changed = statement;
+      changed.signing_profile = statement.signing_profile == QuietProofSigningProfile::kBip322EcdsaV1 ?
+          QuietProofSigningProfile::kBitcoinMessageEcdsaV1 : QuietProofSigningProfile::kBip322EcdsaV1;
+      Check(EncodeQuietProofSignatureStatement(changed, &changed_request), "cross-profile request encode");
+      Reject(changed_request, proof, PoKSigError::kInvalidProof);
+      rebound_metadata.request = changed_request;
+      rebound_metadata.profile = static_cast<uint16_t>(changed.signing_profile);
+      Check(EncodeQuietProofSignatureEnvelope(rebound_metadata, body, &rebound.bytes), "cross-profile rebound encode");
+      Reject(changed_request, rebound, PoKSigError::kInvalidProof, false);
+    }
+    for (size_t offset : {tail+14, tail+46, tail+50, tail+54}) {
       auto bad = proof; bad.bytes[offset] ^= 1;
-      Reject(request, bad, offset == tail+13 ? PoKSigError::kUnapprovedCircuit : PoKSigError::kUnsupported);
+      Reject(request, bad, offset == tail+14 ? PoKSigError::kUnapprovedCircuit : PoKSigError::kUnsupported);
     }
     auto bad = proof; bad.bytes[metadata.proof_offset] ^= 1;
     Reject(request, bad, PoKSigError::kInvalidProof, false);
     bad = proof; bad.bytes.push_back(0); Reject(request, bad, PoKSigError::kMalformedStatement);
-    Put(bad.bytes, tail+57, metadata.proof_size+1, 4); Reject(request, bad, PoKSigError::kInvalidProof, false);
+    Put(bad.bytes, tail+58, metadata.proof_size+1, 4); Reject(request, bad, PoKSigError::kInvalidProof, false);
     bad.bytes.resize(metadata.proof_offset + kQuietProofSignatureMaxProofBytes + 1);
-    Put(bad.bytes, tail+57, kQuietProofSignatureMaxProofBytes+1, 4);
+    Put(bad.bytes, tail+58, kQuietProofSignatureMaxProofBytes+1, 4);
     Reject(request, bad, PoKSigError::kMalformedStatement);
     bad.bytes.resize(kQuietProofSignatureMaxEnvelopeBytes+1); Reject(request, bad, PoKSigError::kMalformedStatement);
     bad.bytes = receipt; Reject(request, bad, PoKSigError::kPrivateReceiptInput);
@@ -142,7 +154,7 @@ void Run(const nlohmann::json& fixture, const std::filesystem::path& directory, 
     std::cout << "proof " << name << " verified=1 proof_bytes=" << metadata.proof_size
               << " envelope_bytes=" << proof.bytes.size() << std::endl;
   }
-  Check(real_proofs == (disabled ? 0u : 3u), "required proof count");
+  Check(real_proofs == (disabled ? 0u : fixture.at("cases").size()), "required proof count");
   std::cout << "{\"checks\":" << checks << ",\"realProofs\":" << real_proofs
             << ",\"failed\":0,\"skipped\":0,\"disabled\":" << (disabled ? "true" : "false") << "}" << std::endl;
 }

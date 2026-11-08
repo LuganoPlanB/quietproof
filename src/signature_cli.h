@@ -60,20 +60,44 @@ bool WriteSignatureFile(const std::string& path, const std::vector<uint8_t>& byt
   return written;
 }
 
-nlohmann::json SignatureRequestSummary(const proofs::QuietProofSignatureStatementV3& statement) {
+nlohmann::json SignatureRequestSummary(const proofs::QuietProofSignatureStatementV4& statement) {
   uint64_t sum = 0;
   for (const auto& claim : statement.claims) sum += claim.amount_sats; // Validated checked sum.
   return {{"audience", statement.verifier}, {"purpose", statement.purpose},
           {"network", proofs::QuietProofNetworkName(statement.network)}, {"total_sats", sum},
           {"expires_at", statement.expires_at}, {"request_created_at", statement.not_before},
           {"signing_kind", proofs::QuietProofScriptKindName(statement.signing_kind)},
+          {"request_version", statement.statement_version},
+          {"signing_profile", proofs::QuietProofSigningProfileName(statement.signing_profile)},
+          {"profile_version", statement.profile_version},
+          {"signing_profile_label", proofs::QuietProofSigningProfileDescriptorFor(statement.signing_profile)->label},
+          {"signing_address", proofs::QuietProofSignatureAddress(statement)},
+          {"signing_instructions", proofs::QuietProofSigningInstructions(statement.signing_profile, statement.signing_kind)},
+          {"approved_proof_procedure", "ECDSA/HASH160 signature custody (one proof)"},
+          {"approved_circuit_digest", ArrayHex(proofs::PoKSigExpectedCircuitDigest())},
           {"claims", statement.claims.size()}};
 }
-void ShowSignatureRequest(const proofs::QuietProofSignatureStatementV3& statement) {
+bool DecodeSignatureRequest(const std::vector<uint8_t>& request,
+                            proofs::QuietProofSignatureStatementV4* statement,
+                            proofs::QuietProofDecodeError* error) {
+  if (proofs::DecodeQuietProofSignatureStatement(request, statement, error)) return true;
+  if (request.size() >= 5 && std::memcmp(request.data(), "QPS1", 4) == 0 &&
+      (request[4] == 1 || request[4] == 2)) {
+    *error = proofs::QuietProofDecodeError::kMalformed;
+    std::cerr << "PoKC request requires explicit --proof-mode key-knowledge; PoSC requires a v4 request\n";
+    return false;
+  }
+  if (request.size() >= 5 && std::memcmp(request.data(), "QPS1", 4) == 0 && request[4] == 3)
+    std::cerr << "superseded PoSC v3 request; reissue a v4 request and obtain fresh signatures/receipts/proofs\n";
+  else std::cerr << (*error == proofs::QuietProofDecodeError::kUnsupported ?
+      "unsupported signature request profile/version\n" : "canonical v4 signature-possession request required\n");
+  return false;
+}
+void ShowSignatureRequest(const proofs::QuietProofSignatureStatementV4& statement) {
   std::cerr << "Request authorisation: " << SignatureRequestSummary(statement).dump() << '\n'
             << "A private receipt permits delegated proving for this request; keep .qpa private.\n";
 }
-bool SignatureRequestCurrent(const proofs::QuietProofSignatureStatementV3& statement) {
+bool SignatureRequestCurrent(const proofs::QuietProofSignatureStatementV4& statement) {
   const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
   if (now >= 0 && static_cast<uint64_t>(now) >= statement.not_before &&
       static_cast<uint64_t>(now) < statement.expires_at) return true;
@@ -96,12 +120,11 @@ int SignatureOperation(const Options& options, bool export_only) {
     } else if (!options.count("--rpc-wallet")) return Usage();
     if (!CheckNewOutputPath(output_path)) return kIoError;
     std::vector<uint8_t> request;
-    proofs::QuietProofSignatureStatementV3 statement;
-    if (!ReadSignatureFile(request_path, proofs::kQuietProofMaxStatementBytes, false, &request) ||
-        !proofs::DecodeQuietProofSignatureStatement(request, &statement)) {
-      std::cerr << "signature mode requires a canonical signature-possession request\n";
-      return kData;
-    }
+    proofs::QuietProofSignatureStatementV4 statement;
+    proofs::QuietProofDecodeError decode_error;
+    if (!ReadSignatureFile(request_path, proofs::kQuietProofMaxStatementBytes, false, &request)) return kData;
+    if (!DecodeSignatureRequest(request, &statement, &decode_error))
+      return decode_error == proofs::QuietProofDecodeError::kUnsupported ? kUnsupported : kData;
     if (options.count("--network")) {
       proofs::QuietProofNetwork network;
       if (!proofs::QuietProofParseNetwork(network_name, &network)) return Usage();
@@ -132,7 +155,12 @@ int SignatureOperation(const Options& options, bool export_only) {
 #endif
     }
     proofs::QuietProofSignatureAuthorisationV1 verified;
-    if (!proofs::ImportQuietProofSignatureAuthorisation(request, receipt.bytes, &verified)) {
+    proofs::QuietProofSignatureAuthorisationError authorization_error;
+    if (!proofs::ImportQuietProofSignatureAuthorisation(request, receipt.bytes, &verified, &authorization_error)) {
+      if (authorization_error == proofs::QuietProofSignatureAuthorisationError::kUnsupported) {
+        std::cerr << "unsupported or superseded receipt; obtain a fresh v4 request-bound signature/receipt\n";
+        return kUnsupported;
+      }
       std::cerr << "private receipt does not authorise the expected request\n";
       return kData;
     }
@@ -160,8 +188,10 @@ int SignatureOperation(const Options& options, bool export_only) {
     }
     if (!SignatureRequestCurrent(statement)) return kData;
     if (!WriteSignatureFile(output_path, proof.bytes)) return kIoError;
-    std::cout << nlohmann::json({{"result", "proof_created"}, {"proof", output_path},
-                                {"proof_mode", "signature-possession"}, {"proof_bytes", proof.bytes.size()}}).dump() << '\n';
+    auto summary = SignatureRequestSummary(statement);
+    summary["result"] = "proof_created"; summary["proof"] = output_path;
+    summary["proof_mode"] = "signature-possession"; summary["proof_bytes"] = proof.bytes.size();
+    std::cout << summary.dump() << '\n';
     return 0;
   } catch (...) {
     std::cerr << "signature operation failed; private diagnostics suppressed\n";
@@ -200,13 +230,13 @@ int SignatureExternal(int argc, char** argv, bool importing) {
     if (!proofs::kQuietProofSignatureModeEnabled) return SignatureUnavailable();
     if (!CheckNewOutputPath(output_path)) return kIoError;
     std::vector<uint8_t> request;
-    proofs::QuietProofSignatureStatementV3 statement;
+    proofs::QuietProofSignatureStatementV4 statement;
     proofs::QuietProofSignatureInputsV1 inputs;
-    if (!ReadSignatureFile(request_path, proofs::kQuietProofMaxStatementBytes, false, &request) ||
-        !proofs::DecodeQuietProofSignatureStatement(request, &statement) ||
-        !proofs::DeriveQuietProofSignatureInputs(request, &inputs)) {
-      std::cerr << "canonical signature-possession request required\n"; return kData;
-    }
+    proofs::QuietProofDecodeError decode_error;
+    if (!ReadSignatureFile(request_path, proofs::kQuietProofMaxStatementBytes, false, &request)) return kData;
+    if (!DecodeSignatureRequest(request, &statement, &decode_error))
+      return decode_error == proofs::QuietProofDecodeError::kUnsupported ? kUnsupported : kData;
+    if (!proofs::DeriveQuietProofSignatureInputs(request, &inputs)) return kUnsupported;
     if (options.count("--network")) {
       proofs::QuietProofNetwork network;
       if (!proofs::QuietProofParseNetwork(network_name, &network)) return Usage();
@@ -248,19 +278,30 @@ int SignatureExternal(int argc, char** argv, bool importing) {
       if (wrapper.at("network").get<std::string>() != proofs::QuietProofNetworkName(statement.network) ||
           wrapper.at("address").get<std::string>() != expected_address ||
           wrapper.at("scriptKind").get<std::string>() != proofs::QuietProofScriptKindName(statement.signing_kind) ||
+          (wrapper.contains("signingProfile") && wrapper.at("signingProfile").get<std::string>() !=
+              proofs::QuietProofSigningProfileName(statement.signing_profile)) ||
+          (wrapper.contains("profileVersion") &&
+              (!wrapper.at("profileVersion").is_number_unsigned() ||
+               wrapper.at("profileVersion").get<uint64_t>() != statement.profile_version)) ||
           wrapper.at("messageSha256").get<std::string>() != ArrayHex(message_hash)) {
         std::cerr << "signature metadata does not match the request\n"; return kData;
       }
       format = wrapper.at("format").get<std::string>();
+      if ((format == "standard" || format == "electrum" || format == "bip137") &&
+          statement.signing_profile == proofs::QuietProofSigningProfile::kBitcoinMessageEcdsaV1)
+        format = "bitcoin-message";  // Known compact transports, still checked by header/profile below.
       SecureErase(signature.data(), signature.size());
       signature = wrapper.at("signature").get<std::string>();
     }
-    proofs::QuietProofBip322Format selected;
-    if (format == "bip322-simple") selected = proofs::QuietProofBip322Format::kSimple;
-    else if (format == "bip322-full") selected = proofs::QuietProofBip322Format::kFull;
-    else { std::cerr << "unsupported signature scheme; BIP322 ECDSA required\n"; return kUnsupported; }
     proofs::QuietProofSignatureAuthorisationError error;
-    if (!proofs::ImportQuietProofBip322Signature(request, selected, signature, &receipt.bytes, &error)) {
+    bool imported;
+    if (format == "bitcoin-message") {
+      imported = proofs::ImportQuietProofBitcoinMessageSignature(request, signature, &receipt.bytes, &error);
+    } else if (format == "bip322-simple" || format == "bip322-full") {
+      const auto selected = format == "bip322-simple" ? proofs::QuietProofBip322Format::kSimple : proofs::QuietProofBip322Format::kFull;
+      imported = proofs::ImportQuietProofBip322Signature(request, selected, signature, &receipt.bytes, &error);
+    } else { std::cerr << "unsupported signature transport for the request\n"; return kUnsupported; }
+    if (!imported) {
       std::cerr << "external signature rejected: " << proofs::QuietProofSignatureAuthorisationErrorName(error) << '\n';
       return error == proofs::QuietProofSignatureAuthorisationError::kUnsupported ? kUnsupported : kData;
     }

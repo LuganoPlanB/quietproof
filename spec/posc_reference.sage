@@ -115,6 +115,9 @@ def request_bytes(request):
     """Bounded typed request encoding; no wall clock or chain-state claims."""
     claims = request['claims']
     require(request['network'] in range(5) and request['signing_kind'] in (0, 1), 'network/kind')
+    procedure, version = request['profile'], request['profile_version']
+    require(procedure in (1, 2) and version == 1, 'profile/version')
+    require(procedure != 2 or request['signing_kind'] == 1, 'profile/kind')
     require(1 <= len(claims) <= 16, 'claim count')
     require(request['signing_kind'] in [c['script_kind'] for c in claims], 'selected kind absent')
     require(len({c['program'] for c in claims}) == 1, 'different key hashes')
@@ -125,7 +128,8 @@ def request_bytes(request):
         raw = value.encode('utf-8')
         require(1 <= len(raw) <= 256 and all(ord(c) >= 32 and ord(c) != 127 for c in value), 'text')
         return number(len(raw), 2) + raw
-    result = b'QPS1\x03' + bytes([request['network'], 1, 0, 1, request['signing_kind']])
+    result = b'QPS1\x04' + bytes([request['network'], 1])
+    result += number(procedure, 2) + bytes([version, request['signing_kind']])
     result += text(request['verifier']) + text(request['purpose'])
     for name in ('nonce', 'bip322_message_hash'):
         raw = bytes.fromhex(request[name])
@@ -154,8 +158,9 @@ def request_bytes(request):
 def profile(request):
     """Frozen one-input, zero-valued BIP-322-style virtual transaction only."""
     raw = request_bytes(request)
-    digest = tagged_hash('QuietProof/statement/v3', raw)
-    message = b'quietproof:signature:v1:' + digest.hex().encode('ascii')
+    digest = tagged_hash('QuietProof/statement/v4', raw)
+    message = b'quietproof:signature:v4:' + digest.hex().encode('ascii')
+    require(request['profile'] == 1, 'BIP322 profile required')
     message_hash = tagged_hash('BIP0322-signed-message', message)
     h = bytes.fromhex(request['claims'][0]['program'])
     script_code = b'\x76\xa9\x14' + h + b'\x88\xac'
@@ -284,6 +289,7 @@ def build_document(corpus_path, profile_path):
         profiles.append({'name': row['name'], **derived, 'binding_changes': bindings})
     return {'format': 'quietproof-posc-sage-v1', 'name': 'PoSC (Proof of Signature Custody)',
             'sage_version': SAGE_VERSION, 'domains': {'p': format(int(P), 'x'), 'n': format(int(N), 'x')},
+            'profile_wire_version': 4,
             'scope': 'Independent mathematical relation and fixed public request/digest derivation; not a circuit-wire or proof-system soundness theorem.',
             'public_test_data': True, 'cases': cases, 'profiles': profiles,
             'malformed_serialization_cases_outside_relation': [c['id'] for c in corpus['malformed_cases']]}
@@ -299,7 +305,11 @@ def main():
     require(SAGE_VERSION == '10.6', 'PoSC reference requires SageMath 10.6')
     document = build_document(args.corpus, args.profiles)
     if args.check:
-        require(document == json.loads(args.check.read_text()), 'PoSC Sage fixture mismatch')
+        expected = json.loads(args.check.read_text())
+        # This descriptive fixture provenance is not mathematical output. It
+        # never substitutes for executing this independent Sage check.
+        expected.pop('generation_note', None)
+        require(document == expected, 'PoSC Sage fixture mismatch')
     if args.emit:
         print(json.dumps(document, indent=2, sort_keys=True))
     else:

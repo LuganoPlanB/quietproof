@@ -30,8 +30,8 @@ void RequestState::Open(const std::optional<std::filesystem::path>& path) {
   std::vector<uint8_t> bytes(buffer.begin(), buffer.begin() + count);
   proofs::QuietProofStatementV1 statement;
   proofs::QuietProofDecodeError decode_error;
-  if (bytes.size() >= 5 && std::equal(bytes.begin(),bytes.begin()+4,"QPS1") && bytes[4] == 3) {
-    proofs::QuietProofSignatureStatementV3 signature;
+  if (bytes.size() >= 5 && std::equal(bytes.begin(),bytes.begin()+4,"QPS1") && bytes[4] == proofs::kQuietProofSignatureStatementVersion) {
+    proofs::QuietProofSignatureStatementV4 signature;
     if (!proofs::DecodeQuietProofSignatureStatement(bytes,&signature,&decode_error)) {
       error = decode_error == proofs::QuietProofDecodeError::kUnsupported ? RequestError::Unsupported : RequestError::Malformed;
       return;
@@ -55,7 +55,7 @@ const char* RequestState::Message() const {
     case RequestError::Unreadable: return "Cannot read this file. Check the path and read permissions, then try again.";
     case RequestError::TooLarge: return "File exceeds the 4096-byte request limit. Ask the verifier for a request file.";
     case RequestError::ProofFile: return "This is a proof file, not a request. Open the original request supplied by your verifier.";
-    case RequestError::Unsupported: return "Unsupported request version, network or script kind. Supported requests are PoSC v3 or explicit PoKC v1/v2.";
+    case RequestError::Unsupported: return "Unsupported request version, profile, network or script kind. Supported requests are PoSC v4 or explicit PoKC v1/v2; reissue superseded v3 requests.";
     case RequestError::Malformed: return "Invalid or incomplete request. Obtain the complete original request and try again.";
   }
   return "Cannot load request.";

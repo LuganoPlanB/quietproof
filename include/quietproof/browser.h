@@ -85,18 +85,18 @@ inline bool QuietProofBrowserMetadata(const QuietProofEnvelopeV1& envelope,
 inline bool QuietProofBrowserInspect(const std::vector<uint8_t>& bytes,
                                     bool proof, std::vector<uint8_t>* output) {
   if (!output) return false;
-  if (bytes.size() >= 5 && bytes[4] == 3) {
-    QuietProofSignatureEnvelopeMetadataV3 metadata;
+  if (bytes.size() >= 5 && bytes[4] == kQuietProofSignatureStatementVersion) {
+    QuietProofSignatureEnvelopeMetadataV4 metadata;
     if (proof) {
       if (!InspectQuietProofSignatureEnvelope(bytes, &metadata)) return false;
     } else {
-      QuietProofSignatureStatementV3 statement;
+      QuietProofSignatureStatementV4 statement;
       if (!DecodeQuietProofSignatureStatement(bytes, &statement)) return false;
       metadata.request = bytes;
     }
-    // QWI1 retains its existing header; the canonical v3 request carries the
+    // QWI1 retains its existing header; the canonical v4 request carries the
     // explicit mode/profile/signing kind. Inspection grants no capability.
-    output->assign({'Q','W','I','1',uint8_t(proof ? 3 : 0)});
+    output->assign({'Q','W','I','1',uint8_t(proof ? kQuietProofSignatureStatementVersion : 0)});
     QuietProofAppendU64(output, proof ? metadata.proof_created_at : 0);
     if (proof) output->insert(output->end(), metadata.circuit_digest.begin(), metadata.circuit_digest.end());
     else output->insert(output->end(), 32, 0);

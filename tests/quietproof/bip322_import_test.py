@@ -89,7 +89,7 @@ def main():
             for value in (full, full[3:]):
                 import_signature(value, 'bip322-full', 0)
             # Byte-for-byte receipt body remains the imported signature transaction.
-            assert output.read_bytes()[44:] == ref.serialize(signed['tx'])
+            assert output.read_bytes()[45:] == ref.serialize(signed['tx'])
             for value in (b'ful'+base64.b64encode(ref.serialize(signed['tx'])+b'\x00'),
                           b'ful'+base64.b64encode(b'\x02'+ref.serialize(signed['tx'])[1:])):
                 import_signature(value, 'bip322-full')
@@ -99,7 +99,7 @@ def main():
             simple = encoded(signed['tx'], True)
             for value in (simple, simple[3:]):
                 import_signature(value, expected=0)
-                assert output.read_bytes()[44:] == ref.serialize(signed['tx'])
+                assert output.read_bytes()[45:] == ref.serialize(signed['tx'])
             wrapper = dict(network=summary['network'], address=summary['address'], scriptKind='p2wpkh',
                            messageSha256=hashlib.sha256(profile['message']).hexdigest(),
                            format='bip322-simple', signature=simple.decode())

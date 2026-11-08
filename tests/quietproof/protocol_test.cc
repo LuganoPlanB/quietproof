@@ -504,15 +504,19 @@ void TestEnvelopeAndTranscript() {
   }
 
   auto unsupported = wire;
-  unsupported[4] = 4; // v3 is now known and has a distinct strict wire layout.
+  unsupported[4] = 5; // Future serialization versions remain unsupported.
   QuietProofDecodeError error = QuietProofDecodeError::kNone;
   Require(!DecodeQuietProofEnvelope(unsupported, &decoded, &error) &&
               error == QuietProofDecodeError::kUnsupported,
           "unsupported envelope version misclassified");
   unsupported[4] = 3;
   Require(!DecodeQuietProofEnvelope(unsupported, &decoded, &error) &&
+              error == QuietProofDecodeError::kUnsupported,
+          "superseded v3 envelope was accepted or misclassified");
+  unsupported[4] = 4;
+  Require(!DecodeQuietProofEnvelope(unsupported, &decoded, &error) &&
               error == QuietProofDecodeError::kMalformed,
-          "known v3 with old wire layout misclassified");
+          "v4 with old wire layout misclassified");
 
   std::vector<uint8_t> oversized = {'Q', 'P', 'E', '1', 1};
   QuietProofAppendU32(&oversized,

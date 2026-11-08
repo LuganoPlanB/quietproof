@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Detect stale, corrupted or misclassified independent PoSC reference data."""
 import copy
+import ast
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
@@ -38,6 +40,48 @@ class PoSCReferenceTests(unittest.TestCase):
         self.assertEqual(sum(expected.values()), 43)
         self.assertEqual(unrepresentable, ['Q_infinity', 'Q_x_p_alias', 'Q_y_p_alias'])
         self.assertEqual({c['expected']['branch'] for c in document['cases'] if c['expected']['valid']}, {'r', 'r+n'})
+
+    def test_public_v4_profile_source_matches_frozen_bytes(self):
+        # These functions use only Python-compatible integer/byte operations.
+        # This checks the public digest model without claiming a Sage run.
+        tree = ast.parse((ROOT / 'spec/posc_reference.sage').read_text())
+        functions = ast.Module(body=[node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name in
+            ('require', 'number', 'request_bytes', 'profile')], type_ignores=[])
+        def sha256(value):
+            return hashlib.sha256(value).digest()
+        def tagged_hash(tag, value):
+            prefix = sha256(tag.encode('ascii'))
+            return sha256(prefix + prefix + value)
+        namespace = {'sha256': sha256, 'tagged_hash': tagged_hash}
+        exec(compile(functions, 'spec/posc_reference.sage', 'exec'), namespace)
+        vectors = json.loads((ROOT / 'spec/signature-profile-v1.json').read_text())['vectors']
+        for stored, vector in zip(self.document['profiles'], vectors):
+            derived = namespace['profile'](vector['request'])
+            self.assertTrue(all(value == stored[key] == vector[key]
+                                for key, value in derived.items()))
+            for binding in stored['binding_changes']:
+                request = copy.deepcopy(vector['request'])
+                field = binding['field']
+                if field == 'nonce':
+                    value = bytearray.fromhex(request[field])
+                    value[0] ^= 1
+                    request[field] = value.hex()
+                elif field == 'purpose':
+                    request[field] += '!'
+                elif field == 'network':
+                    request[field] = (request[field] + 1) % 5
+                else:
+                    request['claims'][0][field] += 1
+                changed = namespace['profile'](request)
+                self.assertEqual((changed['d'], changed['z']), (binding['d'], binding['z']))
+
+    def test_v3_profile_bytes_cannot_keep_v4_fixture_identity(self):
+        document = copy.deepcopy(self.document)
+        wire = bytearray.fromhex(document['profiles'][0]['request_hex'])
+        wire[4] = 3
+        document['profiles'][0]['request_hex'] = wire.hex()
+        self.rejected(document, 'profile mismatch')
 
     def test_corrupted_public_hash_cannot_keep_positive_decision(self):
         document = copy.deepcopy(self.document)

@@ -43,7 +43,7 @@ template <class Bytes> std::string Hex(const Bytes& bytes) {
 }
 nlohmann::json Run(const nlohmann::json& fixture, bool signature, unsigned rounds) {
   const auto request = Unhex(fixture.at("request"));
-  QuietProofSignatureStatementV3 expected;
+  QuietProofSignatureStatementV4 expected;
   Require(DecodeQuietProofSignatureStatement(request, &expected));
   Require(expected.claims.size() == 1 &&
           expected.claims.front().script_kind == QuietProofScriptKind::kP2wpkh);
@@ -69,7 +69,7 @@ nlohmann::json Run(const nlohmann::json& fixture, bool signature, unsigned round
       start = Clock::now();
       Require(PoKSigVerifyProof(request, proof, Now(), {true}, &error));
       verify = Seconds(start);
-      QuietProofSignatureEnvelopeMetadataV3 metadata;
+      QuietProofSignatureEnvelopeMetadataV4 metadata;
       Require(InspectQuietProofSignatureEnvelope(proof.bytes, &metadata));
       proof_bytes = metadata.proof_size; envelope_bytes = proof.bytes.size();
     } else {

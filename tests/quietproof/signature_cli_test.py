@@ -58,7 +58,7 @@ def main():
             peer.errors.clear()
             request_path.write_bytes(peer.profile['request'])
             signed = bytes.fromhex(peer.result['hex'])
-            receipt = struct.pack('>4sBBH32sI', b'QPA1', 1, 1, 1, peer.profile['d'], len(signed)) + signed
+            receipt = struct.pack('>4sBBHB32sI', b'QPA1', 4, 1, 1, 1, peer.profile['d'], len(signed)) + signed
             receipt_path.write_bytes(receipt)
             receipt_path.chmod(0o600)
 
@@ -84,7 +84,8 @@ def main():
             return ['challenge', 'create', '--network', 'regtest', '--verifier', base['verifier'],
                     '--purpose', base['purpose'], '--expires-in', '3600', '--message', 'CLI delegation',
                     '--output', str(target or root/'created.qpr'), *claim_options(base), *extra,
-                    *mode, '--signing-kind', 'p2pkh' if kind else 'p2wpkh']
+                    *mode, '--signing-kind', 'p2pkh' if kind else 'p2wpkh',
+                    '--signing-profile', 'bip322-ecdsa-v1']
 
         def prove(extra=()):
             return ['prove', *mode, '--request', request_path, '--output', output, *extra]
@@ -105,14 +106,17 @@ def main():
             summary = json.loads(run(create(kind=template['signing_kind'], target=issued)).stdout)
             request = copy.deepcopy(template)
             wire = issued.read_bytes()
-            offset = 10
+            offset = 11
             for _ in range(2):
                 size = int.from_bytes(wire[offset:offset+2], 'big')
                 offset += 2+size
             request.update(nonce=wire[offset:offset+32].hex(),
                            not_before=summary['request_created_at'], expires_at=summary['expires_at'],
                            bip322_message_hash=ref.tagged('BIP0322-signed-message', b'CLI delegation').hex())
-            require(summary['proof_mode'] == 'signature-possession' and wire == ref.request_bytes(request),
+            require(summary['proof_mode'] == 'signature-possession' and
+                    summary['request_version'] == 4 and
+                    summary['signing_profile'] == 'bip322-ecdsa-v1' and
+                    summary['profile_version'] == 1 and wire == ref.request_bytes(request),
                     'no-mode challenge differs from independent signature encoder')
             fixture(request)
             return request
@@ -123,8 +127,8 @@ def main():
             # this invalid one-byte body must never reach cryptographic work.
             expected_bytes = request_path.read_bytes()
             circuit_digest = bytes.fromhex('85fc9626e74e1944e736237c5f71220f982b05a3f786c491cf35ef2e56547d32')
-            output.write_bytes(b'QPE1\x03' + struct.pack('>I', len(expected_bytes)) + expected_bytes +
-                               struct.pack('>QBHH', int(time.time()), 1, 1, 1) + circuit_digest +
+            output.write_bytes(b'QPE1\x04' + struct.pack('>I', len(expected_bytes)) + expected_bytes +
+                               struct.pack('>QBHBH', int(time.time()), 1, 1, 1, 1) + circuit_digest +
                                struct.pack('>IIII', 1, 4, 128, 1) + b'\x01')
             if args.disabled:
                 run(verify(['--expected-request', request_path]), 66)
@@ -153,7 +157,7 @@ def main():
                     changed_path.write_bytes(ref.request_bytes(changed))
                     rejected = run(verify(['--expected-request', changed_path]), 67)
                     require(b'expected_request_mismatch' in rejected.stderr, f'altered {field} used proof work')
-                bad_profile = bytearray(expected_bytes); bad_profile[8] = 2
+                bad_profile = bytearray(expected_bytes); bad_profile[8] = 255
                 changed_path.write_bytes(bad_profile)
                 run(verify(['--expected-request', changed_path]), 66)
                 bridge = run(verify(['--expected-request', request_path, '--purpose', 'bridge-authorization']), 64)
@@ -178,7 +182,7 @@ def main():
                            *claim_options(homogeneous)]
                 result = run(command, 66 if args.disabled else 0)
                 if not args.disabled:
-                    require(inferred.read_bytes()[:5] == b'QPS1\x03' and inferred.read_bytes()[9] == kind and
+                    require(inferred.read_bytes()[:5] == b'QPS1\x04' and inferred.read_bytes()[10] == kind and
                             json.loads(result.stdout)['proof_mode'] == 'signature-possession', 'signing-kind inference')
                 legacy = root/f'legacy-{kind}.qpr'
                 legacy_command = list(command)
@@ -220,7 +224,7 @@ def main():
                     run(authorize())
                     exported = root/'exported.qpa'
                     require(exported.stat().st_mode & 0o777 == 0o600, 'exported receipt mode')
-                    ref.validate_signed_response(base, {'complete': True, 'hex': exported.read_bytes()[44:].hex()}, args.oracle)
+                    ref.validate_signed_response(base, {'complete': True, 'hex': exported.read_bytes()[45:].hex()}, args.oracle)
                     peer.records.clear()
                     result = run(prove(['--rpc-wallet', peer.wallet, *endpoint]), timeout=1800)
                     require([method for method, _ in peer.records] == ['getblockchaininfo', 'getwalletinfo',
@@ -238,7 +242,7 @@ def main():
                     result = run(prove(['--receipt-input', receipt_path]), timeout=1800, env=delegated_env)
                     require(not peer.records, 'offline proving attempted RPC')
                 require(json.loads(result.stdout)['proof_mode'] == 'signature-possession', 'proof mode result')
-                require(output.read_bytes()[:5] == b'QPE1\x03', 'new public envelope')
+                require(output.read_bytes()[:5] == b'QPE1\x04', 'new public envelope')
                 require(all(p in result.stderr for p in (b'Receipt validated', b'building signature circuit',
                         b'committing signature proof', b'proving signature possession')), 'signature proof phase feedback')
                 checked = subprocess.run([str(args.proof_verifier), str(request_path), str(output)],
@@ -271,11 +275,13 @@ def main():
                 summary = json.loads(result.stdout)
                 require(summary['audience'] == base['verifier'] and summary['purpose'] == base['purpose'] and
                         summary['network'] == 'regtest' and summary['total_sats'] == sum(c['amount_sats'] for c in base['claims']) and
+                        summary['request_version'] == 4 and summary['profile_version'] == 1 and
+                        summary['signing_profile'] == 'bip322-ecdsa-v1' and
                         summary['expires_at'] > int(time.time()), 'request summary fields')
-                require(created.read_bytes()[:5] == b'QPS1\x03' and created.stat().st_mode & 0o777 == 0o600, 'signature request bytes/permissions')
+                require(created.read_bytes()[:5] == b'QPS1\x04' and created.stat().st_mode & 0o777 == 0o600, 'signature request bytes/permissions')
                 expected = copy.deepcopy(base)
                 wire = created.read_bytes()
-                offset = 10
+                offset = 11
                 for _ in range(2):
                     size = int.from_bytes(wire[offset:offset+2], 'big')
                     offset += 2+size
@@ -285,7 +291,7 @@ def main():
                 require(wire == ref.request_bytes(expected), 'CLI canonical request differs from independent reference')
                 witness_request = root/'wpkh.qpr'
                 run(create(kind=0, target=witness_request))
-                require(witness_request.read_bytes()[9] == 0, 'selected witness signing kind was not encoded')
+                require(witness_request.read_bytes()[10] == 0, 'selected witness signing kind was not encoded')
                 run(create(), 74)
                 run(create(extra=['--proof-mode', 'signature-possession', '--proof-mode', 'signature-possession']), 64)
                 old = root/'scalar.qpr'
@@ -353,7 +359,7 @@ def main():
                 oversized.write_bytes(b'QPA1'+b'x'*4093); oversized.chmod(0o600)
                 for path in (symlink, fifo, root, root/'missing.qpa', oversized):
                     run(prove(['--receipt-input', path]), 74)
-                bad = bytearray(receipt_path.read_bytes()); bad[8] ^= 1
+                bad = bytearray(receipt_path.read_bytes()); bad[9] ^= 1
                 receipt_path.write_bytes(bad)
                 run(prove(['--receipt-input', receipt_path]), 65)
                 require(not output.exists(), 'invalid receipt produced proof')

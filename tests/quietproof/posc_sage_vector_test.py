@@ -23,6 +23,13 @@ def validate_fixture(fixture):
     document = json.loads(fixture.read_text())
     require(document['format'] == 'quietproof-posc-sage-v1' and document['public_test_data'] is True, 'fixture identity')
     require(document['sage_version'] == '10.6', 'Sage version')
+    require(document['profile_wire_version'] == 4, 'superseded profile wire version')
+    frozen = json.loads((ROOT / 'spec/signature-profile-v1.json').read_text())['vectors']
+    require(len(document['profiles']) == len(frozen), 'profile count')
+    for stored, current in zip(document['profiles'], frozen):
+        require(stored['name'] == current['name'] and all(
+            value == current[key] for key, value in stored.items()
+            if key not in ('name', 'binding_changes')), 'profile mismatch: ' + stored['name'])
     spec = importlib.util.spec_from_file_location('posc_python_crosscheck', ROOT / 'scripts/generate_signature_vectors.py')
     reference = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(reference)

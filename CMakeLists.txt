@@ -358,6 +358,15 @@ if(BUILD_TESTING)
   add_pokc_test(quietproof-protocol-test tests/quietproof/protocol_test.cc)
   add_pokc_test(quietproof-signature-statement-disabled-test tests/quietproof/signature_statement_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/spec/signature-profile-v1.json)
+  add_pokc_test(quietproof-signature-profiles-v4-disabled-test tests/quietproof/signature_profiles_v4_test.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/spec/signature-profile-v1.json)
+  add_executable(quietproof-bitcoin-message-disabled-driver tests/quietproof/bitcoin_message_test.cc)
+  target_link_libraries(quietproof-bitcoin-message-disabled-driver PRIVATE LongfellowZKQuietProof::quietproof)
+  add_test(NAME quietproof-bitcoin-message-disabled-test COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/bitcoin_message_test.py
+    --driver $<TARGET_FILE:quietproof-bitcoin-message-disabled-driver>
+    --work ${CMAKE_CURRENT_BINARY_DIR}/tests/results --disabled)
+  set_tests_properties(quietproof-bitcoin-message-disabled-test PROPERTIES TIMEOUT 120)
   add_executable(quietproof-signature-proof-disabled-test tests/quietproof/signature_proof_test.cc)
   add_pokc_test(quietproof-signature-verifier-disabled-test tests/quietproof/signature_verifier_test.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/spec/signature-profile-v1.json)
@@ -379,9 +388,19 @@ if(BUILD_TESTING)
     --work ${CMAKE_CURRENT_BINARY_DIR}/tests/results)
   set_tests_properties(quietproof-signature-receipt-disabled-test PROPERTIES TIMEOUT 120)
   if(QUIETPROOF_BUILD_SIGNATURE_MODE)
+    add_executable(quietproof-bitcoin-message-driver tests/quietproof/bitcoin_message_test.cc)
+    target_link_libraries(quietproof-bitcoin-message-driver PRIVATE LongfellowZKQuietProof::signature)
+    add_test(NAME quietproof-bitcoin-message-test COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/bitcoin_message_test.py
+      --driver $<TARGET_FILE:quietproof-bitcoin-message-driver>
+      --cli $<TARGET_FILE:quietproof-cli> --work ${CMAKE_CURRENT_BINARY_DIR}/tests/results)
+    set_tests_properties(quietproof-bitcoin-message-test PROPERTIES TIMEOUT 120)
     add_pokc_test(quietproof-signature-envelope-test tests/quietproof/signature_envelope_test.cc
       ${CMAKE_CURRENT_SOURCE_DIR}/spec/signature-profile-v1.json)
     target_link_libraries(quietproof-signature-envelope-test PRIVATE LongfellowZKQuietProof::signature)
+    add_pokc_test(quietproof-signature-profiles-v4-test tests/quietproof/signature_profiles_v4_test.cc
+      ${CMAKE_CURRENT_SOURCE_DIR}/spec/signature-profile-v1.json)
+    target_link_libraries(quietproof-signature-profiles-v4-test PRIVATE LongfellowZKQuietProof::signature)
     add_executable(quietproof-signature-receipt-driver tests/quietproof/signature_receipt_driver.cc)
     target_link_libraries(quietproof-signature-receipt-driver PRIVATE LongfellowZKQuietProof::signature)
     add_test(NAME quietproof-signature-receipt-test COMMAND ${Python3_EXECUTABLE}
@@ -534,6 +553,10 @@ if(BUILD_TESTING)
     set(_signature_cli_capability --disabled)
   endif()
   set(_signature_cli_fault)
+  add_test(NAME quietproof-native-profile-routing-test COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/native_profile_routing_test.py
+    --cli $<TARGET_FILE:quietproof-cli> --rpc-enabled ${QUIETPROOF_BUILD_RPC} ${_signature_cli_capability})
+  set_tests_properties(quietproof-native-profile-routing-test PROPERTIES TIMEOUT 120)
   option(QUIETPROOF_ENABLE_CLI_PRELOAD_TEST "Test CLI file faults using a Linux dynamic-loader helper" ON)
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND QUIETPROOF_ENABLE_CLI_PRELOAD_TEST)
     add_library(quietproof-signature-cli-fault SHARED tests/quietproof/signature_cli_fault.cc)

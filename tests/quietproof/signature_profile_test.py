@@ -21,6 +21,26 @@ FIXTURE = json.loads((ROOT / "spec/signature-profile-v1.json").read_text())
 
 
 class SignatureProfileTest(unittest.TestCase):
+    def test_v4_legacy_procedure_is_explicit_and_request_bound(self):
+        vector = FIXTURE['legacy_vectors'][0]
+        request = vector['request']
+        encoded, _ = PROFILE.serialize_request(request)
+        self.assertEqual(encoded.hex(), vector['request_hex'])
+        self.assertEqual(encoded[:11], b'QPS1\x04\x03\x01\x00\x02\x01\x01')
+        digest = PROFILE.tagged_hash('QuietProof/statement/v4', encoded)
+        self.assertEqual(digest.hex(), vector['d'])
+        message = b'quietproof:signature:v4:' + digest.hex().encode('ascii')
+        self.assertEqual(len(message), 88)
+        self.assertEqual(message.decode('ascii'), vector['application_message_ascii'])
+        preimage = b'\x18Bitcoin Signed Message:\n\x58' + message
+        self.assertEqual(preimage.hex(), vector['legacy_preimage_hex'])
+        self.assertEqual(hashlib.sha256(hashlib.sha256(preimage).digest()).hexdigest(), vector['legacy_z'])
+        self.assertNotEqual(vector['d'], FIXTURE['vectors'][0]['d'])
+        for profile, version, kind in [(0, 1, 1), (3, 1, 1), (2, 2, 1), (2, 1, 0)]:
+            invalid = dict(request, profile=profile, profile_version=version, signing_kind=kind)
+            with self.subTest(profile=profile, version=version, kind=kind), self.assertRaises(ValueError):
+                PROFILE.serialize_request(invalid)
+
     def test_published_bip322_controls(self):
         # BIP-322 basic-test-vectors.json at the revision pinned in the spec.
         public_key = bytes.fromhex("02c7f12003196442943d8588e01aee840423cc54fc1521526a3b85c2b0cbd58872")
@@ -67,13 +87,13 @@ class SignatureProfileTest(unittest.TestCase):
             with self.subTest(kind=vector["name"]):
                 message = vector["application_message_ascii"].encode("ascii")
                 self.assertEqual(len(message), 88)
-                self.assertEqual(message, b"quietproof:signature:v1:" + vector["d"].encode("ascii"))
+                self.assertEqual(message, b"quietproof:signature:v4:" + vector["d"].encode("ascii"))
                 raw = bytes.fromhex(vector["to_spend_txid_raw"])
                 self.assertEqual(raw[::-1].hex(), vector["to_spend_txid_display"])
                 self.assertNotEqual(raw, raw[::-1])
                 self.assertEqual(vector["to_sign_input_outpoint_wire"], raw.hex() + "00000000")
                 self.assertNotEqual(vector["application_message_hash"], vector["request"]["bip322_message_hash"])
-                self.assertTrue(vector["request_hex"].startswith("515053310303010001"))
+                self.assertTrue(vector["request_hex"].startswith("51505331040301000101"))
 
     def test_every_encoded_byte_and_field_is_bound(self):
         for vector in FIXTURE["vectors"]:

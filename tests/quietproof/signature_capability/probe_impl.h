@@ -18,7 +18,7 @@ static SignatureCapabilityProbe RunSignatureProbe() {
   QuietProofSignatureChallengeOptions options;
   options.request = {QuietProofNetwork::kRegtest, "capability-test", "proof-of-funds", "public fixture"};
   options.signing_kind = QuietProofScriptKind::kP2wpkh;
-  QuietProofSignatureStatementV3 public_output, sourced_output;
+  QuietProofSignatureStatementV4 public_output, sourced_output;
   public_output.verifier = sourced_output.verifier = "unchanged";
   QuietProofSignatureChallengeError public_error{}, sourced_error{};
   SignatureCapabilityProbe result;
@@ -29,7 +29,7 @@ static SignatureCapabilityProbe RunSignatureProbe() {
   const auto expected_error = result.capability ? QuietProofSignatureChallengeError::kNone :
       QuietProofSignatureChallengeError::kSignatureModeDisabled;
   result.expected_errors = public_error == expected_error && sourced_error == expected_error;
-  QuietProofSignatureStatementV3 expected;
+  QuietProofSignatureStatementV4 expected;
   expected.network = options.request.network; expected.verifier = options.request.verifier;
   expected.purpose = options.request.purpose; expected.nonce.fill(1); expected.bip322_message_hash.fill(1);
   expected.not_before = 100; expected.expires_at = 400; expected.claims = {claim};
@@ -48,7 +48,7 @@ static SignatureCapabilityProbe RunSignatureProbe() {
   body.insert(body.end(),{9,0x30,6,2,1,1,2,1,1,1,33});
   body.push_back(2); body.insert(body.end(),32,1); body.insert(body.end(),4,0);
   body.push_back(1); body.insert(body.end(),8,0); body.insert(body.end(),{1,0x6a}); body.insert(body.end(),4,0);
-  std::vector<uint8_t> receipt{'Q','P','A','1',1,1,0,1};
+  std::vector<uint8_t> receipt{'Q','P','A','1',4,1,0,1,1};
   receipt.insert(receipt.end(),32,0); QuietProofAppendU32(&receipt,static_cast<uint32_t>(body.size()));
   receipt.insert(receipt.end(),body.begin(),body.end());
   QuietProofSignatureAuthorisationV1 authorization;
@@ -56,7 +56,7 @@ static SignatureCapabilityProbe RunSignatureProbe() {
   const bool imported=ImportQuietProofSignatureAuthorisation(request,receipt,&authorization,&receipt_error);
   result.receipt_capability_checked=!imported && receipt_error==(result.capability ?
       QuietProofSignatureAuthorisationError::kInvalidAuthorization : QuietProofSignatureAuthorisationError::kSignatureModeDisabled);
-  QuietProofSignatureEnvelopeMetadataV3 metadata;
+  QuietProofSignatureEnvelopeMetadataV4 metadata;
   metadata.request=request; metadata.proof_created_at=100; metadata.circuit_digest.fill(1); // Test-only identity.
   std::vector<uint8_t> wire;
   QuietProofSignatureEnvelopeError envelope_error;

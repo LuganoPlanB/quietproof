@@ -21,6 +21,7 @@ static constexpr bool kQuietProofSignatureModeEnabled =
 struct QuietProofSignatureChallengeOptions {
   QuietProofChallengeOptions request;
   QuietProofScriptKind signing_kind = static_cast<QuietProofScriptKind>(0xff);
+  QuietProofSigningProfile signing_profile = QuietProofSigningProfile::kBip322EcdsaV1;
 };
 enum class QuietProofSignatureChallengeError {
   kNone, kInvalidOptions, kInvalidClaims, kClock, kRandom, kSignatureModeDisabled
@@ -43,7 +44,7 @@ template <typename Clock, typename Random>
 static inline bool CreateQuietProofSignatureChallengeWithSources(
     const std::vector<QuietProofClaimV1>& claims,
     const QuietProofSignatureChallengeOptions& options,
-    QuietProofSignatureStatementV3* output,
+    QuietProofSignatureStatementV4* output,
     QuietProofSignatureChallengeError* error, Clock clock, Random random) {
   const auto fail = [error](QuietProofSignatureChallengeError code) {
     if (error) *error = code;
@@ -55,14 +56,17 @@ static inline bool CreateQuietProofSignatureChallengeWithSources(
       !QuietProofUtf8(request.verifier) ||
       (request.purpose != "proof-of-control" && request.purpose != "proof-of-funds") ||
       !QuietProofScriptKindValid(options.signing_kind) ||
+      !QuietProofSigningProfileCompatible(options.signing_profile,
+          kQuietProofSigningProfileVersion, options.signing_kind) ||
       !request.lifetime_seconds || request.lifetime_seconds > 86400) {
     return fail(QuietProofSignatureChallengeError::kInvalidOptions);
   }
-  QuietProofSignatureStatementV3 statement;
+  QuietProofSignatureStatementV4 statement;
   statement.network = request.network;
   statement.verifier = request.verifier;
   statement.purpose = request.purpose;
   statement.signing_kind = options.signing_kind;
+  statement.signing_profile = options.signing_profile;
   statement.nonce.fill(1);
   statement.bip322_message_hash = QuietProofBip322MessageHash(
       reinterpret_cast<const uint8_t*>(request.message.data()), request.message.size());
@@ -96,7 +100,7 @@ static inline bool CreateQuietProofSignatureChallengeWithSources(
 static inline bool CreateQuietProofSignatureChallenge(
     const std::vector<QuietProofClaimV1>& claims,
     const QuietProofSignatureChallengeOptions& options,
-    QuietProofSignatureStatementV3* output,
+    QuietProofSignatureStatementV4* output,
     QuietProofSignatureChallengeError* error = nullptr) {
   const auto clock = [](uint64_t* now) {
     const auto current = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());

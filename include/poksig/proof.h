@@ -19,10 +19,10 @@ struct PoKSigParametersV1 {
   static constexpr size_t kDigestOffset = 21;
 };
 inline constexpr char kPoKSigCircuitDomain[] = "QuietProof/signature/circuit/v1";
-inline constexpr char kPoKSigTranscriptDomain[] = "QuietProof/signature/transcript/v1";
+inline constexpr char kPoKSigTranscriptDomain[] = "QuietProof/signature/transcript/v4";
 using PoKSigPublicInputsV1 = std::array<Fp256k1Base::Elt, PoKSigParametersV1::kPublicInputs>;
 
-// Dedicated public proof transport: bytes are a complete QPE1/v3 envelope,
+// Dedicated public proof transport: bytes are a complete QPE1/v4 envelope,
 // never a receipt or a PoKCProofV1. Every operation requires explicit allowance.
 struct PoKSigProofV1 { std::vector<uint8_t> bytes; };
 struct PoKSigOptionsV1 { bool allow_signature_possession = false; };

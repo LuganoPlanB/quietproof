@@ -27,8 +27,8 @@ PROFILE=json.loads((ROOT/'spec/signature-profile-v1.json').read_text())
 CASES=[]
 
 
-def frame(tx,digest,version=1,mode=1,profile=1):
-    return struct.pack('>4sBBH32sI',b'QPA1',version,mode,profile,digest,len(tx))+tx
+def frame(tx,digest,version=4,mode=1,profile=1):
+    return struct.pack('>4sBBHB32sI',b'QPA1',version,mode,profile,1,digest,len(tx))+tx
 
 
 def add(name,request,receipt,expected,positive=None):
@@ -51,19 +51,19 @@ def corpus(request,result):
         add('truncate-'+str(n),canonical,receipt[:n],'malformed_receipt')
     for size in [4096,4097]:
         add('file-bound-'+str(size),canonical,receipt+bytes(size-len(receipt)),'malformed_receipt')
-    add('complete-4096-frame',canonical,frame(bytes(4052),p['d']),'malformed_receipt')
-    add('unknown-id-before-body',canonical,frame(bytes(4052),p['d'],version=2),'unsupported')
-    for declared in [0,1,4052,4053,0xffffffff]:
-        changed=bytearray(receipt); changed[40:44]=declared.to_bytes(4,'big')
+    add('complete-4096-frame',canonical,frame(bytes(4051),p['d']),'malformed_receipt')
+    add('unknown-id-before-body',canonical,frame(bytes(4051),p['d'],version=2),'unsupported')
+    for declared in [0,1,4051,4052,0xffffffff]:
+        changed=bytearray(receipt); changed[41:45]=declared.to_bytes(4,'big')
         add('declared-length',canonical,changed,'malformed_receipt')
-    for offset,value in [(0,0),(4,2),(5,2),(6,1),(7,2)]:
+    for offset,value in [(0,0),(4,2),(5,2),(6,1),(7,255),(8,2)]:
         changed=bytearray(receipt); changed[offset]=value
         add('header-id',canonical,changed,'malformed_receipt' if offset==0 else 'unsupported')
     changed=bytearray(receipt); changed[5]=0
     add('known-mode',canonical,changed,'malformed_receipt')
-    changed=bytearray(receipt); changed[4]=2; changed[40:44]=(0xffffffff).to_bytes(4,'big')
-    add('outer-framing-precedence',canonical,changed,'malformed_receipt')
-    changed=bytearray(receipt); changed[8]^=1
+    changed=bytearray(receipt); changed[4]=2; changed[41:45]=(0xffffffff).to_bytes(4,'big')
+    add('superseded-version-precedence',canonical,changed,'unsupported')
+    changed=bytearray(receipt); changed[9]^=1
     add('wrong-d',canonical,changed,invalid)
     changed_request=copy.deepcopy(request); changed_request['nonce']='ff'+changed_request['nonce'][2:]
     add('changed-expected-request',ref.request_bytes(changed_request),receipt,invalid)
@@ -75,7 +75,7 @@ def corpus(request,result):
     other_profile=ref.virtual_profile(other)
     stale=core.replace_unlock(other_profile['tx'],other['signing_kind'],result['signature'],result['pubkey'])
     add('rewritten-kind-stale-signature',other_profile['request'],frame(ref.serialize(stale),other_profile['d']),invalid)
-    changed=bytearray(canonical); changed[8]=2
+    changed=bytearray(canonical); changed[8]=255
     add('unknown-expected-profile',changed,receipt,'unsupported')
     add('missing-expected',b'',receipt,'malformed_statement')
 

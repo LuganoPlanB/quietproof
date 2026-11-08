@@ -23,12 +23,12 @@ int main(int argc, char** argv) {
   size_t verified = 0;
   for (const auto& row : cases) {
     const auto request = Unhex(row.at("request"));
-    QuietProofSignatureStatementV3 s; CHECK(DecodeQuietProofSignatureStatement(request,&s));
+    QuietProofSignatureStatementV4 s; CHECK(DecodeQuietProofSignatureStatement(request,&s));
     CHECK(!s.has_snapshot);
     QuietProofBrowserPolicy p; p.allow_signature_possession=true;
     p.network=s.network; p.verifier=s.verifier; p.purpose=s.purpose; p.message_hash=s.bip322_message_hash;
     p.expected_request=request; p.max_lifetime=86400; p.max_observation_age=60;
-    QuietProofSignatureEnvelopeMetadataV3 m; m.request=request;
+    QuietProofSignatureEnvelopeMetadataV4 m; m.request=request;
     m.proof_created_at=Now(); m.circuit_digest=PoKSigExpectedCircuitDigest();
     std::vector<uint8_t> wire; CHECK(EncodeQuietProofSignatureEnvelope(m,{1},&wire));
     QuietProofBrowserVerification check;

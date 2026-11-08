@@ -22,6 +22,8 @@ constexpr size_t kQuietProofSignatureWitnessPreimageBytes = 182;
 // Signing/proof entry points must always reconstruct these from their retained
 // expected request. No function accepts this object or a free z as authority.
 struct QuietProofSignatureProfileV1 {
+  QuietProofSigningProfile signing_profile = QuietProofSigningProfile::kBip322EcdsaV1;
+  uint8_t profile_version = kQuietProofSigningProfileVersion;
   QuietProofScriptKind signing_kind = QuietProofScriptKind::kP2wpkh;
   std::array<uint8_t, 20> h{};
   std::array<uint8_t, 32> statement_digest{};
@@ -47,17 +49,20 @@ inline std::array<uint8_t, 32> QuietProofSignatureHash256(const uint8_t* bytes, 
   return output;
 }
 
-// Fixed profile construction only. The sole input is a validated v3 request;
+// Fixed profile construction only. The sole input is a validated v4 request;
 // transaction fields, message, hash, amount and signing parameters are derived.
 // All vector appends have fixed bounds, independent of real claim count/value.
 inline bool BuildQuietProofSignatureProfile(
-    const QuietProofSignatureStatementV3& expected, QuietProofSignatureProfileV1* output) {
+    const QuietProofSignatureStatementV4& expected, QuietProofSignatureProfileV1* output) {
   if (!output || !QuietProofSignatureStatementValid(expected)) return false;
+  if (!QuietProofSigningProfileImplemented(expected.signing_profile)) return false;
   QuietProofSignatureProfileV1 profile;
+  profile.signing_profile = expected.signing_profile;
+  profile.profile_version = expected.profile_version;
   profile.signing_kind = expected.signing_kind;
   profile.h = expected.claims.front().program;
   if (!QuietProofSignatureStatementDigest(expected, &profile.statement_digest)) return false;
-  constexpr char prefix[] = "quietproof:signature:v1:";
+  constexpr char prefix[] = "quietproof:signature:v4:";
   constexpr char hex[] = "0123456789abcdef";
   static_assert(sizeof(prefix) - 1 == 24);
   std::copy_n(prefix, sizeof(prefix) - 1, profile.application_message.begin());
@@ -65,8 +70,6 @@ inline bool BuildQuietProofSignatureProfile(
     profile.application_message[24 + 2 * i] = hex[profile.statement_digest[i] >> 4];
     profile.application_message[25 + 2 * i] = hex[profile.statement_digest[i] & 15];
   }
-  profile.application_message_hash = QuietProofBip322MessageHash(
-      profile.application_message.data(), profile.application_message.size());
   profile.script_code[0] = 0x76; profile.script_code[1] = 0xa9; profile.script_code[2] = 0x14;
   std::copy(profile.h.begin(), profile.h.end(), profile.script_code.begin() + 3);
   profile.script_code[23] = 0x88; profile.script_code[24] = 0xac;
@@ -76,6 +79,14 @@ inline bool BuildQuietProofSignatureProfile(
   } else {
     profile.selected_script.assign(profile.script_code.begin(), profile.script_code.end());
   }
+  if (expected.signing_profile == QuietProofSigningProfile::kBitcoinMessageEcdsaV1) {
+    // The address script is common public information; message signing has no
+    // BIP322 transaction, synthetic prevout or tagged BIP322 message hash.
+    *output = std::move(profile);
+    return true;
+  }
+  profile.application_message_hash = QuietProofBip322MessageHash(
+      profile.application_message.data(), profile.application_message.size());
 
   auto& parent = profile.to_spend;
   parent.reserve(kQuietProofSignatureMaxToSpendBytes);

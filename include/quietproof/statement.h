@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "util/crypto.h"
+#include "quietproof/signature_scheme.h"
 
 namespace proofs {
 
@@ -109,8 +110,6 @@ inline bool QuietProofAllZero(const std::array<uint8_t, N>& value) {
 }
 
 // The public program member remains the compressed-public-key HASH160.
-enum class QuietProofScriptKind : uint8_t { kP2wpkh = 0, kP2pkh = 1 };
-
 inline bool QuietProofScriptKindValid(QuietProofScriptKind kind) {
   return kind == QuietProofScriptKind::kP2wpkh ||
          kind == QuietProofScriptKind::kP2pkh;
@@ -166,14 +165,15 @@ struct QuietProofStatementV1 {
 
 // A separate API type keeps existing scalar callers limited to v1/v2. Passing
 // its base fields to an old encoder/prover is rejected by the old validator.
-constexpr uint8_t kQuietProofSignatureStatementVersion = 3;
+constexpr uint8_t kQuietProofSignatureStatementVersion = 4;
 constexpr uint8_t kQuietProofSignatureMode = 1;
-constexpr uint16_t kQuietProofSignatureProfile = 1;
-struct QuietProofSignatureStatementV3 : QuietProofStatementV1 {
-  QuietProofSignatureStatementV3() {
+struct QuietProofSignatureStatementV4 : QuietProofStatementV1 {
+  QuietProofSignatureStatementV4() {
     statement_version = kQuietProofSignatureStatementVersion;
   }
   QuietProofScriptKind signing_kind = static_cast<QuietProofScriptKind>(0xff);
+  QuietProofSigningProfile signing_profile = QuietProofSigningProfile::kBip322EcdsaV1;
+  uint8_t profile_version = kQuietProofSigningProfileVersion;
 };
 
 inline bool QuietProofUtf8(const std::string& text) {
@@ -492,9 +492,11 @@ inline bool QuietProofStatementDigest(const QuietProofStatementV1& statement,
 }
 
 inline bool QuietProofSignatureStatementValid(
-    const QuietProofSignatureStatementV3& statement) {
+    const QuietProofSignatureStatementV4& statement) {
   if (statement.statement_version != kQuietProofSignatureStatementVersion ||
       !QuietProofScriptKindValid(statement.signing_kind) ||
+      !QuietProofSigningProfileCompatible(statement.signing_profile,
+                                         statement.profile_version, statement.signing_kind) ||
       statement.verifier.size() > kQuietProofMaxVerifierBytes ||
       statement.purpose.size() > kQuietProofMaxPurposeBytes ||
       statement.claims.empty() || statement.claims.size() > kQuietProofMaxClaims ||
@@ -512,16 +514,18 @@ inline bool QuietProofSignatureStatementValid(
 }
 
 inline bool EncodeQuietProofSignatureStatement(
-    const QuietProofSignatureStatementV3& statement, std::vector<uint8_t>* output) {
+    const QuietProofSignatureStatementV4& statement, std::vector<uint8_t>* output) {
   if (!output || !QuietProofSignatureStatementValid(statement)) return false;
   auto typed = static_cast<const QuietProofStatementV1&>(statement);
   typed.statement_version = 2;
   std::vector<uint8_t> bytes;
   if (!EncodeQuietProofStatement(typed, &bytes) ||
-      bytes.size() > kQuietProofMaxStatementBytes - 4) return false;
+      bytes.size() > kQuietProofMaxStatementBytes - 5) return false;
   bytes[4] = kQuietProofSignatureStatementVersion;
-  bytes.insert(bytes.begin() + 6, {kQuietProofSignatureMode, 0,
-      static_cast<uint8_t>(kQuietProofSignatureProfile),
+  const auto profile = static_cast<uint16_t>(statement.signing_profile);
+  bytes.insert(bytes.begin() + 6, {kQuietProofSignatureMode,
+      static_cast<uint8_t>(profile >> 8), static_cast<uint8_t>(profile),
+      statement.profile_version,
       static_cast<uint8_t>(statement.signing_kind)});
   *output = std::move(bytes);
   return true;
@@ -530,33 +534,37 @@ inline bool EncodeQuietProofSignatureStatement(
 // Parsing is bounded format inspection, not selection/permission to use the
 // signature capability. Operation entry points must enforce that separately.
 inline bool DecodeQuietProofSignatureStatement(
-    const std::vector<uint8_t>& bytes, QuietProofSignatureStatementV3* statement,
+    const std::vector<uint8_t>& bytes, QuietProofSignatureStatementV4* statement,
     QuietProofDecodeError* error = nullptr) {
   if (error) *error = QuietProofDecodeError::kMalformed;
-  if (!statement || bytes.size() < 10 || bytes.size() > kQuietProofMaxStatementBytes ||
+  if (!statement || bytes.size() < 5 || bytes.size() > kQuietProofMaxStatementBytes ||
       std::memcmp(bytes.data(), "QPS1", 4) != 0) return false;
   const auto unsupported = [error]() {
     if (error) *error = QuietProofDecodeError::kUnsupported;
     return false;
   };
-  if (bytes[4] != 1 && bytes[4] != 2 && bytes[4] != 3) return unsupported();
-  if (bytes[4] != 3) return false;
-  const auto kind = static_cast<QuietProofScriptKind>(bytes[9]);
+  if (bytes[4] != kQuietProofSignatureStatementVersion) return unsupported();
+  if (bytes.size() < 11) return false;
+  const auto profile = static_cast<QuietProofSigningProfile>((uint16_t(bytes[7]) << 8) | bytes[8]);
+  const auto kind = static_cast<QuietProofScriptKind>(bytes[10]);
   if (!QuietProofNetworkValid(static_cast<QuietProofNetwork>(bytes[5])) ||
-      bytes[6] > 1 || bytes[7] != 0 || bytes[8] != kQuietProofSignatureProfile ||
+      bytes[6] > 1 || !QuietProofSigningProfileDescriptorFor(profile, bytes[9]) ||
       !QuietProofScriptKindValid(kind)) return unsupported();
+  if (!QuietProofSigningProfileCompatible(profile, bytes[9], kind)) return unsupported();
   std::vector<uint8_t> typed(bytes.begin(), bytes.begin() + 6);
   typed[4] = 2;
-  typed.insert(typed.end(), bytes.begin() + 10, bytes.end());
+  typed.insert(typed.end(), bytes.begin() + 11, bytes.end());
   QuietProofStatementV1 common;
   if (!DecodeQuietProofStatement(typed, &common, error)) return false;
   if (error) *error = QuietProofDecodeError::kMalformed;
   // Check known incompatibility after unknown nested script-kind IDs.
   if (bytes[6] != kQuietProofSignatureMode) return false;
-  QuietProofSignatureStatementV3 decoded;
+  QuietProofSignatureStatementV4 decoded;
   static_cast<QuietProofStatementV1&>(decoded) = std::move(common);
   decoded.statement_version = kQuietProofSignatureStatementVersion;
   decoded.signing_kind = kind;
+  decoded.signing_profile = profile;
+  decoded.profile_version = bytes[9];
   if (!QuietProofSignatureStatementValid(decoded)) return false;
   *statement = std::move(decoded);
   if (error) *error = QuietProofDecodeError::kNone;
@@ -564,10 +572,10 @@ inline bool DecodeQuietProofSignatureStatement(
 }
 
 inline bool QuietProofSignatureStatementDigest(
-    const QuietProofSignatureStatementV3& statement, std::array<uint8_t, 32>* digest) {
+    const QuietProofSignatureStatementV4& statement, std::array<uint8_t, 32>* digest) {
   std::vector<uint8_t> bytes;
   if (!digest || !EncodeQuietProofSignatureStatement(statement, &bytes)) return false;
-  *digest = QuietProofTaggedHash("QuietProof/statement/v3", bytes.data(), bytes.size());
+  *digest = QuietProofTaggedHash("QuietProof/statement/v4", bytes.data(), bytes.size());
   return true;
 }
 

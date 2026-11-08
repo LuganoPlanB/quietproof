@@ -8,7 +8,7 @@
 namespace proofs {
 // Fixed-profile address encoding for offline request inspection/import. Public
 // network identity remains in the request: testnet3/4 and signet share addresses.
-inline std::string QuietProofSignatureAddress(const QuietProofSignatureStatementV3& request) {
+inline std::string QuietProofSignatureAddress(const QuietProofSignatureStatementV4& request) {
   if (!QuietProofSignatureStatementValid(request)) return {};
   const auto& program = request.claims.front().program;
   if (request.signing_kind == QuietProofScriptKind::kP2pkh) {

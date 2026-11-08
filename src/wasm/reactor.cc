@@ -118,7 +118,7 @@ extern "C" uint32_t quietproof_wasm_prepare(const uint8_t* proof, uint32_t proof
   if (!realtime(&now)) return fail("Browser clock unavailable", 3);
   verification = std::make_unique<proofs::QuietProofBrowserVerification>();
   bool prepared;
-  if (proof_size >= 5 && proof[4] == 3) {
+  if (proof_size >= 5 && proof[4] == proofs::kQuietProofSignatureStatementVersion) {
     prepared = proofs::PrepareQuietProofBrowserSignature(verification.get(),
         std::vector<uint8_t>(proof, proof + proof_size), std::move(expected), now);
   } else {
@@ -171,7 +171,7 @@ extern "C" uint32_t quietproof_wasm_create_request(const uint8_t* input,
     if (!proofs::DecodeQuietProofBrowserSignatureOptions(bytes, &options, &claims))
       return fail("Malformed signature request options");
     if (!proofs::kQuietProofSignatureModeEnabled) return fail("signature_mode_disabled", 5);
-    proofs::QuietProofSignatureStatementV3 statement;
+    proofs::QuietProofSignatureStatementV4 statement;
     proofs::QuietProofSignatureChallengeError error;
     if (!proofs::quietproof_detail::CreateQuietProofSignatureChallengeWithSources(
           claims, options, &statement, &error, realtime,

@@ -144,8 +144,8 @@ class SignatureCodecReferenceTest(unittest.TestCase):
         for vector in FIXTURE['vectors']:
             raw = bytes.fromhex(vector['request_hex'])
             for offset, value, expected_code, reason in [
-                    (4, 4, 66, 'unsupported'), (6, 2, 66, 'unsupported'),
-                    (8, 2, 66, 'unsupported'), (9, 2, 66, 'unsupported'),
+                    (4, 3, 66, 'unsupported'), (6, 2, 66, 'unsupported'),
+                    (8, 255, 66, 'unsupported'), (9, 2, 66, 'unsupported'),
                     (6, 0, 65, 'malformed_statement')]:
                 changed = bytearray(raw)
                 changed[offset] = value

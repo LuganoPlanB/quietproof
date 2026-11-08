@@ -83,7 +83,7 @@ void TestFixture(const nlohmann::json& vector) {
                                                  kQuietProofSignatureLegacyPreimageBytes), "profile bounds differ");
     Require(inputs.profile.application_message_hash != inputs.profile.statement_digest,
         "application message hash confused with statement digest");
-    QuietProofSignatureStatementV3 statement;
+    QuietProofSignatureStatementV4 statement;
     Require(DecodeQuietProofSignatureStatement(request, &statement) &&
         statement.bip322_message_hash != inputs.profile.application_message_hash,
         "user commitment confused with application message hash");
@@ -114,15 +114,15 @@ void TestFixture(const nlohmann::json& vector) {
   auto changed = request; changed.push_back(0);
   Reject(changed, QuietProofSignatureDigestError::kMalformedStatement);
   Reject(std::vector<uint8_t>(4097,0), QuietProofSignatureDigestError::kMalformedStatement);
-  for (size_t offset : {size_t{4},size_t{5},size_t{6},size_t{7},size_t{8},size_t{9}}) {
+  for (size_t offset : {size_t{4},size_t{5},size_t{6},size_t{7},size_t{8},size_t{9},size_t{10}}) {
     changed = request; changed[offset] = 0xff;
     Reject(changed, QuietProofSignatureDigestError::kUnsupported);
   }
   changed = request; changed[6] = 0;
   Reject(changed, QuietProofSignatureDigestError::kMalformedStatement);
   // A known old typed request cannot select this signature derivation API.
-  changed = request; changed.erase(changed.begin()+6,changed.begin()+10); changed[4] = 2;
-  Reject(changed, QuietProofSignatureDigestError::kMalformedStatement);
+  changed = request; changed.erase(changed.begin()+6,changed.begin()+11); changed[4] = 2;
+  Reject(changed, QuietProofSignatureDigestError::kUnsupported);
   Require(!DeriveQuietProofSignatureInputs(request,nullptr), "null output accepted");
 }
 }  // namespace

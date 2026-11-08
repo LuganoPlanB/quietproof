@@ -6,20 +6,21 @@
 #include "poksig/proof.h"
 
 namespace proofs {
-constexpr size_t kQuietProofSignatureEnvelopeOverheadBytes = 70;
+constexpr size_t kQuietProofSignatureEnvelopeOverheadBytes = 71;
 constexpr size_t kQuietProofSignatureMaxProofBytes = size_t{128} * 1024 * 1024;
-constexpr size_t kQuietProofSignatureMaxEnvelopeBytes = 134221894;
+constexpr size_t kQuietProofSignatureMaxEnvelopeBytes = 134221895;
 static_assert(kQuietProofSignatureMaxEnvelopeBytes ==
     kQuietProofSignatureEnvelopeOverheadBytes + kQuietProofMaxStatementBytes +
     kQuietProofSignatureMaxProofBytes);
 
 // Format metadata only: neither an approved identity nor a verified proof.
 // No witness, h, z or proof allocation is retained by inspection.
-struct QuietProofSignatureEnvelopeMetadataV3 {
+struct QuietProofSignatureEnvelopeMetadataV4 {
   std::vector<uint8_t> request;
   uint64_t proof_created_at = 0; // Local prover start, never signing time.
   uint8_t mode = kQuietProofSignatureMode;
-  uint16_t profile = kQuietProofSignatureProfile;
+  uint16_t profile = static_cast<uint16_t>(QuietProofSigningProfile::kBip322EcdsaV1);
+  uint8_t profile_version = kQuietProofSigningProfileVersion;
   uint16_t circuit_family = PoKSigParametersV1::kFamily;
   std::array<uint8_t, 32> circuit_digest{};
   uint32_t circuit_version = PoKSigParametersV1::kCircuitVersion;
@@ -54,13 +55,14 @@ inline uint64_t SignatureEnvelopeNumber(const uint8_t* bytes, size_t size) {
   for (size_t i = 0; i < size; ++i) value = (value << 8) | bytes[i];
   return value;
 }
-inline bool SignatureEnvelopeTupleKnown(const QuietProofSignatureEnvelopeMetadataV3& m) {
-  return m.mode <= 1 && m.profile == kQuietProofSignatureProfile &&
+inline bool SignatureEnvelopeTupleKnown(const QuietProofSignatureEnvelopeMetadataV4& m) {
+  return m.mode <= 1 && QuietProofSigningProfileDescriptorFor(
+      static_cast<QuietProofSigningProfile>(m.profile), m.profile_version) &&
       m.circuit_family == PoKSigParametersV1::kFamily &&
       m.circuit_version == PoKSigParametersV1::kCircuitVersion &&
       m.rate == PoKSigParametersV1::kRate && m.queries == PoKSigParametersV1::kQueries;
 }
-inline bool SignatureEnvelopeTimeValid(const QuietProofSignatureStatementV3& s, uint64_t created) {
+inline bool SignatureEnvelopeTimeValid(const QuietProofSignatureStatementV4& s, uint64_t created) {
   return created != 0 && created >= s.not_before && created < s.expires_at;
 }
 } // namespace quietproof_detail
@@ -69,7 +71,7 @@ inline bool SignatureEnvelopeTimeValid(const QuietProofSignatureStatementV3& s, 
 // are checked by subtraction before any nested allocation. The proof is never
 // copied or parsed. Inspection grants neither capability nor mode allowance.
 inline bool InspectQuietProofSignatureEnvelope(
-    const uint8_t* bytes, size_t size, QuietProofSignatureEnvelopeMetadataV3* output,
+    const uint8_t* bytes, size_t size, QuietProofSignatureEnvelopeMetadataV4* output,
     QuietProofSignatureEnvelopeError* error = nullptr) {
   const auto fail = [error](QuietProofSignatureEnvelopeError code) {
     if (error) *error = code;
@@ -81,44 +83,41 @@ inline bool InspectQuietProofSignatureEnvelope(
       size > kQuietProofSignatureMaxEnvelopeBytes || std::memcmp(bytes, "QPE1", 4))
     return fail(QuietProofSignatureEnvelopeError::kMalformedStatement);
   const uint8_t version = bytes[4];
+  if (version != kQuietProofSignatureStatementVersion)
+    return fail(QuietProofSignatureEnvelopeError::kUnsupported);
   const size_t statement_size = quietproof_detail::SignatureEnvelopeNumber(bytes + 5, 4);
   if (!statement_size || statement_size > kQuietProofMaxStatementBytes ||
       statement_size > size - kQuietProofSignatureEnvelopeOverheadBytes)
     return fail(QuietProofSignatureEnvelopeError::kMalformedStatement);
   const size_t tail = 9 + statement_size; // Safe after the whole-size subtraction.
-  QuietProofSignatureEnvelopeMetadataV3 metadata;
+  QuietProofSignatureEnvelopeMetadataV4 metadata;
   metadata.proof_created_at = quietproof_detail::SignatureEnvelopeNumber(bytes + tail, 8);
   metadata.mode = bytes[tail + 8];
   metadata.profile = quietproof_detail::SignatureEnvelopeNumber(bytes + tail + 9, 2);
-  metadata.circuit_family = quietproof_detail::SignatureEnvelopeNumber(bytes + tail + 11, 2);
-  std::copy_n(bytes + tail + 13, 32, metadata.circuit_digest.begin());
-  metadata.circuit_version = quietproof_detail::SignatureEnvelopeNumber(bytes + tail + 45, 4);
-  metadata.rate = quietproof_detail::SignatureEnvelopeNumber(bytes + tail + 49, 4);
-  metadata.queries = quietproof_detail::SignatureEnvelopeNumber(bytes + tail + 53, 4);
-  metadata.proof_size = quietproof_detail::SignatureEnvelopeNumber(bytes + tail + 57, 4);
-  metadata.proof_offset = tail + 61;
+  metadata.profile_version = bytes[tail + 11];
+  metadata.circuit_family = quietproof_detail::SignatureEnvelopeNumber(bytes + tail + 12, 2);
+  std::copy_n(bytes + tail + 14, 32, metadata.circuit_digest.begin());
+  metadata.circuit_version = quietproof_detail::SignatureEnvelopeNumber(bytes + tail + 46, 4);
+  metadata.rate = quietproof_detail::SignatureEnvelopeNumber(bytes + tail + 50, 4);
+  metadata.queries = quietproof_detail::SignatureEnvelopeNumber(bytes + tail + 54, 4);
+  metadata.proof_size = quietproof_detail::SignatureEnvelopeNumber(bytes + tail + 58, 4);
+  metadata.proof_offset = tail + 62;
   if (!metadata.proof_size || metadata.proof_size > kQuietProofSignatureMaxProofBytes ||
       metadata.proof_size != size - metadata.proof_offset)
     return fail(QuietProofSignatureEnvelopeError::kMalformedStatement);
   // All safe framing precedes ID dispatch, which precedes known incompatibility.
-  if ((version != 1 && version != 2 && version != 3) ||
-      !quietproof_detail::SignatureEnvelopeTupleKnown(metadata))
+  if (!quietproof_detail::SignatureEnvelopeTupleKnown(metadata))
     return fail(QuietProofSignatureEnvelopeError::kUnsupported);
   metadata.request.assign(bytes + 9, bytes + tail);
-  QuietProofSignatureStatementV3 statement;
+  QuietProofSignatureStatementV4 statement;
   QuietProofDecodeError nested = QuietProofDecodeError::kMalformed;
-  if (statement_size >= 5 && metadata.request[4] != 3) {
-    QuietProofStatementV1 old;
-    DecodeQuietProofStatement(metadata.request, &old, &nested);
-    return fail(nested == QuietProofDecodeError::kUnsupported ?
-        QuietProofSignatureEnvelopeError::kUnsupported : QuietProofSignatureEnvelopeError::kMalformedStatement);
-  }
   if (!DecodeQuietProofSignatureStatement(metadata.request, &statement, &nested))
     return fail(nested == QuietProofDecodeError::kUnsupported ?
         QuietProofSignatureEnvelopeError::kUnsupported : QuietProofSignatureEnvelopeError::kMalformedStatement);
-  if (version != 3 || metadata.mode != kQuietProofSignatureMode ||
+  if (metadata.mode != kQuietProofSignatureMode ||
       metadata.mode != metadata.request[6] || metadata.profile !=
           quietproof_detail::SignatureEnvelopeNumber(metadata.request.data() + 7, 2) ||
+      metadata.profile_version != statement.profile_version ||
       QuietProofAllZero(metadata.circuit_digest) ||
       !quietproof_detail::SignatureEnvelopeTimeValid(statement, metadata.proof_created_at))
     return fail(QuietProofSignatureEnvelopeError::kMalformedStatement);
@@ -127,7 +126,7 @@ inline bool InspectQuietProofSignatureEnvelope(
   return true;
 }
 inline bool InspectQuietProofSignatureEnvelope(
-    const std::vector<uint8_t>& bytes, QuietProofSignatureEnvelopeMetadataV3* output,
+    const std::vector<uint8_t>& bytes, QuietProofSignatureEnvelopeMetadataV4* output,
     QuietProofSignatureEnvelopeError* error = nullptr) {
   return InspectQuietProofSignatureEnvelope(bytes.data(), bytes.size(), output, error);
 }
@@ -135,21 +134,24 @@ inline bool InspectQuietProofSignatureEnvelope(
 // Transport codec only, including for unapproved nonzero identities. This does
 // not select a mode or offer support/acceptance. The acceptance gate is below.
 inline bool EncodeQuietProofSignatureEnvelope(
-    const QuietProofSignatureEnvelopeMetadataV3& metadata, const std::vector<uint8_t>& proof,
+    const QuietProofSignatureEnvelopeMetadataV4& metadata, const std::vector<uint8_t>& proof,
     std::vector<uint8_t>* output) {
   if (!output || metadata.request.empty() || metadata.request.size() > kQuietProofMaxStatementBytes ||
       proof.empty() || proof.size() > kQuietProofSignatureMaxProofBytes) return false;
-  QuietProofSignatureStatementV3 statement;
+  QuietProofSignatureStatementV4 statement;
   if (!quietproof_detail::SignatureEnvelopeTupleKnown(metadata) ||
       metadata.mode != kQuietProofSignatureMode || QuietProofAllZero(metadata.circuit_digest) ||
       !DecodeQuietProofSignatureStatement(metadata.request, &statement) ||
+      metadata.profile != static_cast<uint16_t>(statement.signing_profile) ||
+      metadata.profile_version != statement.profile_version ||
       !quietproof_detail::SignatureEnvelopeTimeValid(statement, metadata.proof_created_at)) return false;
-  std::vector<uint8_t> bytes{'Q','P','E','1',3};
+  std::vector<uint8_t> bytes{'Q','P','E','1',kQuietProofSignatureStatementVersion};
   bytes.reserve(kQuietProofSignatureEnvelopeOverheadBytes + metadata.request.size() + proof.size());
   QuietProofAppendU32(&bytes, static_cast<uint32_t>(metadata.request.size()));
   bytes.insert(bytes.end(), metadata.request.begin(), metadata.request.end());
   QuietProofAppendU64(&bytes, metadata.proof_created_at);
   bytes.push_back(metadata.mode); QuietProofAppendU16(&bytes, metadata.profile);
+  bytes.push_back(metadata.profile_version);
   QuietProofAppendU16(&bytes, metadata.circuit_family);
   bytes.insert(bytes.end(), metadata.circuit_digest.begin(), metadata.circuit_digest.end());
   QuietProofAppendU32(&bytes, metadata.circuit_version); QuietProofAppendU32(&bytes, metadata.rate);
@@ -163,12 +165,16 @@ inline bool EncodeQuietProofSignatureEnvelope(
 // the dedicated verifier additionally requires allowance and expected request.
 static inline bool QuietProofSignatureEnvelopeSupported(
     const std::vector<uint8_t>& bytes, QuietProofSignatureEnvelopeError* error = nullptr) {
-  QuietProofSignatureEnvelopeMetadataV3 metadata;
+  QuietProofSignatureEnvelopeMetadataV4 metadata;
   if (!InspectQuietProofSignatureEnvelope(bytes, &metadata, error)) return false;
 #if !defined(QUIETPROOF_HAS_SIGNATURE_MODE) || !QUIETPROOF_HAS_SIGNATURE_MODE
   if (error) *error = QuietProofSignatureEnvelopeError::kSignatureModeDisabled;
   return false;
 #endif
+  if (!QuietProofSigningProfileImplemented(static_cast<QuietProofSigningProfile>(metadata.profile))) {
+    if (error) *error = QuietProofSignatureEnvelopeError::kUnsupported;
+    return false;
+  }
   if (!PoKSigCircuitIdentityApproved(metadata.circuit_digest)) {
     if (error) *error = QuietProofSignatureEnvelopeError::kUnapprovedCircuit;
     return false;
@@ -183,13 +189,13 @@ namespace quietproof_detail {
 // Even here d/h/z are derived from the expected request, never caller inputs.
 static inline bool SignatureTranscriptBinding(
     const std::vector<uint8_t>& expected_request,
-    const QuietProofSignatureEnvelopeMetadataV3& metadata, uint64_t now,
-    std::array<uint8_t, 146>* output, QuietProofSignatureEnvelopeError* error = nullptr) {
+    const QuietProofSignatureEnvelopeMetadataV4& metadata, uint64_t now,
+    std::array<uint8_t, 147>* output, QuietProofSignatureEnvelopeError* error = nullptr) {
   const auto fail = [error](QuietProofSignatureEnvelopeError code) {
     if (error) *error = code;
     return false;
   };
-  QuietProofSignatureStatementV3 statement;
+  QuietProofSignatureStatementV4 statement;
   QuietProofDecodeError nested;
   if (!output) return fail(QuietProofSignatureEnvelopeError::kMalformedStatement);
   if (!DecodeQuietProofSignatureStatement(expected_request, &statement, &nested))
@@ -199,6 +205,8 @@ static inline bool SignatureTranscriptBinding(
     return fail(QuietProofSignatureEnvelopeError::kInvalidProof);
   if (!SignatureEnvelopeTupleKnown(metadata)) return fail(QuietProofSignatureEnvelopeError::kUnsupported);
   if (metadata.mode != kQuietProofSignatureMode || QuietProofAllZero(metadata.circuit_digest) ||
+      metadata.profile != static_cast<uint16_t>(statement.signing_profile) ||
+      metadata.profile_version != statement.profile_version ||
       !SignatureEnvelopeTimeValid(statement, metadata.proof_created_at))
     return fail(QuietProofSignatureEnvelopeError::kMalformedStatement);
   QuietProofSignatureInputsV1 inputs;
@@ -206,9 +214,10 @@ static inline bool SignatureTranscriptBinding(
   if (!DeriveQuietProofSignatureInputs(expected_request, &inputs, &derived))
     return fail(derived == QuietProofSignatureDigestError::kSignatureModeDisabled ?
         QuietProofSignatureEnvelopeError::kSignatureModeDisabled : QuietProofSignatureEnvelopeError::kMalformedStatement);
-  std::vector<uint8_t> binding{'Q','P','E','1',3,metadata.mode};
-  binding.reserve(146);
-  QuietProofAppendU16(&binding, metadata.profile); QuietProofAppendU16(&binding, metadata.circuit_family);
+  std::vector<uint8_t> binding{'Q','P','E','1',kQuietProofSignatureStatementVersion,metadata.mode};
+  binding.reserve(147);
+  QuietProofAppendU16(&binding, metadata.profile); binding.push_back(metadata.profile_version);
+  QuietProofAppendU16(&binding, metadata.circuit_family);
   binding.insert(binding.end(), inputs.profile.statement_digest.begin(), inputs.profile.statement_digest.end());
   binding.insert(binding.end(), inputs.profile.h.begin(), inputs.profile.h.end());
   binding.insert(binding.end(), inputs.z.begin(), inputs.z.end());
@@ -227,9 +236,9 @@ static inline bool PoKSigTranscriptSeed(
     const std::vector<uint8_t>& expected_request, const std::vector<uint8_t>& bytes,
     uint64_t now, std::array<uint8_t, 32>* output,
     QuietProofSignatureEnvelopeError* error = nullptr) {
-  QuietProofSignatureEnvelopeMetadataV3 metadata;
+  QuietProofSignatureEnvelopeMetadataV4 metadata;
   if (!InspectQuietProofSignatureEnvelope(bytes, &metadata, error)) return false;
-  QuietProofSignatureStatementV3 expected;
+  QuietProofSignatureStatementV4 expected;
   QuietProofDecodeError nested;
   if (!DecodeQuietProofSignatureStatement(expected_request, &expected, &nested)) {
     if (error) *error = nested == QuietProofDecodeError::kUnsupported ?
@@ -237,7 +246,7 @@ static inline bool PoKSigTranscriptSeed(
     return false;
   }
   if (!QuietProofSignatureEnvelopeSupported(bytes, error)) return false;
-  std::array<uint8_t, 146> binding;
+  std::array<uint8_t, 147> binding;
   if (!output) {
     if (error) *error = QuietProofSignatureEnvelopeError::kMalformedStatement;
     return false;
