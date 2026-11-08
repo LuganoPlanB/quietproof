@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
+import { instantiateReactor } from '../web/wasm/runtime.mjs';
 
 const bytes = readFileSync(process.argv[2]);
 const module = new WebAssembly.Module(bytes);
@@ -16,6 +17,7 @@ for (const name of ['random_get', 'clock_time_get', 'fd_write', 'fd_seek', 'fd_c
 }
 const expectedExports = ['memory', '_initialize', 'quietproof_wasm_abi_version',
   'quietproof_wasm_capabilities',
+  'quietproof_wasm_profile_capabilities',
   'quietproof_wasm_alloc', 'quietproof_wasm_free', 'quietproof_wasm_smoke',
   'quietproof_wasm_create_request', 'quietproof_wasm_inspect',
   'quietproof_wasm_result_data', 'quietproof_wasm_result_size',
@@ -54,4 +56,5 @@ while (offset < bytes.length) {
   offset = end;
 }
 assert(memory, 'missing memory section');
-console.log(JSON.stringify({ imports, exports, memory }, null, 2));
+const reactor = await instantiateReactor(bytes);
+console.log(JSON.stringify({ imports, exports, memory, capabilities: reactor.capabilities }, null, 2));

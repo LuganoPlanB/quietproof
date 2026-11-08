@@ -30,10 +30,12 @@ export async function probeProofCapabilities({ wasmUrl, signal, fetch: fetcher =
     });
     check();
     if (ready.type !== 'ready' || ready.abiVersion !== 2 ||
-        typeof ready.capabilities?.signaturePossession !== 'boolean')
+        typeof ready.capabilities?.signaturePossession !== 'boolean' ||
+        !Array.isArray(ready.capabilities?.signatureProfiles) || !ready.capabilities.signatureProfiles.length)
       throw new Error('This verifier did not report its proof capabilities.');
     return Object.freeze({ keyKnowledge: ready.capabilities.keyKnowledge === true,
-      signaturePossession: ready.capabilities.signaturePossession === true });
+      signaturePossession: ready.capabilities.signaturePossession === true,
+      signatureProfiles: ready.capabilities.signatureProfiles ?? [] });
   } catch (error) {
     if (timedOut) throw new Error('Capability check timed out. Retry with the local verifier available.');
     throw error;

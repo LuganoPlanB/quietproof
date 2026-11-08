@@ -46,20 +46,54 @@ inline bool DecodeQuietProofBrowserOptions(
   return true;
 }
 
-// Additive request-options transport. QWC1 and all old request bytes stay
-// unchanged. QWC2 explicitly selects mode 1 and its supported signing kind.
+// QWC3 selects mode, profile ID/version and signing kind explicitly. QWC2
+// omitted the procedure and is unsupported; it must not acquire a new default.
 inline bool DecodeQuietProofBrowserSignatureOptions(
     const std::vector<uint8_t>& bytes, QuietProofSignatureChallengeOptions* options,
     std::vector<QuietProofClaimV1>* claims) {
-  if (!options || bytes.size() < 7 || bytes.size() > kQuietProofBrowserMaxOptionsBytes ||
-      std::memcmp(bytes.data(), "QWC2", 4) || bytes[4] != 1 || bytes[5] > 1) return false;
+  if (!options || bytes.size() < 10 || bytes.size() > kQuietProofBrowserMaxOptionsBytes ||
+      std::memcmp(bytes.data(), "QWC3", 4) || bytes[4] != 1 || bytes[8] > 1) return false;
+  const auto profile = static_cast<QuietProofSigningProfile>((uint16_t(bytes[5]) << 8) | bytes[6]);
+  const auto kind = static_cast<QuietProofScriptKind>(bytes[8]);
+  if (!QuietProofSigningProfileCompatible(profile, bytes[7], kind)) return false;
   std::vector<uint8_t> common{'Q','W','C','1'};
-  common.insert(common.end(), bytes.begin()+6, bytes.end());
+  common.insert(common.end(), bytes.begin()+9, bytes.end());
   QuietProofSignatureChallengeOptions out;
   if (!DecodeQuietProofBrowserOptions(common, &out.request, claims)) return false;
-  out.signing_kind = static_cast<QuietProofScriptKind>(bytes[5]);
+  out.signing_kind = kind;
+  out.signing_profile = profile;
   *options = std::move(out);
   return true;
+}
+
+// Public presentation/selection data, derived solely from the closed library
+// table. Recognized formats remain inspectable in disabled builds; the separate
+// enabled capability is required for request creation and verification.
+inline void QuietProofBrowserProfileCapabilities(std::vector<uint8_t>* output) {
+  output->assign({'Q','S','C','1',uint8_t(kQuietProofSigningProfiles.size())});
+  const auto text = [output](const char* value) {
+    const size_t size = std::strlen(value);
+    QuietProofAppendU16(output, size);
+    output->insert(output->end(), value, value + size);
+  };
+  for (const auto& descriptor : kQuietProofSigningProfiles) {
+    QuietProofAppendU16(output, static_cast<uint16_t>(descriptor.id));
+    output->push_back(descriptor.version);
+    uint8_t compatible = 0, defaults = 0;
+    for (uint8_t id = 0; id < 2; ++id) {
+      const auto kind = static_cast<QuietProofScriptKind>(id);
+      if (QuietProofSigningProfileCompatible(descriptor.id, descriptor.version, kind)) compatible |= 1u << id;
+      QuietProofSigningProfile selected;
+      if (QuietProofDefaultSigningProfile(kind, &selected) && selected == descriptor.id) defaults |= 1u << id;
+    }
+    output->push_back(compatible); output->push_back(defaults);
+    text(descriptor.name); text(descriptor.label);
+    for (uint8_t id = 0; id < 2; ++id) {
+      const auto kind = static_cast<QuietProofScriptKind>(id);
+      text(QuietProofSigningProfileCompatible(descriptor.id, descriptor.version, kind) ?
+          QuietProofSigningInstructions(descriptor.id, kind) : "");
+    }
+  }
 }
 
 // QWI1: envelope version u8 (0 for request), proof-created-at u64 (0 if

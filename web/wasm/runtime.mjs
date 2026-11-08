@@ -1,5 +1,5 @@
 import { encodeRequestOptions, decodeInspection, MAX_ENVELOPE_BYTES,
-  encodePolicy, encodeEvidence, decodeVerification } from './codec.mjs';
+  encodePolicy, encodeEvidence, decodeVerification, decodeProfileCapabilities } from './codec.mjs';
 // Minimal WASI preview1 adapter. Time is an untrusted browser observation.
 const EFAULT = 21;
 const EINVAL = 28;
@@ -7,6 +7,7 @@ const EIO = 29;
 const IMPORTS = ['clock_time_get', 'fd_close', 'fd_seek', 'fd_write', 'random_get'];
 const EXPORTS = ['_initialize', 'memory', 'quietproof_wasm_abi_version',
   'quietproof_wasm_capabilities',
+  'quietproof_wasm_profile_capabilities',
   'quietproof_wasm_alloc', 'quietproof_wasm_free', 'quietproof_wasm_smoke',
   'quietproof_wasm_create_request', 'quietproof_wasm_inspect',
   'quietproof_wasm_result_data', 'quietproof_wasm_result_size',
@@ -174,10 +175,11 @@ export async function instantiateReactor(bytes) {
   function operation(name, buffer, maximum, ...args) {
     return input(buffer, maximum, (pointer, size) => output(invoke(name, pointer, size, ...args)));
   }
+  const signatureProfiles = decodeProfileCapabilities(output(invoke('quietproof_wasm_profile_capabilities')));
   return {
     exports: instance.exports,
     capabilities: Object.freeze({ keyKnowledge: true,
-      signaturePossession: Boolean(capabilities & 2) }),
+      signaturePossession: Boolean(capabilities & 2), signatureProfiles }),
     reset() { invoke('quietproof_wasm_reset'); },
     prepare(proof, policy) {
       invoke('quietproof_wasm_reset');
@@ -185,16 +187,16 @@ export async function instantiateReactor(bytes) {
       return input(expected, 8192, (policyPointer, policySize) =>
         input(proof, MAX_ENVELOPE_BYTES, (proofPointer, proofSize) =>
           decodeVerification(output(invoke('quietproof_wasm_prepare',
-            proofPointer, proofSize, policyPointer, policySize)))));
+            proofPointer, proofSize, policyPointer, policySize)), signatureProfiles)));
     },
     verify(context) {
       integerContext(context);
-      return decodeVerification(output(invoke('quietproof_wasm_verify', context)));
+      return decodeVerification(output(invoke('quietproof_wasm_verify', context)), signatureProfiles);
     },
     evaluate(context, evidence) {
       integerContext(context);
       return input(encodeEvidence(evidence), 4096, (pointer, size) =>
-        decodeVerification(output(invoke('quietproof_wasm_evaluate', context, pointer, size))));
+        decodeVerification(output(invoke('quietproof_wasm_evaluate', context, pointer, size)), signatureProfiles));
     },
     createRequest(options) {
       return operation('quietproof_wasm_create_request', encodeRequestOptions(options), 8192);
@@ -202,7 +204,7 @@ export async function instantiateReactor(bytes) {
     inspect(bytes, proof = false) {
       if (typeof proof !== 'boolean') throw new Error('Invalid inspection kind.');
       return decodeInspection(operation('quietproof_wasm_inspect', bytes,
-        proof ? MAX_ENVELOPE_BYTES : 4096, proof ? 1 : 0));
+        proof ? MAX_ENVELOPE_BYTES : 4096, proof ? 1 : 0), signatureProfiles);
     },
     smoke() {
       const pointer = invoke('quietproof_wasm_alloc', 72);

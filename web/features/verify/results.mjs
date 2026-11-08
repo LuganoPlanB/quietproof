@@ -34,7 +34,9 @@ export function publicResultReport(result) {
       qualifiedAtCheck: result.cryptography === 'valid' && result.policy === 'matched' && result.fundsEvidence?.qualifiedAtCheck === true,
       trust: 'trusted_explorer_non_atomic', validatedNode: false },
     claim: metadata ? { proofMode: metadata.proofMode ?? 'key-knowledge',
-      signatureProfile: metadata.signatureProfile ?? null, signingKind: metadata.signingKind ?? null,
+      signatureProfile: metadata.signatureProfile ?? null, signatureProfileVersion: metadata.signatureProfileVersion ?? null,
+      signatureProfileName: metadata.signatureProfileName ?? null, statementVersion: metadata.statementVersion ?? null,
+      signingKind: metadata.signingKind ?? null,
       network: metadata.network, verifier: metadata.verifier, purpose: metadata.purpose,
       nonce: metadata.nonce, messageHash: metadata.messageHash, notBefore: metadata.notBefore,
       expiresAt: metadata.expiresAt, claims: metadata.claims.map(({ txid, vout, amountSats, scriptKind, program }) =>

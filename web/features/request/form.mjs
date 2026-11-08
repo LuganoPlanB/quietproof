@@ -30,6 +30,12 @@ export function validateForm(options, capabilities) {
       throw new Error('Signature possession is unavailable in this verifier build.');
     if (!options.claims.some(claim => claim.scriptKind === options.signingKind))
       throw new Error('Choose a signing kind present among the selected outputs.');
+    if (!Number.isInteger(options.signatureProfile) || options.signatureProfile < 1 ||
+        !Number.isInteger(options.signatureProfileVersion) || options.signatureProfileVersion < 1)
+      throw new Error('Choose a supported signing procedure for this kind.');
+    if (capabilities && !capabilities.signatureProfiles?.some(p => p.id === options.signatureProfile &&
+        p.version === options.signatureProfileVersion && p.kinds.includes(options.signingKind)))
+      throw new Error('Choose a supported signing procedure for this kind.');
   }
   encodeRequestOptions(options);
   return summary;

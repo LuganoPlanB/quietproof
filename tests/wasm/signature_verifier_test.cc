@@ -29,6 +29,7 @@ int main(int argc, char** argv) {
     p.network=s.network; p.verifier=s.verifier; p.purpose=s.purpose; p.message_hash=s.bip322_message_hash;
     p.expected_request=request; p.max_lifetime=86400; p.max_observation_age=60;
     QuietProofSignatureEnvelopeMetadataV4 m; m.request=request;
+    m.profile=static_cast<uint16_t>(s.signing_profile); m.profile_version=s.profile_version;
     m.proof_created_at=Now(); m.circuit_digest=PoKSigExpectedCircuitDigest();
     std::vector<uint8_t> wire; CHECK(EncodeQuietProofSignatureEnvelope(m,{1},&wire));
     QuietProofBrowserVerification check;
@@ -66,7 +67,9 @@ int main(int argc, char** argv) {
     std::ofstream provenance(directory/(name+".json"));
     provenance << "{\"generator\":\"tests/wasm/signature_fixtures.py\",\"nativeVerified\":true,\"witnessExported\":false,\"createdAt\":"
       << Now() << ",\"expiresAt\":" << s.expires_at << ",\"envelopeBytes\":" << proof.bytes.size()
-      << ",\"claimCount\":" << s.claims.size() << ",\"proofMode\":\"signature-possession\"}\n";
+      << ",\"claimCount\":" << s.claims.size() << ",\"statementVersion\":4,\"signatureProfile\":\""
+      << QuietProofSigningProfileName(s.signing_profile) << "\",\"profileVersion\":" << unsigned(s.profile_version)
+      << ",\"proofMode\":\"signature-possession\"}\n";
     CHECK(provenance.good()); ++verified;
     std::cout << name << ": native browser verifier valid" << std::endl;
   }

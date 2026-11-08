@@ -1,6 +1,7 @@
 // Feature-private orchestration. Only setupProvider wires this entry point.
 import { createOperation, fail, hash, integer, status, LIMITS } from './esplora.mjs';
 import { encodePolicy, MAX_ENVELOPE_BYTES } from '../../wasm/codec.mjs';
+import { unsupportedArtifactError } from '../../wasm/errors.mjs';
 
 function script(claim) {
   if (!['p2wpkh', 'p2pkh'].includes(claim.scriptKind) || !/^[0-9a-f]{40}$/.test(claim.program)) fail('invalid_manifest');
@@ -79,7 +80,7 @@ export function createVerification({ provider, config, fetcher, timeoutMs, worke
           { code: controller.signal.reason === 'timeout' ? 'timeout' : controller.signal.reason === 'superseded' ? 'superseded' : 'aborted' }), true); };
         const message = ({ data }) => {
           if (data?.id !== id) return;
-          if (data.type === 'error') finish(Object.assign(new Error('Proof or expected policy was rejected.'),
+          if (data.type === 'error') finish(unsupportedArtifactError(data) ?? Object.assign(new Error('Proof or expected policy was rejected.'),
             { code: data.name === 'PolicyError' ? 'policy_rejected' : 'verification_failed' }), true);
           else finish(data, false);
         };

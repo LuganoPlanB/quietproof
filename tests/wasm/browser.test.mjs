@@ -21,7 +21,7 @@ before(async () => {
         response.end('<!doctype html><title>Quietproof worker qualification</title>');
         return;
       }
-      if (realFixtures && /^\/real\/(one-key|signature-(p2pkh|p2wpkh|mixed))\.(qpf|qpr|evidence)$/.test(path)) {
+      if (realFixtures && /^\/real\/(one-key|signature-(p2pkh(?:-bip322)?|p2wpkh|mixed))\.(qpf|qpr|evidence)$/.test(path)) {
         response.end(await readFile(resolve(realFixtures, path.split('/').pop()))); return;
       }
       if (path === '/quietproof.wasm') {
@@ -29,7 +29,7 @@ before(async () => {
         response.end(wasm);
         return;
       }
-      if (/^\/tests\/wasm\/fixtures\/([0-2]|signature-p2[wp]*kh)\.(options|qpr|qpf)$/.test(path)) {
+      if (/^\/tests\/wasm\/fixtures\/([0-2]|signature-p2[wp]*kh(?:-bip322)?)\.(options|qpr|qpf|digest)$/.test(path)) {
         response.end(await readFile(resolve(root, '.' + path))); return;
       }
       const local = resolve(root, '.' + path);
@@ -45,6 +45,8 @@ before(async () => {
   const engine = process.env.QUIETPROOF_WASM_ENGINE ?? 'chromium';
   assert(['chromium', 'webkit'].includes(engine));
   browser = await ({ chromium, webkit })[engine].launch({ headless: true,
+    ...(engine === 'chromium' && process.env.QUIETPROOF_CHROMIUM_EXECUTABLE ?
+      { executablePath: process.env.QUIETPROOF_CHROMIUM_EXECUTABLE } : {}),
     ...(engine === 'webkit' && process.env.QUIETPROOF_WEBKIT_EXECUTABLE ?
       { executablePath: process.env.QUIETPROOF_WEBKIT_EXECUTABLE } : {}) });
   console.log(`Browser: ${engine} ${browser.version()}; Playwright 1.61.1`);
@@ -351,9 +353,14 @@ test('canonical v1/v2/mixed request bytes match native golden codecs exactly', a
       call('quietproof_wasm_create_request', options);
       if (!snapshot.every((b, i) => b === new Uint8Array(result.bytes)[i])) throw new Error('Copied result lifetime failed');
     }
-    for (const name of ['signature-p2pkh', 'signature-p2wpkh']) {
+    for (const name of ['signature-p2pkh', 'signature-p2wpkh', 'signature-p2pkh-bip322']) {
       const load = async ext => (await fetch(`/tests/wasm/fixtures/${name}.${ext}`)).arrayBuffer();
       const options = await load('options'), golden = new Uint8Array(await load('qpr'));
+      const tag=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('QuietProof/statement/v4')));
+      const preimage=new Uint8Array(64+golden.length);preimage.set(tag);preimage.set(tag,32);preimage.set(golden,64);
+      const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',preimage));
+      const nativeDigest=new Uint8Array(await load('digest'));
+      if(digest.length!==nativeDigest.length||digest.some((b,i)=>b!==nativeDigest[i]))throw new Error('Native/browser v4 digest disagreement');
       const created = call('quietproof_wasm_create_request', options);
       if (api.quietproof_wasm_capabilities() & 2) {
         if (created.status || created.bytes.byteLength !== golden.length ||
@@ -577,7 +584,7 @@ test('real signature proofs require explicit capability, mode and retained reque
       }
       throw new Error('Expected signature rejection');
     };
-    for (const name of ['signature-p2pkh', 'signature-p2wpkh', 'signature-mixed']) {
+    for (const name of ['signature-p2pkh', 'signature-p2pkh-bip322', 'signature-p2wpkh', 'signature-mixed']) {
       const load = async ext => {
         let response = await fetch(`/real/${name}.${ext}`);
         if (!enabled && !response.ok) response = await fetch(`/tests/wasm/fixtures/${name === 'signature-mixed' ? 'signature-p2wpkh' : name}.${ext}`);
@@ -589,12 +596,32 @@ test('real signature proofs require explicit capability, mode and retained reque
         maxLifetimeSeconds: 86400, minConfirmations: 1, minimumTotalSats: 0, maxObservationAgeSeconds: 60 };
       const metadata = reactor.inspect(proof, true);
       if (metadata.verified !== false || metadata.proofMode !== 'signature-possession' ||
-          metadata.statementVersion !== 3 || metadata.envelopeVersion !== 3 ||
+          metadata.statementVersion !== 4 || metadata.envelopeVersion !== 4 || metadata.signatureProfileVersion !== 1 ||
+          metadata.signatureProfileName !== (name === 'signature-p2pkh' ? 'bitcoin-message-ecdsa-v1' : 'bip322-ecdsa-v1') ||
           metadata.circuitDigest !== '85fc9626e74e1944e736237c5f71220f982b05a3f786c491cf35ef2e56547d32' ||
           metadata.rate !== 4 || metadata.queries !== 128) throw new Error('Signature metadata disagreement');
       reject(() => reactor.prepare(proof, { ...policy, proofMode: 'key-knowledge' }));
       reject(() => reactor.prepare(proof, { ...policy, expectedRequest: undefined }), 'retained');
       reject(() => reactor.prepare(new TextEncoder().encode('QPA1private authorisation').buffer, policy), 'private_receipt_input');
+      for (const artifact of [request, proof]) {
+        const old = artifact.slice(0); new Uint8Array(old)[4] = 3;
+        reject(() => reactor.inspect(old, artifact === proof), 'unsupported_posc_v3');
+        if (artifact === proof) reject(() => reactor.prepare(old, policy), 'unsupported_posc_v3');
+      }
+      for (const [offset, value] of [[8,255],[9,2],[10,2]]) {
+        const unknown = request.slice(0); new Uint8Array(unknown)[offset] = value;
+        reject(() => reactor.inspect(unknown), 'Unsupported');
+        reject(() => reactor.prepare(proof, {...policy, expectedRequest:unknown}));
+      }
+      if (name.startsWith('signature-p2pkh')) {
+        const swappedRequest = request.slice(0);
+        new Uint8Array(swappedRequest)[8] = metadata.signatureProfile === 2 ? 1 : 2;
+        reject(() => reactor.prepare(proof, {...policy, expectedRequest:swappedRequest}));
+        const swappedProof=proof.slice(0), tail=9+request.byteLength;
+        new Uint8Array(swappedProof)[17] = metadata.signatureProfile === 2 ? 1 : 2;
+        new Uint8Array(swappedProof)[tail+10] = metadata.signatureProfile === 2 ? 1 : 2;
+        reject(() => reactor.prepare(swappedProof, policy));
+      }
       if (!enabled) {
         reject(() => reactor.prepare(proof, policy), 'signature_mode_disabled');
         continue;
@@ -602,7 +629,7 @@ test('real signature proofs require explicit capability, mode and retained reque
       const wrong = request.slice(0); new Uint8Array(wrong)[wrong.byteLength - 1] ^= 1;
       reject(() => reactor.prepare(proof, { ...policy, expectedRequest: wrong }));
       const identity = proof.slice(0), tail = 9 + request.byteLength;
-      new Uint8Array(identity)[tail + 13] ^= 1;
+      new Uint8Array(identity)[tail + 14] ^= 1;
       reject(() => reactor.prepare(identity, policy), 'unapproved_circuit');
       const crossMode = proof.slice(0); new Uint8Array(crossMode)[4] = 2;
       reject(() => reactor.prepare(crossMode, policy));

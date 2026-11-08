@@ -79,6 +79,11 @@ extern "C" uint32_t quietproof_wasm_abi_version() { return 2; }
 extern "C" uint32_t quietproof_wasm_capabilities() {
   return 1u | (proofs::kQuietProofSignatureModeEnabled ? 2u : 0u);
 }
+extern "C" uint32_t quietproof_wasm_profile_capabilities() {
+  last_error = "";
+  proofs::QuietProofBrowserProfileCapabilities(&result);
+  return 0;
+}
 
 extern "C" void* quietproof_wasm_alloc(uint32_t size) {
   if (size == 0 || size > proofs::kQuietProofMaxEnvelopeBytes) return nullptr;
@@ -111,6 +116,8 @@ extern "C" uint32_t quietproof_wasm_prepare(const uint8_t* proof, uint32_t proof
   if (!owned(proof, proof_size) || proof_size > proofs::kQuietProofMaxEnvelopeBytes ||
       !owned(policy, policy_size) || policy_size > 8192) return fail("Invalid verification input");
   if (proofs::QuietProofIsPrivateReceiptInput(proof, proof_size)) return fail("private_receipt_input");
+  if (proof_size >= 5 && proof[4] == 3)
+    return fail("unsupported_posc_v3: issue a fresh v4 request, signature, receipt and proof", 5);
   proofs::QuietProofBrowserPolicy expected;
   if (!proofs::DecodeQuietProofBrowserPolicy(std::vector<uint8_t>(policy, policy + policy_size), &expected))
     return fail("Independent expected policy is required", 4);
@@ -165,7 +172,9 @@ extern "C" uint32_t quietproof_wasm_create_request(const uint8_t* input,
   if (!owned(input, size) || size > proofs::kQuietProofBrowserMaxOptionsBytes)
     return fail("Invalid request options buffer");
   const std::vector<uint8_t> bytes(input, input + size);
-  if (bytes.size() >= 4 && !std::memcmp(bytes.data(), "QWC2", 4)) {
+  if (bytes.size() >= 4 && !std::memcmp(bytes.data(), "QWC2", 4))
+    return fail("Unsupported signature options: select an explicit v4 profile", 5);
+  if (bytes.size() >= 4 && !std::memcmp(bytes.data(), "QWC3", 4)) {
     proofs::QuietProofSignatureChallengeOptions options;
     std::vector<proofs::QuietProofClaimV1> claims;
     if (!proofs::DecodeQuietProofBrowserSignatureOptions(bytes, &options, &claims))
@@ -220,6 +229,22 @@ extern "C" uint32_t quietproof_wasm_inspect(const uint8_t* input, uint32_t size,
   if (proof > 1 || !owned(input, size) || size > maximum)
     return fail("Invalid inspection buffer");
   const std::vector<uint8_t> bytes(input, input + size);
+  if (bytes.size() >= 5 && bytes[4] == 3)
+    return fail("unsupported_posc_v3: issue a fresh v4 request, signature, receipt and proof", 5);
+  if (bytes.size() >= 5 && bytes[4] == proofs::kQuietProofSignatureStatementVersion) {
+    proofs::QuietProofSignatureStatementV4 statement;
+    proofs::QuietProofDecodeError error;
+    bool supported;
+    if (proof) {
+      proofs::QuietProofSignatureEnvelopeMetadataV4 metadata;
+      proofs::QuietProofSignatureEnvelopeError envelope_error;
+      supported = proofs::InspectQuietProofSignatureEnvelope(bytes, &metadata, &envelope_error);
+      error = envelope_error == proofs::QuietProofSignatureEnvelopeError::kUnsupported ?
+          proofs::QuietProofDecodeError::kUnsupported : proofs::QuietProofDecodeError::kMalformed;
+    } else supported = proofs::DecodeQuietProofSignatureStatement(bytes, &statement, &error);
+    if (!supported && error == proofs::QuietProofDecodeError::kUnsupported)
+      return fail("Unsupported v4 signing profile, version or kind", 5);
+  }
   if (!proofs::QuietProofBrowserInspect(bytes, proof, &result))
     return fail("Malformed request or proof");
   return 0;

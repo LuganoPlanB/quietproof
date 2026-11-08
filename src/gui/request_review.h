@@ -30,6 +30,9 @@ struct RequestReview {
   std::string format = "quietproof-request-v1";
   uint8_t statement_version;
   std::string network;
+  std::string proof_mode = "key-knowledge";
+  std::string signing_profile, signing_profile_label, signing_kind, signing_address, signing_instructions;
+  uint8_t profile_version = 0;
   std::string verifier;
   std::string purpose;
   uint64_t request_created_at;

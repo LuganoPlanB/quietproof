@@ -1,5 +1,6 @@
 #include "node_probe.h"
 #include "wallet_session.h"
+#include "quietproof/signature_envelope.h"
 
 #include <fstream>
 
@@ -42,7 +43,12 @@ bool NodeProbeWorker::StartValidation(ValidationJob job, ProofVerifier test_veri
           wire.insert(wire.end(),block.data(),block.data()+n);
         }
         proofs::QuietProofEnvelopeV1 envelope;
-        if (!canceled_.load() && input.eof() && proofs::DecodeQuietProofEnvelope(wire,&envelope)) {
+        if (!canceled_.load() && input.eof() && job.request && job.request->signature) {
+          const auto now=std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+          auto validated = ProofValidation::RunSignature(job.request,wire,now,[this] { return canceled_.load(); });
+          result->verified = std::move(validated.proof);
+          result->error.message = std::move(validated.error);
+        } else if (!canceled_.load() && input.eof() && proofs::DecodeQuietProofEnvelope(wire,&envelope)) {
           auto validated = ProofValidation::Run(job.request,envelope,[this] { return canceled_.load(); },test_verifier);
           result->verified = std::move(validated.proof);
           result->error.message = std::move(validated.error);

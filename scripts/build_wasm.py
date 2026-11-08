@@ -74,11 +74,14 @@ def main():
         '-DQUIETPROOF_BUILD_RPC=OFF', '-DQUIETPROOF_BUILD_WASM=ON',
         f'-DQUIETPROOF_BUILD_SIGNATURE_MODE={"ON" if args.signature_mode else "OFF"}')
     run('cmake', '--build', str(work / 'quietproof-build'), '--parallel', str(args.jobs))
-    run('node', str(source / 'scripts/inspect_wasm.mjs'),
-        str(work / 'quietproof-build/quietproof.wasm'))
+    inspection = json.loads(subprocess.check_output(['node', str(source / 'scripts/inspect_wasm.mjs'),
+        str(work / 'quietproof-build/quietproof.wasm')], text=True))
+    if inspection['capabilities']['signaturePossession'] != args.signature_mode:
+        parser.error('actual reactor capability differs from selected build')
     digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
     provenance = {
         'signatureMode': args.signature_mode,
+        'capabilities': inspection['capabilities'],
         'pins': PINS, 'wasiVersionFile': (wasi / 'VERSION').read_text(),
         'compilerVersion': subprocess.check_output([str(wasi / 'bin/clang++'), '--version'], text=True).splitlines()[0],
         'toolchainFiles': {name: digest(wasi / name) for name in
@@ -88,7 +91,8 @@ def main():
         'reactorSha256': digest(work / 'quietproof-build/quietproof.wasm'),
         'sourceFiles': {str(p.relative_to(source)): digest(p) for p in sorted(
             [source / 'CMakeLists.txt', source / 'cmake/toolchains/wasi.cmake',
-             source / 'scripts/build_wasm.py', source / 'scripts/build-pins.json'] +
+             source / 'scripts/build_wasm.py', source / 'scripts/build-pins.json', source / 'scripts/inspect_wasm.mjs',
+             source / 'web/wasm/runtime.mjs', source / 'web/wasm/codec.mjs'] +
             list((source / 'include').rglob('*.h')) + list((source / 'src/wasm').glob('*.cc')))},
     }
     (work / 'build-provenance.json').write_text(json.dumps(provenance, sort_keys=True, indent=2) + '\n')

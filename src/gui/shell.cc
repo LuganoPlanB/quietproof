@@ -192,6 +192,10 @@ void DrawRequestReview(nk_context* context, ShellState& state, float width, floa
   const auto review = InspectRequest(request);
   ReviewText(context,request.signature ? "Requested relation: signature custody (PoSC)" : "Requested relation: private-key knowledge (PoKC)",width);
   ReviewText(context,"Network: "+review.network,width);
+  if (request.signature) {
+    ReviewField(context,"Signing procedure",review.signing_profile_label,width);
+    ReviewText(context,review.signing_kind+" / "+review.signing_profile+" v"+std::to_string(review.profile_version),width);
+  }
   nk_layout_row_dynamic(context,action_height,1);
   const auto toggle = state.claims_expanded ? "Back to summary" :
       "Show "+std::to_string(review.claim_count)+" claim(s)";
@@ -473,6 +477,11 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
             if (!proofs::kQuietProofSignatureModeEnabled)
               Paragraph(context,"Signature custody is unsupported in this build. No private-key fallback is performed.",content_width);
             if (state.request.loaded && state.request.loaded->signature) {
+              const auto review = InspectRequest(*state.request.loaded);
+              ReviewField(context,"Requested signing procedure (v4)",review.signing_profile_label,content_width);
+              ReviewText(context,review.signing_kind+" / "+review.signing_profile+" v"+std::to_string(review.profile_version),content_width);
+              ReviewField(context,"Signing address",review.signing_address,content_width);
+              Paragraph(context,review.signing_instructions.c_str(),content_width);
               ReviewText(context,"Private authorization receipt file (.qpa)",content_width);
               nk_layout_row_dynamic(context,action_height,1);
               state.controls[312] = nk_widget_bounds(context);
@@ -561,6 +570,13 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
           if (state.completed_proof) {
             if (!state.save_status.empty()) Paragraph(context,state.save_status.c_str(),content_width);
             Paragraph(context,"Cryptographic proof verified against the exact reviewed request. Current chain state has not been checked.",content_width);
+            const auto review = InspectRequest(state.completed_proof->Request());
+            ReviewField(context,"Request version",std::to_string(review.statement_version),content_width);
+            if (state.completed_proof->Request().signature) {
+              ReviewField(context,"Verified signing procedure",review.signing_profile_label,content_width);
+              ReviewText(context,review.signing_kind+" / "+review.signing_profile+" v"+std::to_string(review.profile_version),content_width);
+              ReviewField(context,"Signing address",review.signing_address,content_width);
+            }
             ReviewField(context,"Verifier (request-provided)",RequestDisplayText(state.completed_proof->Request().Verifier()),content_width);
             ReviewField(context,"Proof bytes",std::to_string(state.completed_proof->Bytes().size()),content_width);
             if (state.save_dialog) {

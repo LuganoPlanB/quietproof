@@ -18,6 +18,20 @@ spec.loader.exec_module(packaging)
 
 
 class PackagingTests(unittest.TestCase):
+    def test_private_receipts_wallets_and_nested_coordination_are_never_source_additions(self):
+        forbidden=['private.qpa','PRIVATE.QPA','wallet.dat','wallet.wallet','wallet.key','seed.seed','key.wif','.cookie','.env',
+                   'nested/.gestalt/plan.org','tests/__pycache__/private.pyc','.git/config']
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'public.cc').write_text('public source')
+            for name in forbidden:
+                path=root/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text('PRIVATE_PACKAGING_SENTINEL')
+                self.assertFalse(packaging.source_deliverable(name))
+            with patch.object(packaging,'git',return_value='\0'.join(['public.cc',*forbidden])):
+                files=packaging.archive_sources(root,root/'sources.tgz')
+            self.assertEqual(list(files),['public.cc'])
+            with tarfile.open(root/'sources.tgz') as archive:
+                self.assertEqual(archive.getnames(),['public.cc'])
+
     def test_sources_are_byte_reproducible_and_exclude_coordination_files(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -139,10 +153,11 @@ class PackagingTests(unittest.TestCase):
                 commands = []
                 def run(command, **kwargs):
                     commands.append(list(command))
-                    if command[0] == 'node':
-                        raise StopAfterBuild()
                     return SimpleNamespace(returncode=0)
-                with patch('sys.argv', args), patch.object(builder.subprocess, 'check_output', return_value=builder.SDK_COMMIT), \
+                def check_output(command, **kwargs):
+                    if command[0]=='node':raise StopAfterBuild()
+                    return builder.SDK_COMMIT
+                with patch('sys.argv', args), patch.object(builder.subprocess, 'check_output', side_effect=check_output), \
                      patch.object(builder.subprocess, 'run', side_effect=run):
                     with self.assertRaises(StopAfterBuild):
                         builder.main()

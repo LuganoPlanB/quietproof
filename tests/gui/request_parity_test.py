@@ -14,7 +14,12 @@ for path in sorted(directory.glob('*.qpr')):
     actual = subprocess.run([str(driver), '--inspect', str(path), '1800000000'],
                             capture_output=True, text=True, timeout=5, check=True, env=environment)
     model = json.loads(actual.stdout)
-    assert model['inspect'] == json.loads(expected.stdout), (path.name, model, expected.stdout)
+    native=json.loads(expected.stdout)
+    if model['inspect'].get('proof_mode')=='signature-possession':
+        for key in ['format','proof_mode','request_version','profile_version','signing_profile','signing_profile_label','signing_kind','signing_address','signing_instructions','network','purpose','expires_at','claims']:
+            assert model['inspect'][key]==native[key],(path.name,key,model,native)
+        assert model['inspect']['verifier']==native['audience']
+    else:assert model['inspect'] == native, (path.name, model, expected.stdout)
     assert model['expires_utc'].endswith('UTC') or '(UTC;' in model['expires_utc']
     if path.name == 'long.qpr':
         assert len(model['inspect']['verifier'].encode()) == 256
@@ -22,6 +27,6 @@ for path in sorted(directory.glob('*.qpr')):
         assert '[U+202E]' in model['verifier_display']
         assert '\u202e' in model['inspect']['verifier']
     checks += 1
-assert checks == 12, checks
+assert checks == 15, checks
 print(f'GUI inspect parity: {checks} fixtures match CLI; all networks, v1/v2, mixed scripts, '
-      'snapshots, bridge, long/untrusted text and huge timestamps')
+      'v4 legacy/BIP322 profiles, snapshots, bridge, long/untrusted text and huge timestamps')

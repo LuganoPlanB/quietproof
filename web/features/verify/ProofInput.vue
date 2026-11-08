@@ -183,6 +183,7 @@ function exportResult() {
       <p>Chain status: unavailable. Disconnected checking needs the local application and WASM asset; no explorer is required for policy or cryptographic checks. This import step inspects metadata only.</p>
       <dl>
         <dt>Claimed proof mode</dt><dd>{{ inspectedClaim.label }}</dd>
+        <template v-if="result.metadata.proofMode === 'signature-possession'"><dt>Claimed signing procedure</dt><dd>{{ result.metadata.signatureProfileLabel }} · {{ result.metadata.signatureProfileName }} v{{ result.metadata.signatureProfileVersion }} · {{ result.metadata.signingKind.toUpperCase() }}</dd></template>
         <dt>Claimed network / statement version</dt><dd>{{ result.metadata.network }} / v{{ result.metadata.statementVersion }}</dd>
         <dt>Claimed verifier / purpose</dt><dd>{{ result.metadata.verifier }} / {{ result.metadata.purpose }}</dd>
         <dt>Message hash</dt><dd>{{ result.metadata.messageHash }}</dd>
@@ -227,6 +228,7 @@ function exportResult() {
         <dt>Funds evidence</dt><dd data-result="funds">{{ fundsEvidenceLabel(verification) }}</dd>
         <template v-if="verification.metadata">
           <dt>Proof claim</dt><dd data-result="claim">{{ verifiedClaim.label }}</dd>
+          <template v-if="verification.metadata.proofMode === 'signature-possession'"><dt>Request version · signing procedure</dt><dd data-result="profile">v{{ verification.metadata.statementVersion }} · {{ verification.metadata.signatureProfileLabel }} · {{ verification.metadata.signatureProfileName }} v{{ verification.metadata.signatureProfileVersion }} · {{ verification.metadata.signingKind.toUpperCase() }}</dd></template>
           <dt>Disclosed claim total</dt><dd>{{ verification.metadata.claims.reduce((total, claim) => total + BigInt(claim.amountSats), 0n).toString() }} sats · {{ verification.metadata.network }}</dd>
           <dt>Request expires (device clock)</dt><dd>{{ timestamp(verification.metadata.expiresAt) }}</dd>
         </template>

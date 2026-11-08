@@ -45,10 +45,11 @@ export function encodeRequestOptions(options) {
   if (options.proofMode !== undefined && !['key-knowledge', 'signature-possession'].includes(options.proofMode))
     throw new Error('Unsupported proof mode.');
   const signature = options.proofMode === 'signature-possession';
-  put(encoder.encode(signature ? 'QWC2' : 'QWC1'));
+  put(encoder.encode(signature ? 'QWC3' : 'QWC1'));
   if (signature) {
     if (!['p2wpkh', 'p2pkh'].includes(options.signingKind)) throw new Error('Select a supported signing kind.');
-    uint(1, 1); uint(options.signingKind === 'p2wpkh' ? 0 : 1, 1);
+    uint(1, 1); uint(options.signatureProfile, 2); uint(options.signatureProfileVersion, 1);
+    uint(options.signingKind === 'p2wpkh' ? 0 : 1, 1);
   }
   uint(options.network === 'mainnet' ? 0 : 2, 1);
   uint(options.lifetimeSeconds, 8);
@@ -64,7 +65,7 @@ export function encodeRequestOptions(options) {
   return Uint8Array.from(bytes).buffer;
 }
 
-export function decodeInspection(buffer) {
+export function decodeInspection(buffer, profiles) {
   const bytes = new Uint8Array(buffer);
   let offset = 0;
   const take = n => {
@@ -83,13 +84,19 @@ export function decodeInspection(buffer) {
   if (decoder.decode(take(4)) !== 'QPS1') throw new Error('Invalid statement format.');
   const statementVersion = number(1), networkId = number(1);
   if (networkId > 4) throw new Error('Unsupported statement network.');
-  let proofMode = 'key-knowledge', signingKind = null, signatureProfile = null;
-  if (statementVersion === 3) {
+  let proofMode = 'key-knowledge', signingKind = null, signatureProfile = null, signatureProfileVersion = null, descriptor;
+  if (statementVersion === 3) throw new Error('Unsupported PoSC v3. Issue a fresh v4 request, signature, receipt and proof.');
+  if (statementVersion === 4) {
     if (number(1) !== 1) throw new Error('Unsupported signature mode.');
     signatureProfile = number(2);
+    signatureProfileVersion = number(1);
     const kind = number(1);
-    if (signatureProfile !== 1 || kind > 1) throw new Error('Unsupported signature profile.');
+    if (kind > 1) throw new Error('Unsupported signature signing kind.');
     proofMode = 'signature-possession'; signingKind = kind === 0 ? 'p2wpkh' : 'p2pkh';
+    if (profiles) {
+      descriptor = profiles.find(p => p.id === signatureProfile && p.version === signatureProfileVersion && p.kinds.includes(signingKind));
+      if (!descriptor) throw new Error('Unsupported signing profile, version or kind.');
+    }
   } else if (![1, 2].includes(statementVersion)) throw new Error('Unsupported statement version.');
   const verifier = string(), purpose = string();
   const nonce = hexify(take(32)), messageHash = hexify(take(32));
@@ -112,11 +119,42 @@ export function decodeInspection(buffer) {
   }
   if (offset !== bytes.length) throw new Error('Trailing inspection bytes.');
   return { verified: false, envelopeVersion, proofCreatedAt: envelopeVersion >= 2 ? proofCreatedAt : null,
-    proofMode, signatureProfile, signingKind,
+    proofMode, signatureProfile, signatureProfileVersion, signingKind,
+    signatureProfileName: descriptor?.name ?? null, signatureProfileLabel: descriptor?.label ?? null,
+    signingInstructions: descriptor?.instructions[signingKind] ?? null,
     circuitDigest, circuitVersion, rate, queries, proofBytes, statementVersion,
     network: ['mainnet', 'testnet3', 'signet', 'regtest', 'testnet4'][networkId], verifier, purpose,
     nonce, messageHash, notBefore, expiresAt, snapshot, bridge, claims,
     requestBytes: bytes.slice(statementStart).buffer };
+}
+
+// QSC1 describes the canonical library's closed compatibility/default table.
+// This is public capability data, never proof-selected routing authority.
+export function decodeProfileCapabilities(buffer) {
+  const bytes = new Uint8Array(buffer), view = new DataView(buffer); let at = 0;
+  const uint = width => {
+    if (at + width > bytes.length) throw new Error('Truncated profile capabilities.');
+    const out = width === 2 ? view.getUint16(at) : bytes[at]; at += width; return out;
+  };
+  const string = () => { const length = uint(2); if (at + length > bytes.length) throw new Error('Truncated profile capabilities.');
+    const out = decoder.decode(bytes.subarray(at, at += length)); return out; };
+  if (decoder.decode(bytes.subarray(0, 4)) !== 'QSC1') throw new Error('Unsupported profile capabilities.');
+  at = 4; const count = uint(1), profiles = [], identities = new Set();
+  if (!count || count > 16) throw new Error('Unsupported profile count.');
+  for (let i = 0; i < count; ++i) {
+    const id = uint(2), version = uint(1), mask = uint(1), defaults = uint(1), name = string(), label = string();
+    const instructions = { p2wpkh: string(), p2pkh: string() };
+    if (!id || !version || !mask || mask > 3 || (defaults & ~mask) || !name || !label || identities.has(`${id}:${version}`))
+      throw new Error('Invalid profile capability.');
+    identities.add(`${id}:${version}`);
+    const kinds = ['p2wpkh', 'p2pkh'].filter((_, bit) => mask & (1 << bit));
+    if (kinds.some(kind => !instructions[kind])) throw new Error('Missing signing instructions.');
+    profiles.push(Object.freeze({ id, version, name, label, kinds: Object.freeze(kinds),
+      defaults: Object.freeze(['p2wpkh', 'p2pkh'].filter((_, bit) => defaults & (1 << bit))), instructions: Object.freeze(instructions) }));
+  }
+  if (at !== bytes.length || ['p2wpkh', 'p2pkh'].some(kind => profiles.filter(p => p.defaults.includes(kind)).length !== 1))
+    throw new Error('Invalid profile defaults or trailing capabilities.');
+  return Object.freeze(profiles);
 }
 
 class Writer {
@@ -180,7 +218,7 @@ export function encodeEvidence(evidence) {
   }
   return w.finish();
 }
-export function decodeVerification(buffer) {
+export function decodeVerification(buffer, profiles) {
   if (buffer.byteLength < 20) throw new Error('Truncated verification result.');
   const bytes = new Uint8Array(buffer), view = new DataView(buffer);
   if (decoder.decode(bytes.subarray(0, 4)) !== 'QWR1') throw new Error('Invalid verification result.');
@@ -191,5 +229,5 @@ export function decodeVerification(buffer) {
   if (!phase || !cryptography || !policy || !explorer) throw new Error('Invalid verification outcome.');
   return { contextId, phase, cryptography, policy, explorer, authorizes: false,
     totalSats: view.getBigUint64(12).toString(),
-    manifest: buffer.byteLength > 20 ? decodeInspection(buffer.slice(20)) : null };
+    manifest: buffer.byteLength > 20 ? decodeInspection(buffer.slice(20), profiles) : null };
 }

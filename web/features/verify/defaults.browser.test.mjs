@@ -35,14 +35,14 @@ for (const [name,engine] of [['chromium',chromium],['webkit',webkit]]) {
         await page.getByRole('button',{name:'Look up outputs',exact:true}).click();
         await page.locator('.quietproof-claims').getByRole('checkbox').check();
         await page.getByLabel('Intended verifier').fill('default-custody.example');
-        await page.getByRole('button',{name:'Create request',exact:true}).click();
         if (process.env.QUIETPROOF_SIGNATURE_MODE === '0') {
-          await page.getByRole('alert').filter({hasText:/unavailable|unsupported|not available/i}).waitFor();
+          await page.getByText('Signature possession is unavailable in this verifier build.',{exact:false}).first().waitFor();
+          assert.equal(await page.getByRole('button',{name:'Create request',exact:true}).isDisabled(),true);
           assert.equal(await requestMode.inputValue(),'signature-possession','unsupported capability never changes the default relation');
           assert.equal(await page.locator('.quietproof-preview').count(),0);
           await requestMode.selectOption('key-knowledge');
-          await page.getByRole('button',{name:'Create request',exact:true}).click();
         }
+        await page.getByRole('button',{name:'Create request',exact:true}).click();
         await page.getByRole('region',{name:'Canonical request preview'}).waitFor();
         assert.match(await page.locator('.quietproof-preview').innerText(),process.env.QUIETPROOF_SIGNATURE_MODE === '0' ? /Private-key knowledge/ : /Signature possession/);
         await capture('default-request');
