@@ -552,6 +552,8 @@ int Run(const Options& options) {
       std::cout << "GUI capture: " << capture_index << " retained=" << bool(state.completed_proof)
                 << " confirm=" << bool(state.save_confirm) << " dialog=" << state.save_dialog
                 << " busy=" << state.save_busy << " status=" << !state.save_status.empty() << std::endl;
+      std::cout << "GUI capture layout: " << capture_index << " fontIndex=" << state.preferences.font_index
+                << " logical=" << width << 'x' << height << std::endl;
       for (const int id : {11,307,308}) {
         const auto r=state.controls[id];
         if(r.w>0) std::cout << "GUI capture control: " << capture_index << ' ' << id << ' ' << r.x << ' ' << r.y << ' ' << r.w << ' ' << r.h << std::endl;
@@ -610,6 +612,11 @@ int Run(const Options& options) {
                 << " window=" << RequestWindowName(RequestWindowAt(*state.request.loaded,state.now))
                 << " claimsExpanded=" << state.claims_expanded
                 << " claimCount=" << state.request.loaded->Claims().size() << '\n';
+    if (state.request.loaded && state.request.loaded->signature) {
+      const auto review=InspectRequest(*state.request.loaded);
+      std::cout << "GUI signing: profile=" << review.signing_profile << " profileVersion=" << unsigned(review.profile_version)
+                << " kind=" << review.signing_kind << " selectedMode=" << (state.signature_mode ? "signature-possession" : "key-knowledge") << '\n';
+    }
     std::cout << "GUI state: view=" << ViewName(state.view) << " theme=" << (state.preferences.dark ? "dark" : "light")
               << " fontIndex=" << state.preferences.font_index << " focus=" << state.focus << " scrollY=" << state.scroll.y
               << " pixels=" << output_width << 'x' << output_height

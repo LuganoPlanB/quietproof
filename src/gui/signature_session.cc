@@ -69,6 +69,7 @@ WalletSessionResult RunSignatureSession(const SignatureJob& job,
     proofs::PoKSigProofV1 proof;
     proofs::PoKSigError error;
     emit(ProofStage::Prove);
+    if (!current()) return result;
     const bool proved = proofs::PoKSigProveReceipt(job.request->bytes,receipt.bytes,&proof,policy,&error,
         [&](const char* name) {
           const std::string_view phase(name);
@@ -77,7 +78,14 @@ WalletSessionResult RunSignatureSession(const SignatureJob& job,
         });
     ErasePrivateMemory(receipt.bytes.data(),receipt.bytes.size());
     if (!current()) return result;
-    if (!proved) { fail("Signature receipt does not authorize this exact request, or signature proof generation failed"); return result; }
+    if (!proved) {
+      if (error == proofs::PoKSigError::kUnsupported)
+        fail("Unsupported receipt profile or version. Obtain a fresh v4 receipt for the reviewed signing procedure");
+      else if (error == proofs::PoKSigError::kMalformedReceipt || error == proofs::PoKSigError::kInvalidAuthorization)
+        fail("Private receipt does not authorize this exact request and signing profile");
+      else fail("Signature proof generation failed for the reviewed request; no other signing procedure was tried");
+      return result;
+    }
     emit(ProofStage::Verify);
     auto validated = ProofValidation::RunSignature(job.request,proof.bytes,static_cast<uint64_t>(clock()),canceled);
     if (!current()) return result;

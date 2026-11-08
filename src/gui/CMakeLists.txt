@@ -56,14 +56,18 @@ endif()
 
 if(BUILD_TESTING)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  add_executable(quietproof-gui-signature-session-test ${PROJECT_SOURCE_DIR}/tests/gui/signature_session_test.cc)
+  target_link_libraries(quietproof-gui-signature-session-test PRIVATE quietproof-gui-node)
+  set(_qp_gui_signature_disabled)
+  if(NOT QUIETPROOF_BUILD_SIGNATURE_MODE)
+    set(_qp_gui_signature_disabled --disabled)
+  endif()
+  add_test(NAME quietproof-gui-signature-session-test COMMAND ${Python3_EXECUTABLE}
+    ${PROJECT_SOURCE_DIR}/tests/gui/signature_session_fixture.py
+    $<TARGET_FILE:quietproof-gui-signature-session-test> $<TARGET_FILE:quietproof-cli>
+    ${CMAKE_CURRENT_BINARY_DIR}/signature-fixtures ${_qp_gui_signature_disabled})
+  set_tests_properties(quietproof-gui-signature-session-test PROPERTIES TIMEOUT 120)
   if(QUIETPROOF_BUILD_SIGNATURE_MODE)
-    add_executable(quietproof-gui-signature-session-test ${PROJECT_SOURCE_DIR}/tests/gui/signature_session_test.cc)
-    target_link_libraries(quietproof-gui-signature-session-test PRIVATE quietproof-gui-node)
-    add_test(NAME quietproof-gui-signature-session-test COMMAND ${Python3_EXECUTABLE}
-      ${PROJECT_SOURCE_DIR}/tests/gui/signature_session_fixture.py
-      $<TARGET_FILE:quietproof-gui-signature-session-test> $<TARGET_FILE:quietproof-cli>
-      ${CMAKE_CURRENT_BINARY_DIR}/signature-fixtures)
-    set_tests_properties(quietproof-gui-signature-session-test PROPERTIES TIMEOUT 120)
     add_test(NAME quietproof-gui-signature-ui-test COMMAND ${Python3_EXECUTABLE}
       ${PROJECT_SOURCE_DIR}/tests/gui/signature_ui_test.py $<TARGET_FILE:quietproof-prover-gui>
       $<TARGET_FILE:quietproof-gui-signature-session-test> $<TARGET_FILE:quietproof-cli>

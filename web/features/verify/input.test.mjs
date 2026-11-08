@@ -45,6 +45,17 @@ test('private receipts and renamed QPA1 files are rejected before workers or ass
     arrayBuffer: async () => receipt.buffer }, options }), /authorization receipt/);
   assert.equal(reads,0); assert.equal(fetches,0); assert.equal(workers,0); tools.dispose();
 });
+test('v3 public requests and proofs receive reissue guidance before workers or asset fetch', async () => {
+  let fetches=0;
+  const tools=setupProofInput({fetch(){fetches++;}});
+  for(const magic of ['QPS1','QPE1']) {
+    const bytes=new TextEncoder().encode(magic+'\x03');
+    const old={name:magic==='QPS1'?'old.qpr':'old.qpf',size:bytes.length,arrayBuffer:async()=>bytes.buffer};
+    await assert.rejects(tools.inspect({proof:magic==='QPE1'?old:proof,request:magic==='QPS1'?old:undefined,
+      options:magic==='QPS1'?{mode:'request',proofMode:'signature-possession'}:options}),/v3.*unsupported.*fresh v4/);
+  }
+  assert.equal(fetches,0);tools.dispose();
+});
 
 test('invalid explicit policy fails before proof read; oversized stream fails before worker', async () => {
   let reads = 0, workers = 0;

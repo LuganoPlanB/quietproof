@@ -129,6 +129,19 @@ int main(int argc, char** argv) {
     chooser.Browse(directory / "missing" / "file");
     Check(!chooser.error.empty(), "unreadable chooser folder error");
     Write(directory / "valid-v2.qpr", original);
+    proofs::QuietProofSignatureStatementV4 signature;
+    static_cast<proofs::QuietProofStatementV1&>(signature)=Statement(2);
+    signature.statement_version=4;signature.signing_kind=proofs::QuietProofScriptKind::kP2pkh;
+    signature.signing_profile=proofs::QuietProofSigningProfile::kBitcoinMessageEcdsaV1;
+    std::vector<uint8_t> posc;
+    Check(proofs::EncodeQuietProofSignatureStatement(signature,&posc),"encode legacy PoSC request");
+    Write(directory/"valid-posc.qpr",posc);state.Open(directory/"valid-posc.qpr");
+    Check(state.loaded && state.loaded->signature && state.loaded->Version()==4,"retain v4 profile request separately from PoKC");
+    Check(state.loaded->signature->signing_profile==signature.signing_profile,"retain exact profile");
+    for(const auto [offset,value]:std::vector<std::pair<size_t,uint8_t>>{{4,3},{8,255},{9,2},{10,2}}){
+      auto invalid=posc;invalid[offset]=value;Write(directory/"unsupported-profile.qpr",invalid);
+      reject(directory/"unsupported-profile.qpr",RequestError::Unsupported);
+    }
     std::cout << "GUI request loader: " << checks << " checks passed; fixtures=" << directory << '\n';
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';

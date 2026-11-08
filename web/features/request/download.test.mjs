@@ -50,6 +50,6 @@ test('signature creation rejects a disabled initialized worker before creation, 
         capabilities: { keyKnowledge: true, signaturePossession: false } } }));
     } };
   } });
-  await assert.rejects(tools.create({ ...options, proofMode: 'signature-possession', signingKind: 'p2wpkh' }), /unavailable/);
+  await assert.rejects(tools.create({ ...options, proofMode: 'signature-possession', signingKind: 'p2wpkh', signatureProfile:1, signatureProfileVersion:1 }), /unavailable/);
   assert.deepEqual(sent, ['initialize']); assert.equal(terminated, 1); tools.dispose();
 });

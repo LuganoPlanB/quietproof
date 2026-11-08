@@ -9,10 +9,14 @@ The tiny `.qpf` files exercise **metadata parsing only**. Their three payload
 bytes are not cryptographic proofs. Inspection must always return
 `verified: false`; real verification fixtures are qualified separately.
 
-`signature-p2pkh` and `signature-p2wpkh` add v3 request and metadata-only proof
-families. Their QWC2 options explicitly select signature possession and signing
-kind. These tiny proofs are never accepted as cryptographic fixtures. Separately
-named real native proofs (`signature-p2pkh`, `signature-p2wpkh`, `signature-mixed`)
+`signature-p2pkh` (Bitcoin Signed Message), `signature-p2wpkh` (BIP322) and
+`signature-p2pkh-bip322` (explicit BIP322 Full alternative) use the sole v4 PoSC
+request and metadata-only proof format. QWC3 options select mode, profile
+ID/version and signing kind explicitly. `signature.profiles` is the canonical
+library's QSC1 descriptor/default table, not another crypto implementation.
+These tiny proofs are never accepted as cryptographic fixtures. Separately
+named real native proofs (`signature-p2pkh`, `signature-p2pkh-bip322`,
+`signature-p2wpkh`, `signature-mixed`)
 are generated into the build's `tests/wasm-real` by
 `quietproof-browser-signature-test`; only public requests, proofs and provenance
 are retained there. Private native authorisation inputs are temporary and never

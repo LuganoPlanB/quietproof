@@ -31,8 +31,9 @@ def public_request(path):
         return int.from_bytes(take(size), 'big')
     def text():
         return take(number(2)).decode('utf-8')
-    assert take(10) == b'QPS1\x04\x00\x01\x00\x01\x01'  # mainnet v4 BIP322/profile version1
-    request = dict(network=0, profile=1, profile_version=1, signing_kind=number(1), verifier=text(), purpose=text(),
+    assert take(7) == b'QPS1\x04\x00\x01'  # mainnet v4 PoSC
+    profile_id, profile_version = number(2), number(1)
+    request = dict(network=0, profile=profile_id, profile_version=profile_version, signing_kind=number(1), verifier=text(), purpose=text(),
                    nonce=take(32).hex(), bip322_message_hash=take(32).hex(),
                    not_before=number(8), expires_at=number(8), snapshot=None)
     assert number(1) == 0 and number(1) == 0  # no snapshot or extensions
@@ -61,10 +62,12 @@ def main():
     cases = []
     now = int(time.time())
     key = bytes([2]) + ref.GENERATOR[0].to_bytes(32, 'big')  # disposable scalar 1
-    selected = [('signature-max16', 0, True)] if args.largest_only else [
-        ('signature-p2pkh', 1, False), ('signature-p2wpkh', 0, False), ('signature-mixed', 0, True)]
-    for name, kind, mixed in selected:
-        request = copy.deepcopy(next(v['request'] for v in profile['vectors'] if v['request']['signing_kind'] == kind))
+    selected = [('signature-max16', 0, 1, True)] if args.largest_only else [
+        ('signature-p2pkh', 1, 2, False), ('signature-p2pkh-bip322', 1, 1, False),
+        ('signature-p2wpkh', 0, 1, False), ('signature-mixed', 0, 1, True)]
+    for name, kind, procedure, mixed in selected:
+        vectors = profile['legacy_vectors'] if procedure == 2 else profile['vectors']
+        request = copy.deepcopy(next(v['request'] for v in vectors if v['request']['signing_kind'] == kind))
         request.update(network=0, snapshot=None, not_before=now - 60, expires_at=now + 21600)
         if not mixed:
             request['claims'] = [c for c in request['claims'] if c['script_kind'] == kind][:1]
@@ -79,14 +82,20 @@ def main():
             assert not args.disabled and args.largest_only
             request = public_request(args.request_file)
             kind = request['signing_kind']
+            procedure = request['profile']
             assert all(c['program'] == ref.hash160(key).hex() for c in request['claims'])
-        derived = ref.virtual_profile(request)
+        derived = ref.bitcoin_message_profile(request) if procedure == 2 else ref.virtual_profile(request)
         r = ref.GENERATOR[0]
         s = (int.from_bytes(derived['z'], 'big') + r) % ref.ORDER
-        signature = core.encode_signature(r, min(s, ref.ORDER - s))
-        assert ref.integer_verify(derived['z'], signature, key)
-        signed = ref.serialize(core.replace_unlock(derived['tx'], kind, signature, key))
-        receipt = struct.pack('>4sBBHB32sI', b'QPA1', 4, 1, 1, 1, derived['d'], len(signed)) + signed
+        if procedure == 2:
+            # Disposable scalar=1, nonce=1: recovery parity is inverted by low-S.
+            recovery = (ref.GENERATOR[1] & 1) ^ int(s > ref.ORDER // 2)
+            signed = bytes([31 + recovery]) + r.to_bytes(32, 'big') + min(s, ref.ORDER-s).to_bytes(32, 'big')
+        else:
+            signature = core.encode_signature(r, min(s, ref.ORDER - s))
+            assert ref.integer_verify(derived['z'], signature, key)
+            signed = ref.serialize(core.replace_unlock(derived['tx'], kind, signature, key))
+        receipt = struct.pack('>4sBBHB32sI', b'QPA1', 4, 1, procedure, 1, derived['d'], len(signed)) + signed
         cases.append(dict(name=name, request=derived['request'].hex(), receipt=receipt.hex()))
     # The private authorisation input is temporary, owner-only, and never placed
     # among the browser's public fixtures. Only .qpr/.qpf and provenance survive.

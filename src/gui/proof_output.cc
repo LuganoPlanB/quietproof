@@ -1,6 +1,7 @@
 #include "proof_output.h"
 #include "pokc/verifier.h"
 #include "poksig/verifier.h"
+#include "quietproof/signature_challenge.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -13,6 +14,7 @@ namespace quietproof::gui {
 ProofValidation ProofValidation::RunSignature(std::shared_ptr<const LoadedRequest> request,
     const std::vector<uint8_t>& bytes, uint64_t now, const std::function<bool()>& canceled) {
   if (canceled()) return {{},"Proof validation canceled"};
+  if (!proofs::kQuietProofSignatureModeEnabled) return {{},"Signature custody is unsupported in this build"};
   proofs::QuietProofSignatureEnvelopeMetadataV4 metadata;
   if (!request || !request->signature || !proofs::InspectQuietProofSignatureEnvelope(bytes,&metadata) ||
       metadata.request != request->bytes)

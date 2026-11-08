@@ -23,13 +23,20 @@ def git(root, *args):
     return subprocess.check_output(['git', '-C', str(root), *args], text=True).strip()
 
 
+def source_deliverable(name):
+    path = Path(name)
+    return (not path.is_absolute() and not set(path.parts) & {'..', '.git', '.gestalt', '__pycache__'}
+            and path.suffix.lower() not in {'.org', '.qpa', '.wallet', '.key', '.seed', '.wif', '.cookie'}
+            and path.name.lower() not in {'.cookie', '.env', 'wallet.dat'})
+
+
 def archive_sources(root, output, additions=()):
     names = set(git(root, 'ls-files', '-z').strip('\0').split('\0')) | set(additions)
     files = {}
     with output.open('wb') as raw, gzip.GzipFile(fileobj=raw, mode='wb', mtime=0, filename='') as compressed:
         with tarfile.open(fileobj=compressed, mode='w|') as bundle:
             for name in sorted(names):
-                if not name or name.endswith('.org') or name.startswith('.gestalt/'):
+                if not name or not source_deliverable(name):
                     continue
                 path = root / name
                 if path.is_symlink():
@@ -73,7 +80,7 @@ def main():
     if not re.fullmatch(r'/(?:[A-Za-z0-9_-]+/)*', args.base):
         parser.error('base must be / or slash-delimited simple path segments ending in /')
     for name in args.source_addition:
-        if Path(name).is_absolute() or '..' in Path(name).parts or name.endswith('.org') or name.startswith('.gestalt/'):
+        if not source_deliverable(name):
             parser.error('source additions must be repository-relative deliverable files')
     pins = json.loads((ROOT / 'scripts/build-pins.json').read_text())
     sdk, theme = args.sdk_source.resolve(), args.theme_source.resolve()
@@ -97,6 +104,9 @@ def main():
     for name, digest in provenance['sourceFiles'].items():
         if sha(ROOT / name) != digest:
             parser.error(f'reactor source changed: {name}; rebuild WASM')
+    actual = json.loads(subprocess.check_output(['node', str(ROOT / 'scripts/inspect_wasm.mjs'), str(wasm)], text=True))['capabilities']
+    if provenance.get('capabilities') != actual or actual['signaturePossession'] != args.signature_mode:
+        parser.error('actual reactor profile capabilities differ from build provenance; rebuild WASM')
     environment = dict(os.environ, DOCS_BASE=args.base, QUIETPROOF_WASM=str(wasm), TZ='UTC', LC_ALL='C',
                        SOURCE_DATE_EPOCH=git(ROOT, 'show', '-s', '--format=%ct', 'HEAD'))
     subprocess.run(['npm', 'run', 'docs:build'], cwd=ROOT, env=environment, check=True)

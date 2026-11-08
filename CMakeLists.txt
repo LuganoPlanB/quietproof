@@ -128,6 +128,7 @@ if(QUIETPROOF_BUILD_WASM)
     -Wl,-z,stack-size=1048576
     -Wl,--export=quietproof_wasm_abi_version
     -Wl,--export=quietproof_wasm_capabilities
+    -Wl,--export=quietproof_wasm_profile_capabilities
     -Wl,--export=quietproof_wasm_alloc -Wl,--export=quietproof_wasm_free
     -Wl,--export=quietproof_wasm_smoke
     -Wl,--export=quietproof_wasm_create_request -Wl,--export=quietproof_wasm_inspect

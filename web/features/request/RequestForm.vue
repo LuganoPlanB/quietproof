@@ -15,7 +15,8 @@ let adapter, generation = 0, timer;
 let requestTools, download, requestGeneration = 0;
 const requestState = ref('idle'), requestError = ref(''), preview = ref(null), artifact = ref(null);
 const history = ref(null);
-const proofMode = ref('signature-possession'), signingKind = ref('p2wpkh');
+const proofMode = ref('signature-possession'), signingKind = ref('');
+const signatureProfile = ref(null);
 const capabilities = ref({ signaturePossession: false }), capabilityState = ref('unknown'), capabilityError = ref('');
 let capabilityAbort;
 async function checkCapabilities() {
@@ -42,7 +43,8 @@ onMounted(() => {
 });
 onUnmounted(() => { generation++; adapter?.dispose(); requestTools?.dispose(); download?.clear(); capabilityAbort?.abort(); clearInterval(timer); });
 watch(network, reset);
-watch([network, addresses, selected, verifier, purpose, message, lifetime, proofMode, signingKind], invalidateRequest, { deep: true, flush: 'sync' });
+watch(proofMode, mode => { if (mode === 'signature-possession' && claims.value.length && capabilityState.value !== 'ready') checkCapabilities(); });
+watch([network, addresses, selected, verifier, purpose, message, lifetime, proofMode, signingKind, signatureProfile], invalidateRequest, { deep: true, flush: 'sync' });
 watch(addresses, () => {
   // Editing an address invalidates and cancels even an already pending lookup.
   if (adapter) reset();
@@ -50,10 +52,18 @@ watch(addresses, () => {
 const chosen = computed(() => claims.value.filter((_, i) => selected.value.includes(i)));
 const summary = computed(() => selectionSummary(chosen.value));
 const signingKinds = computed(() => ['p2wpkh', 'p2pkh'].filter(kind => chosen.value.some(claim => claim.scriptKind === kind)));
-watch(signingKinds, kinds => { if (kinds.length && !kinds.includes(signingKind.value)) signingKind.value = kinds[0]; });
+watch(signingKinds, kinds => { signingKind.value = kinds.length === 1 ? kinds[0] : ''; }, { flush: 'sync' });
+const profiles = computed(() => capabilities.value.signatureProfiles?.filter(p => p.kinds.includes(signingKind.value)) ?? []);
+watch([proofMode, signingKind, profiles], ([mode, kind], previous) => {
+  if (mode !== 'signature-possession') return;
+  if (mode !== previous?.[0] || kind !== previous?.[1] || !profiles.value.some(p => p.id === signatureProfile.value))
+    signatureProfile.value = profiles.value.find(p => p.defaults.includes(kind))?.id ?? null;
+}, { immediate: true, flush: 'sync' });
+const selectedProfile = computed(() => profiles.value.find(p => p.id === signatureProfile.value));
 const options = computed(() => ({ network: network.value, claims: chosen.value, verifier: verifier.value,
   purpose: purpose.value, message: message.value, lifetimeSeconds: lifetime.value, proofMode: proofMode.value,
-  ...(proofMode.value === 'signature-possession' ? { signingKind: signingKind.value } : {}) }));
+  ...(proofMode.value === 'signature-possession' ? { signingKind: signingKind.value,
+    signatureProfile: signatureProfile.value, signatureProfileVersion: selectedProfile.value?.version } : {}) }));
 const validation = computed(() => { try { validateForm(options.value, capabilityState.value === 'ready' ? capabilities.value : undefined); return ''; } catch (e) { return e.message; } });
 const expiry = computed(() => /^[1-9][0-9]*$/.test(lifetime.value) && Number(lifetime.value) <= 86400
   ? new Date(now.value + Number(lifetime.value) * 1000).toISOString() : 'Choose a valid lifetime');
@@ -63,6 +73,7 @@ function blocked(index) {
 }
 async function lookup() {
   invalidateRequest();
+  if (proofMode.value === 'signature-possession' && capabilityState.value !== 'ready') checkCapabilities();
   const operation = ++generation;
   claims.value = []; selected.value = []; error.value = ''; state.value = 'loading';
   try {
@@ -153,9 +164,15 @@ async function saveRequest() {
       <template v-if="proofMode === 'signature-possession'">
         <label for="qp-signing-kind">Signing script kind</label>
         <select id="qp-signing-kind" v-model="signingKind" aria-describedby="qp-signing-kind-help">
+          <option value="" disabled>Choose a signing kind</option>
           <option v-for="kind in signingKinds" :key="kind" :value="kind">{{ kind.toUpperCase() }}</option>
         </select>
         <p id="qp-signing-kind-help">Choose a kind present among the selected outputs and supported by the signing wallet. A P2WPKH wallet descriptor does not imply a P2PKH alias.</p>
+        <label for="qp-signing-profile">Signing procedure</label>
+        <select id="qp-signing-profile" v-model="signatureProfile" :disabled="capabilityState !== 'ready' || !capabilities.signaturePossession" aria-describedby="qp-signing-profile-help">
+          <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.label }}{{ profile.defaults.includes(signingKind) ? ' · default' : '' }}</option>
+        </select>
+        <p id="qp-signing-profile-help">{{ selectedProfile?.instructions[signingKind] || 'Check the local verifier capabilities to choose a supported procedure.' }} The selected procedure is bound into a v4 request. A signature import cannot change it.</p>
       </template>
       <label for="qp-verifier">Intended verifier (up to 256 UTF-8 bytes)</label>
       <input id="qp-verifier" v-model="verifier" maxlength="256" autocomplete="off" required>
@@ -177,7 +194,7 @@ async function saveRequest() {
       <p>These facts were decoded from the canonical request. Editing any input clears this preview. A new creation generates a fresh nonce.</p>
       <dl>
         <dt>Proof mode</dt><dd>{{ preview.metadata.proofMode === 'signature-possession' ? 'Signature possession · request-bound authorization' : 'Private-key knowledge' }}</dd>
-        <template v-if="preview.metadata.proofMode === 'signature-possession'"><dt>Signing kind · profile</dt><dd>{{ preview.metadata.signingKind.toUpperCase() }} · {{ preview.metadata.signatureProfile }}</dd></template>
+        <template v-if="preview.metadata.proofMode === 'signature-possession'"><dt>Signing kind · procedure</dt><dd>{{ preview.metadata.signingKind.toUpperCase() }} · {{ preview.metadata.signatureProfileLabel }} ({{ preview.metadata.signatureProfileName }} · v{{ preview.metadata.signatureProfileVersion }})</dd></template>
         <dt>Network · statement version</dt><dd>{{ preview.metadata.network }} · v{{ preview.metadata.statementVersion }}</dd>
         <dt>Intended verifier</dt><dd>{{ preview.metadata.verifier }}</dd>
         <dt>Purpose</dt><dd>{{ preview.metadata.purpose }}</dd>

@@ -1,6 +1,7 @@
 import { MAX_ENVELOPE_BYTES, encodePolicy } from '../../wasm/codec.mjs';
 import { setupProvider } from '../provider/discovery.mjs';
 import { loadWasmAsset } from '../../wasm/asset.mjs';
+import { unsupportedArtifactError } from '../../wasm/errors.mjs';
 
 export function preflight(file, kind) {
   const maximum = kind === 'proof' ? MAX_ENVELOPE_BYTES : 4096;
@@ -17,6 +18,9 @@ function publicArtifact(bytes) {
   const data = new Uint8Array(bytes);
   if (data.length >= 4 && data[0] === 81 && data[1] === 80 && data[2] === 65 && data[3] === 49)
     throw new Error('Private .qpa authorization receipt detected. Keep receipts in native tools; never upload them here.');
+  if (data.length >= 5 && data[0] === 81 && data[1] === 80 &&
+      (data[2] === 83 || data[2] === 69) && data[3] === 49 && data[4] === 3)
+    throw unsupportedArtifactError({ name: 'UnsupportedError', message: 'unsupported_posc_v3' });
 }
 
 export function expectedPolicy(options, expectedRequest) {
@@ -108,7 +112,7 @@ export function setupProofInput({ wasmUrl = '/wasm/quietproof.wasm', fetch: fetc
       worker.onmessage = ({ data }) => {
         if (!pending || data?.id !== pending.id || controller.signal.aborted) return;
         const current = pending; pending = undefined;
-        if (data.type === 'error') current.reject(new Error('Cannot decode this proof. It may be malformed, truncated, unsupported, or exceed browser resources.'));
+        if (data.type === 'error') current.reject(unsupportedArtifactError(data) ?? new Error('Cannot decode this proof. It may be malformed, truncated, unsupported, or exceed browser resources.'));
         else current.resolve(data);
       };
       worker.onerror = event => { event.preventDefault?.(); pending?.reject(new Error('Proof tools stopped. Retry with a supported browser.')); pending = undefined; };

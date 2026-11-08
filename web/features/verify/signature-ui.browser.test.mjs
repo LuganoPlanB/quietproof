@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { chromium, webkit } from 'playwright';
 import { workflows, providerResponse } from '../request/workflow-fixtures.mjs';
 import { decodeInspection } from '../../wasm/codec.mjs';
@@ -17,16 +18,18 @@ const request=await readFile(resolve(fixtureRoot,'signature-mixed.qpr'));
 // Change only the nonce: this is still a canonical, well-formed request, but
 // it was independently issued for a different challenge.
 const wrong=Buffer.from(request);
-let nonceOffset=10;
+let nonceOffset=11;
 for(let field=0;field<2;field++)nonceOffset+=2+wrong.readUInt16BE(nonceOffset);
 wrong[nonceOffset]^=1;
 const upload=(name,buffer)=>({ name,buffer,mimeType:'application/octet-stream' });
 const layouts=[[375,812,100],[375,812,200],[1440,900,100],[1440,900,200]];
 const digest=value=>createHash('sha256').update(value).digest('hex');
 
-for (const [name,engine] of [['chromium',chromium],['webkit',webkit]]) {
+const engines=[['chromium',chromium],['webkit',webkit]].filter(([name])=>!process.env.QUIETPROOF_UI_ENGINE||process.env.QUIETPROOF_UI_ENGINE===name);
+const chromiumPath=process.env.QUIETPROOF_CHROMIUM_EXECUTABLE;
+for (const [name,engine] of engines) {
   test(`${name}: signature request/input/results and capability/error matrix`,{ timeout:900000 },async()=>{
-    const browser=await engine.launch({ headless:true,...(name==='webkit'&&process.env.QUIETPROOF_WEBKIT_EXECUTABLE?
+    const browser=await engine.launch({ headless:true,...(name==='chromium'&&chromiumPath?{executablePath:chromiumPath}:{}),...(name==='webkit'&&process.env.QUIETPROOF_WEBKIT_EXECUTABLE?
       { executablePath:process.env.QUIETPROOF_WEBKIT_EXECUTABLE }:{}) });
     const directory=resolve(output,name);await mkdir(directory,{ recursive:true });
     const captures=[],downloads=[],errors=[];let page;
@@ -74,22 +77,37 @@ for (const [name,engine] of [['chromium',chromium],['webkit',webkit]]) {
         assert.equal(await page.locator('#qp-request-proof-mode option[value="signature-possession"]').count(),1);
         await support('#qp-request-proof-mode');assert.equal(providerCalls,0,'capability lookup makes no explorer request');
         await publicLookup(workflow);
-        assert.deepEqual(await page.getByLabel('Signing script kind').locator('option').evaluateAll(nodes=>nodes.map(n=>n.value)),['p2wpkh','p2pkh']);
+        assert.deepEqual(await page.getByLabel('Signing script kind').locator('option').evaluateAll(nodes=>nodes.map(n=>n.value)),['','p2wpkh','p2pkh']);
+        assert.equal(await page.getByLabel('Signing script kind').inputValue(),'','mixed claims require an explicit signer');
+        await page.getByLabel('Signing script kind').focus();await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');
+        await page.getByLabel('Signing script kind').selectOption('p2wpkh');
         const create=page.getByRole('button',{name:'Create request',exact:true});await create.focus();await page.keyboard.press('Enter');
         const preview=page.getByRole('region',{name:'Canonical request preview'});await preview.waitFor();
         assert.match(await preview.innerText(),/Signature possession/);assert.match(await preview.innerText(),/does not establish signing time/);
         await capture('RequestForm',layout,preview);
         const event=page.waitForEvent('download');await page.getByRole('link',{name:'Download .qpr request',exact:true}).click();
-        const file=await event;const bytes=await readFile(await file.path());assert.equal(bytes[4],3);
+        const file=await event;const bytes=await readFile(await file.path());assert.equal(bytes[4],4);
         const path=resolve(directory,`${name}-${layout[0]}-${layout[2]}.qpr`);await writeFile(path,bytes);
         const encodedInspection=new Uint8Array(61+bytes.length);encodedInspection.set(new TextEncoder().encode('QWI1'));encodedInspection.set(bytes,61);
         const inspected=decodeInspection(encodedInspection.buffer);
-        assert.equal(inspected.statementVersion,3);assert.equal(inspected.proofMode,'signature-possession');
+        assert.equal(inspected.statementVersion,4);assert.equal(inspected.proofMode,'signature-possession');
         assert.equal(inspected.signatureProfile,1);assert.equal(inspected.signingKind,'p2wpkh');
         assert.equal(inspected.verifier,'signature-ui.example');assert.equal(inspected.claims.length,2);
         assert.deepEqual(Buffer.from(inspected.requestBytes),bytes);
         downloads.push({ path,sha256:digest(bytes),inspected:{...inspected,requestBytes:undefined} });
         await page.getByLabel('Signing script kind').selectOption('p2pkh');assert.equal(await preview.count(),0,'mode-specific edits clear preview');
+        const procedure=page.getByLabel('Signing procedure',{exact:true});
+        assert.equal(await procedure.inputValue(),'2','P2PKH defaults to Bitcoin Signed Message');
+        assert.equal(await procedure.locator('option').count(),2,'P2PKH exposes only two compatible procedures');
+        await procedure.focus();await page.keyboard.press('Home');await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');
+        await procedure.selectOption('1');
+        await create.click();await preview.waitFor();
+        assert.match(await preview.innerText(),/bip322-ecdsa-v1/);
+        await capture('P2PKH-BIP322-alternative',layout,preview);
+        await procedure.selectOption('2');assert.equal(await preview.count(),0,'profile edits clear preview');
+        await create.click();await preview.waitFor();
+        assert.match(await preview.innerText(),/Bitcoin Signed Message.*bitcoin-message-ecdsa-v1/s);
+        await capture('P2PKH-legacy-default',layout,preview);
         await page.close();
 
         page=await browser.newPage({ viewport:{width:layout[0],height:layout[1]} });page.on('pageerror',e=>errors.push(e.message));
@@ -160,9 +178,77 @@ for (const [name,engine] of [['chromium',chromium],['webkit',webkit]]) {
   });
 }
 
-for (const [name,engine] of [['chromium',chromium],['webkit',webkit]]) {
+for (const [name,engine] of engines) {
+  test(`${name}: single-kind defaults, profile refresh and native request summaries`,{timeout:180000},async()=>{
+    const browser=await engine.launch({headless:true,...(name==='chromium'&&chromiumPath?{executablePath:chromiumPath}:{}),
+      ...(name==='webkit'&&process.env.QUIETPROOF_WEBKIT_EXECUTABLE?{executablePath:process.env.QUIETPROOF_WEBKIT_EXECUTABLE}:{})});
+    const workflow=workflows.find(w=>w.id==='mainnet-mixed-same-key'),records=[];
+    try {
+      for(const [width,height,scale] of layouts)for(const [kind,id] of [['p2pkh','2'],['p2wpkh','1']]){
+        const page=await browser.newPage({viewport:{width,height},acceptDownloads:true});
+        await page.route('https://blockstream.info/**',route=>route.fulfill(providerResponse(workflow,route.request().url())));
+        await page.goto(origin+'/tool');await page.getByLabel('Bitcoin addresses').fill(workflow.claims.map(c=>c.address).join('\n'));
+        await page.getByRole('button',{name:'Look up outputs',exact:true}).click();
+        const row=page.locator('.quietproof-claims li').filter({hasText:new RegExp(kind.toUpperCase())});
+        await row.getByRole('checkbox').check();await page.getByLabel('Intended verifier').fill('profile-parity.example');
+        const procedure=page.getByLabel('Signing procedure',{exact:true});await procedure.waitFor();
+        await page.waitForFunction(id=>document.querySelector('#qp-signing-profile').value===id,id);
+        assert.equal(await page.getByLabel('Signing script kind').inputValue(),kind);
+        assert.equal(await procedure.inputValue(),id);
+        await page.addStyleTag({content:`html,.quietproof-request{font-size:${16*scale/100}px!important;line-height:1.6}`});
+        for(const selected of kind==='p2pkh'?['2','1']:['1']){
+          await procedure.selectOption(selected);await procedure.focus();assert.equal(await page.evaluate(()=>document.activeElement.id),'qp-signing-profile');
+          await page.keyboard.press('Tab');assert.notEqual(await page.evaluate(()=>document.activeElement.id),'qp-signing-profile');
+          await page.getByRole('button',{name:/^(Create|Regenerate) request$/}).click();
+          const preview=page.getByRole('region',{name:'Canonical request preview'});await preview.waitFor();
+          const profileName=selected==='2'?'bitcoin-message-ecdsa-v1':'bip322-ecdsa-v1';
+          assert.match(await preview.innerText(),new RegExp(profileName));
+          await page.getByRole('button',{name:'Check signature support',exact:true}).click();
+          await page.waitForFunction(()=>!document.querySelector('#qp-signing-profile').disabled);
+          assert.equal(await procedure.inputValue(),selected);assert.equal(await preview.count(),1,'capability refresh preserves an explicit compatible profile and preview');
+          const event=page.waitForEvent('download');await page.getByRole('link',{name:'Download .qpr request',exact:true}).click();
+          const downloaded=await event,publicPath=resolve(output,name,`${kind}-${selected}-${width}x${height}-${scale}.qpr`);
+          await mkdir(resolve(output,name),{recursive:true});await downloaded.saveAs(publicPath);
+          const native=JSON.parse(execFileSync(process.env.QUIETPROOF_NATIVE_CLI,['inspect',publicPath],{encoding:'utf8'}));
+          assert.equal(native.request_version,4);assert.equal(native.profile_version,1);assert.equal(native.signing_profile,profileName);assert.equal(native.signing_kind,kind);
+          assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+          for(const [part,target] of [['selector',procedure],['summary',preview.locator('dt').filter({hasText:'Signing kind · procedure'})]]){
+            await target.evaluate(el=>scrollTo(0,Math.max(0,scrollY+el.getBoundingClientRect().top-96)));
+            await page.screenshot({path:publicPath.replace('.qpr',`-${part}.png`),animations:'disabled'});
+          }
+          records.push({width,height,scale,kind,profileName,native,publicPath,requestSha256:digest(await readFile(publicPath)),observedAt:new Date().toISOString()});
+        }
+        await page.close();
+      }
+      await writeFile(resolve(output,name,'native-request-parity.json'),JSON.stringify(records,null,2)+'\n');
+      console.log(JSON.stringify({engine:name,nativeRequestParity:records.length}));
+    }finally{await browser.close();}
+  });
+  test(`${name}: v3 and unknown-profile UI errors preserve expected request and selected mode`,{timeout:120000},async()=>{
+    const browser=await engine.launch({headless:true,...(name==='chromium'&&chromiumPath?{executablePath:chromiumPath}:{}),
+      ...(name==='webkit'&&process.env.QUIETPROOF_WEBKIT_EXECUTABLE?{executablePath:process.env.QUIETPROOF_WEBKIT_EXECUTABLE}:{})});
+    try {
+      const page=await browser.newPage();await page.goto(origin+'/verify');
+      const input=page.getByLabel('Proof file (.qpf)',{exact:true});
+      await page.getByLabel('Expected request file (.qpr)',{exact:true}).setInputFiles(upload('retained.qpr',request));
+      const old=Buffer.from(proof);old[4]=3;
+      const unknown=Buffer.from(proof);unknown[17]=255;unknown[9+request.length+10]=255;
+      for(const [label,bytes,pattern] of [['v3',old,/v3.*unsupported.*fresh v4/],['unknown-profile',unknown,/profile.*unsupported/]]) {
+        await input.setInputFiles(upload(label+'.qpf',bytes));await page.getByRole('button',{name:'Inspect proof and policy',exact:true}).click();
+        const error=page.getByRole('alert');await error.waitFor();assert.match(await error.innerText(),pattern);
+        assert.equal(await page.locator('#qp-verify-proof-mode').inputValue(),'signature-possession');
+        assert.equal(await page.getByLabel('Expected request file (.qpr)',{exact:true}).evaluate(el=>el.files[0].name),'retained.qpr');
+        for(const [width,height,scale] of layouts){
+          await page.setViewportSize({width,height});await page.addStyleTag({content:`html,.quietproof-verify{font-size:${16*scale/100}px!important;line-height:1.6}`});
+          assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+          await error.scrollIntoViewIfNeeded();await mkdir(resolve(output,name),{recursive:true});
+          await page.screenshot({path:resolve(output,name,`${label}-${width}x${height}-${scale}.png`),fullPage:true});
+        }
+      }
+    }finally{await browser.close();}
+  });
   test(`${name}: disabled default PoSC fails without fallback and explicit PoKC still creates requests`,{timeout:180000},async()=>{
-    const browser=await engine.launch({headless:true,...(name==='webkit'&&process.env.QUIETPROOF_WEBKIT_EXECUTABLE?
+    const browser=await engine.launch({headless:true,...(name==='chromium'&&chromiumPath?{executablePath:chromiumPath}:{}),...(name==='webkit'&&process.env.QUIETPROOF_WEBKIT_EXECUTABLE?
       {executablePath:process.env.QUIETPROOF_WEBKIT_EXECUTABLE}:{})});
     try {
       const page=await browser.newPage({acceptDownloads:true});
@@ -176,8 +262,8 @@ for (const [name,engine] of [['chromium',chromium],['webkit',webkit]]) {
       await page.locator('.quietproof-claims input[type=checkbox]').first().waitFor();
       for(const box of await page.locator('.quietproof-claims input[type=checkbox]').all())await box.check();
       await page.getByLabel('Intended verifier').fill('disabled-default.example');
-      await page.getByRole('button',{name:'Create request',exact:true}).click();
-      await page.getByRole('alert').filter({hasText:/unavailable|unsupported|not available/i}).waitFor();
+      await page.getByText('Signature possession is unavailable in this verifier build.',{exact:false}).first().waitFor();
+      assert.equal(await page.getByRole('button',{name:'Create request',exact:true}).isDisabled(),true);
       assert.equal(await mode.inputValue(),'signature-possession');
       assert.equal(await page.getByRole('link',{name:'Download .qpr request',exact:true}).count(),0);
       await mode.selectOption('key-knowledge');
@@ -199,8 +285,8 @@ for (const [name,engine] of [['chromium',chromium],['webkit',webkit]]) {
       assert.equal(await verificationMode.inputValue(),'signature-possession');assert.equal(explorerCalls,before);
     } finally {await browser.close();}
   });
-  test(`${name}: default PoSC verifies a retained request without a capability or mode selection`,{timeout:300000},async()=>{
-    const browser=await engine.launch({headless:true,...(name==='webkit'&&process.env.QUIETPROOF_WEBKIT_EXECUTABLE?
+  test(`${name}: default PoSC verifies a retained request without a capability or mode selection`,{timeout:600000},async()=>{
+    const browser=await engine.launch({headless:true,...(name==='chromium'&&chromiumPath?{executablePath:chromiumPath}:{}),...(name==='webkit'&&process.env.QUIETPROOF_WEBKIT_EXECUTABLE?
       {executablePath:process.env.QUIETPROOF_WEBKIT_EXECUTABLE}:{})});
     try {
       const page=await browser.newPage({viewport:{width:375,height:812}});
@@ -216,16 +302,26 @@ for (const [name,engine] of [['chromium',chromium],['webkit',webkit]]) {
       await page.getByRole('button',{name:'Inspect proof and policy',exact:true}).click();
       await page.getByRole('alert').filter({hasText:'Proof mode does not match'}).waitFor();
       assert.equal(await mode.inputValue(),'signature-possession','old proof versions never change the selected mode');
-      await input.setInputFiles(upload('public.qpf',proof));
-      await page.getByLabel('Verification network (chosen independently)').selectOption('mainnet');
-      await page.getByRole('button',{name:'Verify offline',exact:true}).click();
-      await page.locator('[data-result=crypto]').filter({hasText:/^Valid$/}).waitFor({timeout:240000});
-      assert.equal(await mode.inputValue(),'signature-possession');
-      assert.equal(await page.locator('[data-result=explorer]').innerText(),'Unavailable');
-      assert.match(await page.getByRole('region',{name:'Verification results'}).innerText(),/can be delegated/);
-      await mkdir(resolve(output,name),{recursive:true});
-      await page.screenshot({path:resolve(output,name,'default-no-mode-valid.png'),fullPage:true});
-      console.log(JSON.stringify({engine:name,version:browser.version(),defaultMode:'signature-possession',realSignatureVerification:true,manualCapabilityProbe:false}));
+      for(const [family,profileName] of [['signature-p2pkh','bitcoin-message-ecdsa-v1'],['signature-p2wpkh','bip322-ecdsa-v1']]) {
+        await input.setInputFiles(upload(family+'.qpf',await readFile(resolve(fixtureRoot,family+'.qpf'))));
+        await page.getByLabel('Expected request file (.qpr)',{exact:true}).setInputFiles(upload(family+'.qpr',await readFile(resolve(fixtureRoot,family+'.qpr'))));
+        await page.getByLabel('Verification network (chosen independently)').selectOption('mainnet');
+        await page.getByRole('button',{name:'Verify offline',exact:true}).click();
+        await page.locator('[data-result=crypto]').filter({hasText:/^Valid$/}).waitFor({timeout:240000});
+        assert.equal(await mode.inputValue(),'signature-possession');
+        assert.equal(await page.locator('[data-result=explorer]').innerText(),'Unavailable');
+        assert.match(await page.locator('[data-result=profile]').innerText(),new RegExp('v4.*'+profileName));
+        assert.match(await page.getByRole('region',{name:'Verification results'}).innerText(),/can be delegated/);
+        await mkdir(resolve(output,name),{recursive:true});
+        for(const [width,height,scale] of layouts) {
+          await page.setViewportSize({width,height});
+          await page.addStyleTag({content:`html,.quietproof-verify{font-size:${16*scale/100}px!important;line-height:1.6}`});
+          assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+          await page.locator('[data-result=profile]').scrollIntoViewIfNeeded();
+          await page.screenshot({path:resolve(output,name,`${family}-${width}x${height}-${scale}-verified.png`),fullPage:true});
+        }
+        console.log(JSON.stringify({engine:name,family,profileName,version:browser.version(),defaultMode:'signature-possession',realSignatureVerification:true,manualCapabilityProbe:false}));
+      }
     } finally {await browser.close();}
   });
 }

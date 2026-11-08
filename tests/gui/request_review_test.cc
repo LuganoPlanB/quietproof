@@ -48,12 +48,19 @@ void Write(const fs::path& path, const proofs::QuietProofStatementV1& statement)
   Check(bool(file),"write review fixture");
 }
 nlohmann::json InspectJson(const RequestReview& review) {
-  return {{"format",review.format},{"statement_version",review.statement_version},
+  nlohmann::json out={{"format",review.format},{"statement_version",review.statement_version},
       {"network",review.network},{"verifier",review.verifier},{"purpose",review.purpose},
       {"not_before",review.not_before},{"request_created_at",review.request_created_at},
       {"proof_created_at",review.proof_created_at ? nlohmann::json(*review.proof_created_at) : nlohmann::json(nullptr)},
       {"expires_at",review.expires_at},{"claims",review.claim_count},
       {"has_snapshot",review.has_snapshot},{"script_kinds",review.script_kinds}};
+  if(review.proof_mode=="signature-possession"){
+    out["proof_mode"]=review.proof_mode;out["request_version"]=review.statement_version;
+    out["signing_profile"]=review.signing_profile;out["signing_profile_label"]=review.signing_profile_label;
+    out["profile_version"]=review.profile_version;out["signing_kind"]=review.signing_kind;
+    out["signing_address"]=review.signing_address;out["signing_instructions"]=review.signing_instructions;
+  }
+  return out;
 }
 std::vector<uint8_t> Unhex(const std::string& text) {
   std::vector<uint8_t> bytes;
@@ -67,10 +74,10 @@ int main(int argc, char** argv) {
       RequestState state;
       state.Open(fs::path(argv[2]));
       if (!state.loaded) throw std::runtime_error(state.Message());
-      const auto review=InspectRequest(state.loaded->statement);
+      const auto review=InspectRequest(*state.loaded);
       const auto now=std::stoll(argv[3]);
       std::cout << nlohmann::json{{"inspect",InspectJson(review)},
-          {"window",RequestWindowName(RequestWindowAt(state.loaded->statement,now))},
+          {"window",RequestWindowName(RequestWindowAt(*state.loaded,now))},
           {"expires_utc",RequestUtcTime(review.expires_at)},
           {"verifier_display",RequestDisplayText(review.verifier)}}.dump() << '\n';
       return 0;
@@ -158,6 +165,20 @@ int main(int argc, char** argv) {
       statement.claims[i].vout=static_cast<uint32_t>(i);
     }
     Write(directory / "many.qpr",statement);
+    for(int tuple=0;tuple<3;++tuple){
+      proofs::QuietProofSignatureStatementV4 signature;
+      static_cast<proofs::QuietProofStatementV1&>(signature)=Fixture(2);
+      signature.statement_version=4;signature.has_snapshot=false;signature.snapshot={};signature.snapshot_height=0;
+      signature.signing_kind=tuple==0?proofs::QuietProofScriptKind::kP2wpkh:proofs::QuietProofScriptKind::kP2pkh;
+      signature.signing_profile=tuple==1?proofs::QuietProofSigningProfile::kBitcoinMessageEcdsaV1:proofs::QuietProofSigningProfile::kBip322EcdsaV1;
+      std::vector<uint8_t> wire;Check(proofs::EncodeQuietProofSignatureStatement(signature,&wire),"encode profile review");
+      const auto path=directory/("posc-profile-"+std::to_string(tuple)+".qpr");
+      {std::ofstream file(path,std::ios::binary);file.write(reinterpret_cast<const char*>(wire.data()),wire.size());}
+      RequestState loaded;loaded.Open(path);Check(bool(loaded.loaded),"load profile review");
+      const auto review=InspectRequest(*loaded.loaded);
+      Check(review.profile_version==1 && review.statement_version==4 && review.format=="quietproof-posc-request-v4","profile/version presentation");
+      Check(review.signing_profile==proofs::QuietProofSigningProfileName(signature.signing_profile) && !review.signing_address.empty() && !review.signing_instructions.empty(),"canonical profile description");
+    }
     std::cout << "GUI review model: " << checks << " checks passed; fixtures=" << directory << '\n';
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';

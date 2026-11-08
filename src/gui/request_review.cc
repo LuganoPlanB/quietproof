@@ -1,4 +1,5 @@
 #include "request_review.h"
+#include "quietproof/signature_address.h"
 
 #include <chrono>
 #include <cstdio>
@@ -19,7 +20,15 @@ RequestReview InspectRequest(const LoadedRequest& request) {
   // Shared inherited display fields only; never invoke PoKC for this relation.
   auto review = InspectRequest(static_cast<const proofs::QuietProofStatementV1&>(signature));
   review.statement_version = proofs::kQuietProofSignatureStatementVersion;
-  review.format = "quietproof-signature-request-v4";
+  review.format = "quietproof-posc-request-v4";
+  review.proof_mode = "signature-possession";
+  const auto* descriptor = proofs::QuietProofSigningProfileDescriptorFor(signature.signing_profile, signature.profile_version);
+  review.signing_profile = descriptor ? descriptor->name : "unsupported";
+  review.signing_profile_label = descriptor ? descriptor->label : "Unsupported signing profile";
+  review.profile_version = signature.profile_version;
+  review.signing_kind = proofs::QuietProofScriptKindName(signature.signing_kind);
+  review.signing_address = proofs::QuietProofSignatureAddress(signature);
+  review.signing_instructions = proofs::QuietProofSigningInstructions(signature.signing_profile, signature.signing_kind);
   return review;
 }
 namespace {
