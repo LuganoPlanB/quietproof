@@ -63,16 +63,23 @@ public class SparrowSigner {
                 if(wallet.getScriptType()!=type || wallet.getKeystores().size()!=1 || !wallet.isValid())
                     throw new IllegalArgumentException("unsupported wallet");
             }
-            WalletNode node=wallet.getNode(KeyPurpose.RECEIVE).getChildren().stream()
+            KeyPurpose purpose=switch(args[4]) {
+                case "m/0/0" -> KeyPurpose.RECEIVE;
+                case "m/1/0" -> KeyPurpose.CHANGE;
+                default -> throw new IllegalArgumentException("unsupported owned key path");
+            };
+            WalletNode node=wallet.getNode(purpose).getChildren().stream()
                 .filter(child -> child.getIndex()==0).findFirst().orElseThrow();
             String address=node.getAddress().toString();
             Map<String,Object> result=new LinkedHashMap<>();
             result.put("network",args[1]); result.put("scriptKind",args[3]);
             result.put("address",address);
-            result.put("derivation",wallet.getKeystores().getFirst().getKeyDerivation().getDerivationPath()+"/0/0");
+            String derivation=wallet.getKeystores().getFirst().getKeyDerivation().getDerivationPath()
+                +args[4].substring(1);
+            result.put("derivation",derivation); result.put("keyPath",args[4]);
             if(action.equals("sign") || action.equals("verify")) {
-                if(!address.equals(args[4])) throw new IllegalArgumentException("address mismatch");
-                String format=args[5], text=message(args[6]);
+                if(!address.equals(args[5])) throw new IllegalArgumentException("address mismatch");
+                String format=args[6], text=message(args[7]);
                 if(format.equals("bip322-full") || (format.equals("bip322-simple") && type==ScriptType.P2PKH)
                     || (!format.equals("bip322-simple") && type==ScriptType.P2TR))
                     throw new IllegalArgumentException("unsupported format for script kind");
@@ -82,11 +89,13 @@ public class SparrowSigner {
                     signature=format.equals("bip322-simple") ? Bip322.signMessageBip322(type,text,key)
                         : key.signMessage(text,format.equals("bip137") ? type : ScriptType.P2PKH);
                 } else {
-                    JsonObject input=JsonParser.parseString(Files.readString(Path.of(args[7]))).getAsJsonObject();
+                    JsonObject input=JsonParser.parseString(Files.readString(Path.of(args[8]))).getAsJsonObject();
                     if(!input.get("format").getAsString().equals(format)
                         || !input.get("address").getAsString().equals(address)
                         || !input.get("network").getAsString().equals(args[1])
-                        || !input.get("scriptKind").getAsString().equals(args[3]))
+                        || !input.get("scriptKind").getAsString().equals(args[3])
+                        || !input.get("derivation").getAsString().equals(derivation)
+                        || (input.has("keyPath") && !input.get("keyPath").getAsString().equals(args[4])))
                         throw new IllegalArgumentException("signature metadata mismatch");
                     signature=input.get("signature").getAsString();
                 }

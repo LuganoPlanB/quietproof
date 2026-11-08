@@ -112,6 +112,8 @@ def main(argv=None):
     parser.add_argument('--network', choices=['signet', 'testnet4', 'regtest'], required=True)
     parser.add_argument('--wallet-dir', type=Path)
     parser.add_argument('--script-kind', choices=['p2wpkh', 'p2pkh', 'p2tr'], default='p2wpkh')
+    parser.add_argument('--key-path', choices=['m/0/0', 'm/1/0'], default='m/0/0',
+                        help='explicit owned receive or change key; receive m/0/0 is the default')
     parser.add_argument('--format', choices=['bip322-simple', 'bip322-full', 'standard', 'electrum', 'bip137'],
                         default='bip322-simple')
     parser.add_argument('--address')
@@ -122,6 +124,8 @@ def main(argv=None):
     args.cache = args.cache.absolute()
     os.umask(0o077)
     try:
+        require(args.action != 'create' or args.key_path == 'm/0/0',
+                'wallet creation requires default receive key path')
         if args.action in ['sign', 'verify']:
             require(args.message and args.address, '--message and --address required')
             data = read_file(args.message)
@@ -149,9 +153,18 @@ def main(argv=None):
             return 0
         with tempfile.TemporaryDirectory(prefix='operation-', dir=args.cache) as temporary:
             directory = Path(temporary)
+            operation_wallet = args.wallet_dir.resolve()
+            if args.action != 'create':
+                # Stock Storage may write its database during open/close. Keep
+                # the supplied marked wallet byte-for-byte unchanged.
+                operation_wallet = directory / 'wallet'
+                operation_wallet.mkdir(mode=0o700)
+                wallet_name = args.script_kind.upper() + '.mv.db'
+                write_private(operation_wallet / wallet_name,
+                              read_file(args.wallet_dir / wallet_name, private=True))
             command = [str(java / 'java'), '--enable-native-access=ALL-UNNAMED',
                        '-Duser.home=' + str(directory), '-cp', classpath, 'SparrowSigner',
-                       args.action, args.network, str(args.wallet_dir.resolve()), args.script_kind]
+                       args.action, args.network, str(operation_wallet), args.script_kind, args.key_path]
             if args.action in ['sign', 'verify']:
                 message = directory / 'message'
                 write_private(message, data)
