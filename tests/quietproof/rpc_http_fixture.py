@@ -224,6 +224,9 @@ def cli_main(binary, enabled):
 
         def run(arguments, expected=0, machine_failure=False):
             nonlocal checks
+            # This fixture covers the explicit PoKC discovery/proving contract.
+            if arguments[0] in ('challenge', 'prove'):
+                arguments = [*arguments, '--proof-mode', 'key-knowledge']
             result = subprocess.run([str(binary)] + arguments, capture_output=True,
                                     text=True, timeout=15)
             assert result.returncode == expected, f'CLI check {checks}: expected {expected}, got {result.returncode}'
@@ -402,7 +405,7 @@ def cli_main(binary, enabled):
 
             def verify(extra=(), expected=66, result_name='unsupported', legacy=False, path=proof):
                 nonlocal checks
-                args = ['verify', str(path)] + verify_args + list(extra)
+                args = ['verify', str(path), '--proof-mode', 'key-knowledge'] + verify_args + list(extra)
                 if legacy:
                     args += ['--bitcoin-cli', str(sentinel)]
                 result = subprocess.run([str(binary)] + args, capture_output=True,

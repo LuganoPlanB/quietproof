@@ -13,7 +13,17 @@ ctest --test-dir build-gui -R '^quietproof-gui-' --output-on-failure
 
 GUI defaults OFF. Its SDL/Nuklear dependencies do not enter exported library
 targets, CLI-only or WASI configurations. GUI ON with RPC OFF is rejected.
-The application opens existing v1/v2 request files for local review and tests
+The application defaults to PoSC: open a public v3 request, review it, choose its
+owner-only private `.qpa` receipt, then approve **Prove with receipt**. The native
+worker checks binding, proves and locally verifies; it makes no wallet RPC calls
+and never falls back to key retrieval. Obtain receipts through native `authorize`
+or `signing-material` / `import-signature`; never upload them to the browser.
+Receipt possession may be delegated without private-key knowledge or exclusive
+funds control. Mode mismatch disables proving; disabled builds report unsupported.
+Request versions never change the selected mode.
+
+For v1/v2 requests, choose **PoKC (legacy)** explicitly or launch with
+`--proof-mode key-knowledge`. This separate flow tests
 local RPC connectivity and wallet capabilities. Explicit Prove approval can
 acquire a matching RPC key and generate a proof on the sequential worker.
 Generated proofs are locally verified against the exact reviewed request before
@@ -49,8 +59,8 @@ The main thread continues handling SDL/Nuklear events. Authentication, numeric
 node version, node chain versus request network, initial-block-download state,
 loaded wallets and advertised exportaddresskey support are reported separately.
 Help advertisement is a capability observation, not a successful key export.
-Core nodes without that method show explicit unsupported-proving guidance;
-full Core wallet proving remains deferred. Test connection never unlocks a
+Core nodes without that method show unsupported legacy key-export guidance.
+Default PoSC uses a private receipt instead of this wallet-key provider. Test connection never unlocks a
 wallet, calls exportaddresskey, or exports descriptors/private keys.
 
 For supported single-key requests (including mixed P2PKH/P2WPKH claims with
@@ -218,7 +228,7 @@ starts at 480x720 logical pixels and supports resizing down to 400x640.
 
 Request, Node and Result share a status area and primary action. Actions stay
 disabled until their prerequisites are implemented and available. The Display
-view offers light/dark themes and 100%, 125% and 150% text. Only those two
+view offers light/dark themes and 100%, 125%, 150% and 200% text. Only those two
 display choices are stored in SDL's per-user `Plan-B/quietproof/display.conf`;
 an invalid file falls back to defaults. See `BRANDING.md` for verified tokens.
 Tab/Shift+Tab moves visible focus, Enter/Space activates, Page Up/Page Down

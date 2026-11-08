@@ -36,6 +36,8 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
           await route.continue().catch(() => {});
         });
         await page.goto(origin + '/verify');
+        await page.getByLabel('Proof mode (chosen independently)', {exact:true}).selectOption('key-knowledge');
+        await page.getByLabel('Expected policy source').selectOption('none');
         const inspect = page.getByRole('button', { name: 'Inspect proof and policy', exact: true });
         await inspect.waitFor(); await page.waitForFunction(() => !document.querySelector('.quietproof-verify button[type=submit]').disabled);
         await page.addStyleTag({ content: `html, .quietproof-verify { font-size: ${16 * scale / 100}px !important; line-height: 1.6; }` });

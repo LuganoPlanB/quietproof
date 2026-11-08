@@ -65,7 +65,8 @@ def main():
     parser.add_argument('--sdk-source', type=Path, required=True)
     parser.add_argument('--theme-source', type=Path, default=ROOT.parent / 'vite-theme')
     parser.add_argument('--base', default='/')
-    parser.add_argument('--signature-mode', action='store_true')
+    parser.add_argument('--signature-mode', action=argparse.BooleanOptionalAction, default=True,
+                        help='Require the standard PoSC reactor; --no-signature-mode packages legacy PoKC only')
     parser.add_argument('--allow-dirty', action='store_true', help='Local review only; record exact dirty sources')
     parser.add_argument('--source-addition', action='append', default=[], help='Explicit new local source path for review builds')
     args = parser.parse_args()

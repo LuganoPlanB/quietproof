@@ -33,6 +33,7 @@ async function capture(page, engine, state) {
   await page.setViewportSize({ width: 1440, height: 900 }); await page.evaluate(() => document.querySelector('#qp-history-scale')?.remove());
 }
 async function requestForm(page, workflow) {
+  await page.getByLabel('Proof mode', {exact:true}).selectOption('key-knowledge');
   await page.getByLabel('Bitcoin network', { exact: true }).selectOption(workflow.network);
   await page.getByLabel('Bitcoin addresses').fill(workflow.claims[0].address);
   await page.getByRole('button', { name: 'Look up outputs', exact: true }).click();
@@ -42,6 +43,7 @@ async function requestForm(page, workflow) {
   await page.getByLabel('Message (optional').fill('Public disposable local history round trip');
 }
 async function prepareVerification(page, fixture, saved) {
+  await page.getByLabel('Proof mode (chosen independently)', {exact:true}).selectOption('key-knowledge');
   await page.getByLabel('Proof file (.qpf)', { exact: true }).setInputFiles(fixture.proof);
   if (saved) {
     await page.getByRole('button', { name: 'Use saved request as explicit expectation', exact: true }).click();
@@ -145,7 +147,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
       const qpr = resolve(directory, name+'.qpr'), proof = resolve(directory, name+'.qpf');
       const download = page.waitForEvent('download'); await page.getByRole('link', { name: 'Download .qpr request', exact: true }).click(); await (await download).saveAs(qpr);
       const request = await readFile(qpr), inspected = JSON.parse(execFileSync(cli, ['inspect', qpr], { encoding: 'utf8' }));
-      const proveCommand = [cli, 'prove', '--request', qpr, '--output', proof, '--network', workflow.network];
+      const proveCommand = [cli, 'prove', '--proof-mode', 'key-knowledge', '--request', qpr, '--output', proof, '--network', workflow.network];
       const log = resolve(directory, name+'-prove.log'), fd = openSync(log, 'w'), observedAt = new Date().toISOString();
       let summary; try { summary = JSON.parse(execFileSync(cli, proveCommand.slice(1), { input: '1'.padStart(64, '0')+'\n', encoding: 'utf8', timeout: 600000, stdio: ['pipe','pipe',fd] })); } finally { closeSync(fd); }
       assert.equal(summary.result, 'proof_created'); const envelope = await readFile(proof); assert(envelope.length > 40*1024*1024);

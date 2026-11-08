@@ -85,11 +85,11 @@ class WalletExportTest(unittest.TestCase):
         cookie.write_text('__cookie__:fixture')
         cookie.chmod(0o600)
         request = self.root / 'request'
-        subprocess.run([BINARY, 'challenge', 'create', '--network', 'signet',
+        subprocess.run([BINARY, 'challenge', 'create', '--proof-mode', 'key-knowledge', '--network', 'signet',
                         '--verifier', 'example.org', '--purpose', 'proof-of-control', '--message', 'fixture',
                         '--claim', '01' + '00' * 31 + ':0:7:' + PROGRAM,
                         '--output', str(request)], check=True, capture_output=True)
-        self.command = [BINARY, 'prove', '--request', str(request), '--output', str(self.root / 'proof'),
+        self.command = [BINARY, 'prove', '--proof-mode', 'key-knowledge', '--request', str(request), '--output', str(self.root / 'proof'),
                         '--rpc-wallet', 'wallet / one', '--address', ADDRESS,
                         '--rpc-url', f'http://127.0.0.1:{self.server.server_port}',
                         '--rpc-cookie', str(cookie)]
@@ -97,7 +97,7 @@ class WalletExportTest(unittest.TestCase):
     def test_existing_outputs_rejected_before_rpc(self):
         output = self.root / 'proof'
         output.write_bytes(b'preserve me')
-        challenge = [BINARY, 'challenge', 'create', '--network', 'signet',
+        challenge = [BINARY, 'challenge', 'create', '--proof-mode', 'key-knowledge', '--network', 'signet',
                      '--verifier', 'example.org', '--purpose', 'proof-of-control',
                      '--message', 'fixture', '--address', ADDRESS,
                      '--output', str(output)]
@@ -154,7 +154,7 @@ class WalletExportTest(unittest.TestCase):
 
     def test_multiple_key_request_rejected_before_rpc(self):
         request = self.root / 'two-keys'
-        result = subprocess.run([BINARY, 'challenge', 'create', '--network', 'signet',
+        result = subprocess.run([BINARY, 'challenge', 'create', '--proof-mode', 'key-knowledge', '--network', 'signet',
                         '--verifier', 'example.org', '--purpose', 'proof-of-control', '--message', 'fixture',
                         '--claim', '01' + '00' * 31 + ':0:7:' + PROGRAM,
                         '--claim', '02' + '00' * 31 + ':0:7:' + 'aa' * 20,
@@ -180,7 +180,7 @@ class WalletExportTest(unittest.TestCase):
 
     def typed_command(self, kinds, explicit=False, network="signet"):
         request = self.root / ('request-' + network + '-'.join(kinds))
-        command = [BINARY, 'challenge', 'create', '--network', network,
+        command = [BINARY, 'challenge', 'create', '--proof-mode', 'key-knowledge', '--network', network,
                    '--output', str(request)]
         for i, kind in enumerate(kinds):
             command += ['--claim', f'{i+1:02x}' + '00' * 31 + ':0:7:' + kind + ':' + PROGRAM]
@@ -241,7 +241,7 @@ class WalletExportTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn(KEY, result.stdout + result.stderr)
         self.assertEqual(self.server.calls[-1][1], [P2PKH_ADDRESS])
-        verify = [BINARY, 'verify', str(self.root / 'proof'), '--network', 'signet',
+        verify = [BINARY, 'verify', str(self.root / 'proof'), '--proof-mode', 'key-knowledge', '--network', 'signet',
                   '--nonce-store', str(self.root / 'nonces')]
         for option in ('--rpc-url', '--rpc-cookie'):
             i = command.index(option)

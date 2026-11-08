@@ -15,7 +15,7 @@ let adapter, generation = 0, timer;
 let requestTools, download, requestGeneration = 0;
 const requestState = ref('idle'), requestError = ref(''), preview = ref(null), artifact = ref(null);
 const history = ref(null);
-const proofMode = ref('key-knowledge'), signingKind = ref('p2wpkh');
+const proofMode = ref('signature-possession'), signingKind = ref('p2wpkh');
 const capabilities = ref({ signaturePossession: false }), capabilityState = ref('unknown'), capabilityError = ref('');
 let capabilityAbort;
 async function checkCapabilities() {
@@ -54,7 +54,7 @@ watch(signingKinds, kinds => { if (kinds.length && !kinds.includes(signingKind.v
 const options = computed(() => ({ network: network.value, claims: chosen.value, verifier: verifier.value,
   purpose: purpose.value, message: message.value, lifetimeSeconds: lifetime.value, proofMode: proofMode.value,
   ...(proofMode.value === 'signature-possession' ? { signingKind: signingKind.value } : {}) }));
-const validation = computed(() => { try { validateForm(options.value, capabilities.value); return ''; } catch (e) { return e.message; } });
+const validation = computed(() => { try { validateForm(options.value, capabilityState.value === 'ready' ? capabilities.value : undefined); return ''; } catch (e) { return e.message; } });
 const expiry = computed(() => /^[1-9][0-9]*$/.test(lifetime.value) && Number(lifetime.value) <= 86400
   ? new Date(now.value + Number(lifetime.value) * 1000).toISOString() : 'Choose a valid lifetime');
 function blocked(index) {
@@ -79,7 +79,7 @@ async function createRequest() {
   try {
     const ticket = await history.value?.ticket();
     if (operation !== requestGeneration) return;
-    validateForm(options.value, capabilities.value); requestState.value = 'creating';
+    validateForm(options.value, capabilityState.value === 'ready' ? capabilities.value : undefined); requestState.value = 'creating';
     const result = await requestTools.create(options.value);
     if (operation !== requestGeneration) return;
     preview.value = result; artifact.value = download.replace(result.bytes, result.metadata);
@@ -141,15 +141,15 @@ async function saveRequest() {
       <legend>3. Set the request context</legend>
       <label for="qp-request-proof-mode">Proof mode</label>
       <select id="qp-request-proof-mode" v-model="proofMode" aria-describedby="qp-request-mode-help">
-        <option value="key-knowledge">Private-key knowledge (default)</option>
-        <option v-if="capabilities.signaturePossession" value="signature-possession">Signature possession · request-bound authorization</option>
+        <option value="signature-possession">Signature custody (PoSC · default)</option>
+        <option value="key-knowledge">Private-key knowledge (PoKC · explicit legacy choice)</option>
       </select>
       <button type="button" :disabled="capabilityState === 'checking'" @click="checkCapabilities">Check signature support</button>
       <p v-if="capabilityState === 'checking'" role="status">Checking the local verifier’s proof capabilities…</p>
       <p v-else-if="capabilityState === 'ready' && !capabilities.signaturePossession" role="status">Signature possession is unavailable in this verifier build. The existing private-key mode remains available.</p>
       <p v-if="capabilityError" role="status">{{ capabilityError }}</p>
       <p id="qp-request-mode-help" v-if="proofMode === 'signature-possession'">This requests knowledge of a signature authorizing this exact request, without proving private-key knowledge. The signature may be delegated for the same request. The native prover learns the signature and public key; the verifier receives only the public .qpf proof and .qpr request. Keep .qpa authorization receipts private and outside this page.</p>
-      <p v-else id="qp-request-mode-help">Default: knowledge of the private scalar for the disclosed key fingerprint. Checking signature support loads the local verifier; it makes no explorer request.</p>
+      <p v-else id="qp-request-mode-help">Explicit legacy choice: knowledge of the private scalar for the disclosed key fingerprint. Checking signature support loads the local verifier; it makes no explorer request.</p>
       <template v-if="proofMode === 'signature-possession'">
         <label for="qp-signing-kind">Signing script kind</label>
         <select id="qp-signing-kind" v-model="signingKind" aria-describedby="qp-signing-kind-help">
@@ -201,7 +201,7 @@ async function saveRequest() {
       <p v-if="preview.metadata.proofMode === 'signature-possession'">Retain this independently issued request for verification. Send a copy to the native wallet/prover through your chosen channel. Signing, private receipt handling and proving happen outside the browser. A delegated prover receives a private authorization receipt, not the private scalar.</p>
       <p v-else>Send this request to the prover through your chosen channel. On the prover’s machine, inspect it and use the existing CLI with protected key input or a supported wallet. Private keys stay outside this page.</p>
       <pre v-if="preview.metadata.proofMode !== 'signature-possession'"><code>quietproof inspect {{ artifact?.filename }}
-quietproof prove --request {{ artifact?.filename }} --output proof.qpf --network {{ preview.metadata.network }}</code></pre>
+quietproof prove --proof-mode key-knowledge --request {{ artifact?.filename }} --output proof.qpf --network {{ preview.metadata.network }}</code></pre>
       <p v-if="preview.metadata.proofMode !== 'signature-possession'">The CLI prompts for protected key input. See the auditor workflow for wallet options.</p>
       <p>Return the resulting public .qpf proof to the verifier. The verifier must retain this exact expected .qpr independently; a request copied from the proof is not independent authority. Request creation does not check a proof or authenticate current chain state. Proof creation time does not establish signing time.</p>
     </section>

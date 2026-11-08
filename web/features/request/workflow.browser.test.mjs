@@ -42,6 +42,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
             return route.fulfill(providerResponse(workflow, route.request().url()));
           });
           await page.goto(origin + '/tool');
+          await page.getByLabel('Proof mode', {exact:true}).selectOption('key-knowledge');
           const create = page.getByRole('button', { name: 'Create request', exact: true }); await create.waitFor();
           await page.getByLabel('Bitcoin network', { exact: true }).selectOption(workflow.network);
           await page.getByLabel('Bitcoin addresses').fill(workflow.claims.map(c => c.address).join('\n'));
@@ -82,7 +83,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
           // Other viewport cases exercise identical behavior with fresh nonces.
           if (width === 390 && scale === 100) {
             const proof = resolve(directory, id + '.qpf'), log = resolve(directory, id + '-prove.log');
-            const command = [cli, 'prove', '--request', qpr, '--output', proof, '--network', workflow.network];
+            const command = [cli, 'prove', '--proof-mode', 'key-knowledge', '--request', qpr, '--output', proof, '--network', workflow.network];
             const observedAt = new Date().toISOString(), start = performance.now(), fd = openSync(log, 'w');
             let result;
             try {

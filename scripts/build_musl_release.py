@@ -38,8 +38,8 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--version', required=True)
     parser.add_argument('--jobs', type=int, default=2)
-    parser.add_argument('--signature-mode', action='store_true',
-                        help='Build the explicit signature-possession CLI and constraint component')
+    parser.add_argument('--signature-mode', action=argparse.BooleanOptionalAction, default=True,
+                        help='Include signature possession (default); --no-signature-mode builds legacy PoKC only')
     args = parser.parse_args()
     if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', args.version):
         parser.error('--version must be a stable semantic version without v')
@@ -107,7 +107,7 @@ def main():
         raise RuntimeError('Binary version does not match the release')
     run(binary, '--help', stdout=subprocess.DEVNULL)
 
-    name = f'quietproof-v{args.version}-linux-x86_64-musl' + ('-signature' if args.signature_mode else '')
+    name = f'quietproof-v{args.version}-linux-x86_64-musl' + ('' if args.signature_mode else '-key-knowledge')
     stage = work / name
     (stage / 'bin').mkdir(parents=True, exist_ok=True)
     shutil.copy2(binary, stage / 'bin/quietproof')

@@ -29,6 +29,8 @@ struct ProofValidation {
   static ProofValidation Run(std::shared_ptr<const LoadedRequest>,
       const proofs::QuietProofEnvelopeV1&, const std::function<bool()>& canceled,
       const ProofVerifier& test_verifier = {});
+  static ProofValidation RunSignature(std::shared_ptr<const LoadedRequest>,
+      const std::vector<uint8_t>& proof, uint64_t now, const std::function<bool()>& canceled);
 };
 struct ValidationJob {
   uint64_t revision;

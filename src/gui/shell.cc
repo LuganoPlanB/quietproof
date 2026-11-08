@@ -1,4 +1,5 @@
 #include "shell.h"
+#include "quietproof/signature_challenge.h"
 
 #include <algorithm>
 #include <cmath>
@@ -92,13 +93,14 @@ void DrawNodeProbe(nk_context* context, ShellState& state, float width, float ac
   if (!state.node_probe.result) return;
   const auto& result = *state.node_probe.result;
   const auto& probe = result.probe;
-  Paragraph(context,result.Message().c_str(),width);
+  Paragraph(context,state.signature_mode ? "Node observations are informational. PoSC receipt proving uses no wallet RPC; accepting current funds is a separate verifier operation." : result.Message().c_str(),width);
   ReviewText(context,std::string("Authentication: ")+(probe.authenticated ? "accepted" :
       result.error.code == proofs::BitcoinRpcErrorCode::kAuthentication ? "rejected; check node cookie" : "not established"),width);
   if (probe.version) ReviewText(context,"Node version: "+std::to_string(*probe.version),width);
   if (probe.chain) ReviewText(context,"Node chain: "+*probe.chain+
       (probe.network_matches == true ? " (matches)" : " (wrong network)"),width);
   if (probe.syncing) ReviewText(context,std::string("Sync: ")+(*probe.syncing ? "initial block download" : "initial block download complete"),width);
+  if (state.signature_mode) return;
   if (probe.export_address_key) ReviewText(context,std::string("Key export capability: ")+
       (*probe.export_address_key ? "exportaddresskey advertised" : "unsupported; Core proving deferred"),width);
   if (probe.wallets_listed) ReviewText(context,"Loaded wallets: "+std::to_string(probe.wallets.size()),width);
@@ -129,7 +131,7 @@ void DrawNodeProbe(nk_context* context, ShellState& state, float width, float ac
 }
 
 void DrawNodeSettings(nk_context* context, ShellState& state, float width, float action_height) {
-  const auto network = state.request.loaded ? state.request.loaded->statement.network : state.node_network;
+  const auto network = state.request.loaded ? state.request.loaded->Network() : state.node_network;
   ReviewText(context,std::string(state.request.loaded ? "Request network: " : "Test network (no request): ")+
       proofs::QuietProofNetworkName(network),width);
   if (!state.request.loaded) {
@@ -185,8 +187,10 @@ void DrawNodeSettings(nk_context* context, ShellState& state, float width, float
 }
 
 void DrawRequestReview(nk_context* context, ShellState& state, float width, float action_height) {
-  const auto& statement = state.request.loaded->statement;
-  const auto review = InspectRequest(statement);
+  const auto& request = *state.request.loaded;
+  const auto& statement = request.signature ? static_cast<const proofs::QuietProofStatementV1&>(*request.signature) : request.statement;
+  const auto review = InspectRequest(request);
+  ReviewText(context,request.signature ? "Requested relation: signature custody (PoSC)" : "Requested relation: private-key knowledge (PoKC)",width);
   ReviewText(context,"Network: "+review.network,width);
   nk_layout_row_dynamic(context,action_height,1);
   const auto toggle = state.claims_expanded ? "Back to summary" :
@@ -210,7 +214,7 @@ void DrawRequestReview(nk_context* context, ShellState& state, float width, floa
     Paragraph(context,"Identity unverified. URLs are text only.",width);
     ReviewField(context,"Purpose",review.purpose,width);
     ReviewField(context,"Expires at",RequestUtcTime(review.expires_at),width);
-    ReviewText(context,RequestWindowMessage(RequestWindowAt(statement,state.now)),width);
+    ReviewText(context,RequestWindowMessage(RequestWindowAt(request,state.now)),width);
     ReviewField(context,"Request created / not before",RequestUtcTime(review.not_before),width);
     ReviewField(context,"Proof created at","None (request only)",width);
     ReviewField(context,"Request format",review.format,width);
@@ -246,7 +250,7 @@ void DrawRequestReview(nk_context* context, ShellState& state, float width, floa
 
 namespace {
 bool WalletReady(const ShellState& state) {
-  return state.request.loaded && RequestWindowAt(state.request.loaded->statement,state.now) == RequestWindow::Valid &&
+  return !state.signature_mode && state.request.loaded && !state.request.loaded->signature && RequestWindowAt(*state.request.loaded,state.now) == RequestWindow::Valid &&
     state.node_probe.result && state.node_probe.result->selected_wallet &&
     state.node_probe.result->complete && state.node_probe.result->probe.syncing == false &&
     !state.node_busy && !state.wallet_busy && !state.save_busy && !state.completed_proof;
@@ -299,6 +303,7 @@ void ShellState::OpenRequest(const std::filesystem::path& path) {
   request_path.fill(0);
   std::memcpy(request_path.data(), text.data(), std::min(text.size(), request_path.size() - 1));
   chooser.Cancel();
+  receipt_path.fill(0);
   claims_expanded = false;
   view = View::Request;
   scroll = {};
@@ -330,9 +335,10 @@ void HandleShellKey(ShellState& state, const SDL_KeyboardEvent& key) {
   if (key.keysym.sym == SDLK_TAB) {
     state.editing_path = false;
     std::vector<int> order = state.view == View::Settings ?
-      std::vector<int>{1,2,3,4,5,6,7,8,9,11} : std::vector<int>{1,2,3,4,10};
+      std::vector<int>{1,2,3,4,5,6,7,8,9,314,11} : std::vector<int>{1,2,3,4,10};
     if (state.view == View::Request) {
-      order = {1,2,3,4,12,13};
+      order = {1,2,3,4,310,311,12,13};
+      if (state.signature_mode && state.request.loaded && state.request.loaded->signature) { order.push_back(312); order.push_back(313); }
       if (state.chooser.open) {
         order.push_back(14);
         order.push_back(15);
@@ -411,11 +417,11 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
       ChangeView(state, state.view == View::Settings ? View::Request : View::Settings);
     }
     nk_layout_row_dynamic(context, subtitle_height, 1);
-    nk_label_colored(context, "Proof of wallet ownership", NK_TEXT_LEFT, p.soft_text);
+    nk_label_colored(context, state.signature_mode ? "Proof of signature custody" : "Legacy PoKC", NK_TEXT_LEFT, p.soft_text);
     nk_layout_row_dynamic(context, action_height, 3);
-    if (Button(context,state,2,"Request",state.view == View::Request)) ChangeView(state,View::Request);
+    if (Button(context,state,2,body->height > 25 && width < 600 ? "Input" : "Request",state.view == View::Request)) ChangeView(state,View::Request);
     if (Button(context,state,3,"Node",state.view == View::Node)) ChangeView(state,View::Node);
-    if (Button(context,state,4,"Result",state.view == View::Result)) ChangeView(state,View::Result);
+    if (Button(context,state,4,body->height > 25 && width < 600 ? "Proof" : "Result",state.view == View::Result)) ChangeView(state,View::Result);
 
     nk_layout_row_dynamic(context, panel_height, 1);
     if (nk_group_scrolled_begin(context,&state.scroll,"Details",NK_WINDOW_BORDER)) {
@@ -433,10 +439,10 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
         }
         nk_layout_row_dynamic(context,body->height + 8,1);
         nk_label(context,"Text size",NK_TEXT_LEFT);
-        nk_layout_row_dynamic(context,action_height,3);
-        for (int index=0;index<3;++index) {
-          const char* labels[] = {"100%","125%","150%"};
-          if (Button(context,state,7+index,labels[index],state.preferences.font_index==index)) {
+        nk_layout_row_dynamic(context,action_height,2);
+        for (int index=0;index<4;++index) {
+          const char* labels[] = {"100%","125%","150%","200%"};
+          if (Button(context,state,index == 3 ? 314 : 7+index,labels[index],state.preferences.font_index==index)) {
             state.preferences.font_index=index; state.save_preferences=true;
           }
         }
@@ -452,10 +458,44 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
         const auto index=static_cast<int>(state.view);
         Heading(context,state.view == View::Request && state.chooser.open ? "Choose a file" : titles[index],heading,body);
         if (state.view == View::Request) {
+          nk_layout_row_dynamic(context,action_height,1);
+          if (Button(context,state,310,"PoSC (default)",state.signature_mode) && !state.signature_mode) {
+            state.InvalidateNodeProbe(); state.signature_mode = true;
+          }
+          nk_layout_row_dynamic(context,action_height,1);
+          if (Button(context,state,311,"PoKC (legacy)",!state.signature_mode) && state.signature_mode) {
+            state.InvalidateNodeProbe(); state.signature_mode = false;
+          }
+          if (state.request.loaded && bool(state.request.loaded->signature) != state.signature_mode)
+            Paragraph(context,"Request mode differs from your selection. Choose its matching proof mode explicitly; loading a file never switches modes.",content_width);
+          if (state.signature_mode) {
+            Paragraph(context,"PoSC proves custody of a request-bound signature, which may be delegated. It does not prove private-key knowledge or exclusive funds control. Keep private .qpa receipts in native tools.",content_width);
+            if (!proofs::kQuietProofSignatureModeEnabled)
+              Paragraph(context,"Signature custody is unsupported in this build. No private-key fallback is performed.",content_width);
+            if (state.request.loaded && state.request.loaded->signature) {
+              ReviewText(context,"Private authorization receipt file (.qpa)",content_width);
+              nk_layout_row_dynamic(context,action_height,1);
+              state.controls[312] = nk_widget_bounds(context);
+              const auto previous = state.receipt_path;
+              if (state.focus == 312 && !state.editing_path) nk_edit_focus(context,NK_EDIT_ALWAYS_INSERT_MODE);
+              if (state.focus != 312) nk_edit_unfocus(context);
+              const auto receipt_edit = nk_edit_string_zero_terminated(context,NK_EDIT_FIELD,state.receipt_path.data(),static_cast<int>(state.receipt_path.size()),nk_filter_default);
+              if (receipt_edit & NK_EDIT_ACTIVATED) state.focus = 312;
+              if (state.focus == 312) state.editing_path = (receipt_edit & NK_EDIT_ACTIVE) != 0;
+              if (previous != state.receipt_path) state.InvalidateNodeProbe();
+              Paragraph(context,"Create the receipt with native authorize or import-signature for this exact request. Only current-owner owner-only regular files up to 4096 bytes are accepted. The receipt is never uploaded.",content_width);
+              if (proofs::kQuietProofSignatureModeEnabled && state.receipt_path[0] &&
+                  !state.wallet_busy && !state.node_busy && !state.save_busy && !state.completed_proof &&
+                  RequestWindowAt(*state.request.loaded,state.now) == RequestWindow::Valid) {
+                nk_layout_row_dynamic(context,action_height,1);
+                if (Button(context,state,313,"Prove with receipt")) state.prove_signature = true;
+              }
+            }
+          } else Paragraph(context,"Explicit legacy PoKC proves private-key knowledge. It can obtain one selected Roots wallet key after your approval.",content_width);
           if (!state.wallet_warning.empty()) Paragraph(context,state.wallet_warning.c_str(),content_width);
           if (WalletReady(state)) {
             nk_layout_row_dynamic(context,action_height,1);
-            if (Button(context,state,304,"Prove: approve wallet access")) state.prove_wallet = true;
+            if (Button(context,state,304,"Approve key proof")) state.prove_wallet = true;
             Paragraph(context,"Approval permits this request's matching key and local proof generation. Nothing is uploaded.",content_width);
           }
           if (state.wallet_busy) {
@@ -479,10 +519,10 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
           nk_layout_row_dynamic(context,action_height,1);
           state.controls[12] = nk_widget_bounds(context);
           if (state.focus == 12 && !state.editing_path) nk_edit_focus(context,NK_EDIT_ALWAYS_INSERT_MODE);
-          if (state.focus != 12) nk_edit_unfocus(context);
+          if (state.focus != 12 && state.focus != 312) nk_edit_unfocus(context);
           const auto edit = nk_edit_string_zero_terminated(context,static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER,
               state.request_path.data(),static_cast<int>(state.request_path.size()),nk_filter_default);
-          state.editing_path = (edit & NK_EDIT_ACTIVE) != 0;
+          if (state.focus == 12) state.editing_path = (edit & NK_EDIT_ACTIVE) != 0;
           if (edit & NK_EDIT_ACTIVATED) state.focus = 12;
           if (edit & NK_EDIT_COMMITED) state.OpenRequest(std::filesystem::path(state.request_path.data()));
           nk_layout_row_dynamic(context,action_height,1);
@@ -521,7 +561,7 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
           if (state.completed_proof) {
             if (!state.save_status.empty()) Paragraph(context,state.save_status.c_str(),content_width);
             Paragraph(context,"Cryptographic proof verified against the exact reviewed request. Current chain state has not been checked.",content_width);
-            ReviewField(context,"Verifier (request-provided)",RequestDisplayText(state.completed_proof->Request().statement.verifier),content_width);
+            ReviewField(context,"Verifier (request-provided)",RequestDisplayText(state.completed_proof->Request().Verifier()),content_width);
             ReviewField(context,"Proof bytes",std::to_string(state.completed_proof->Bytes().size()),content_width);
             if (state.save_dialog) {
               Paragraph(context,"Save As: enter the full destination filename. No file is uploaded.",content_width);
@@ -546,8 +586,8 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
         if (state.details) {
           const char* guide[] = {
             "1. Review the request. Check its network, verifier, purpose and expiry. Only approve a statement you understand.",
-            "2. Connect your node. Your local RPC wallet supplies the key required by a matching request. A connection alone does not establish proof readiness.",
-            "3. Approve wallet access. Review the proof request before permitting key access. Wallet passwords belong only in the private unlock dialog.",
+            state.signature_mode ? "2. Obtain a private receipt. Use native signing-material/import-signature or authorize for the exact reviewed request. Never upload private .qpa files to the browser." : "2. Connect your node. Explicit legacy PoKC requires a matching Roots wallet key. A connection alone does not establish proof readiness.",
+            state.signature_mode ? "3. Choose the owner-only private receipt and approve Prove with receipt. This workflow never unlocks a wallet or exports a key." : "3. Approve key proof. Review the request before permitting key access. Wallet passwords belong only in the private unlock dialog.",
             "4. Save your proof. Keep a complete proof file for your verifier. Saving a proof does not publish it or upload it to a service.",
             "A proof attests to its reviewed statement. It does not grant permission to spend coins or replace a verifier's current-chain checks."};
           for (const char* text:guide) Paragraph(context,text,content_width);
@@ -574,7 +614,7 @@ void DrawShell(nk_context* context, ShellState& state, int width, int height,
       nk_label_wrap(context,state.preference_status.empty() ? "Theme and text size only. No wallet access." : state.preference_status.c_str());
     } else {
       const char* statuses[] = {state.request.error != RequestError::None ? "Request rejected. Recovery details above." :
-                                state.request.loaded ? RequestWindowMessage(RequestWindowAt(state.request.loaded->statement,state.now)) : "No request loaded. Proving is unavailable.",
+                                state.request.loaded ? (bool(state.request.loaded->signature) != state.signature_mode ? "Choose matching proof mode." : RequestWindowMessage(RequestWindowAt(*state.request.loaded,state.now))) : "No request loaded. Proving is unavailable.",
                                 state.node_busy ? "Testing connection. Wallet secrets are not accessed." :
                                   state.node_probe.result ? "Connection report above. Proving remains unavailable." :
                                   "Connection untested or settings changed. Test again.",

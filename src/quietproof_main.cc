@@ -86,13 +86,15 @@ void PrintUsage(std::ostream& output) {
       << "    Native RPC is default; --bitcoin-cli /ABSOLUTE/PATH explicitly "
          "selects the deprecated legacy verifier.\n"
       << "  quietproof inspect FILE\n"
-      << "Signature mode (optional build capability; defaults remain key-knowledge):\n"
-      << "  quietproof challenge create --proof-mode signature-possession --signing-kind p2pkh|p2wpkh [CHALLENGE OPTIONS]\n"
-      << "  quietproof authorize --proof-mode signature-possession --request REQUEST --receipt-output PRIVATE.qpa --rpc-wallet NAME [RPC OPTIONS]\n"
-      << "  quietproof signing-material --proof-mode signature-possession --request REQUEST --output MESSAGE.txt [--network NETWORK] [--address ADDRESS]\n"
-      << "  quietproof import-signature --proof-mode signature-possession --request REQUEST --signature-input PRIVATE --signature-format bip322-simple|bip322-full|sparrow-json --receipt-output PRIVATE.qpa [--network NETWORK] [--address ADDRESS]\n"
-      << "  quietproof prove --proof-mode signature-possession --request REQUEST --output PUBLIC.qpf (--receipt-input PRIVATE.qpa | --rpc-wallet NAME [RPC OPTIONS])\n"
-      << "  quietproof verify PUBLIC.qpf --proof-mode signature-possession --expected-request ISSUED.qpr --nonce-store FILE [--max-tip-age SECONDS] [VERIFY OPTIONS]\n"
+      << "Proof mode defaults to signature-possession (PoSC). Standard builds include it.\n"
+      << "  quietproof challenge create [--signing-kind p2pkh|p2wpkh] [CHALLENGE OPTIONS]\n"
+      << "    Signing kind follows homogeneous claims; mixed script kinds require --signing-kind.\n"
+      << "  quietproof authorize --request REQUEST --receipt-output PRIVATE.qpa --rpc-wallet NAME [RPC OPTIONS]\n"
+      << "  quietproof signing-material --request REQUEST --output MESSAGE.txt [--network NETWORK] [--address ADDRESS]\n"
+      << "  quietproof import-signature --request REQUEST --signature-input PRIVATE --signature-format bip322-simple|bip322-full|sparrow-json --receipt-output PRIVATE.qpa [--network NETWORK] [--address ADDRESS]\n"
+      << "  quietproof prove --request REQUEST --output PUBLIC.qpf (--receipt-input PRIVATE.qpa | --rpc-wallet NAME [RPC OPTIONS])\n"
+      << "  quietproof verify PUBLIC.qpf --expected-request ISSUED.qpr --nonce-store FILE [--max-tip-age SECONDS] [VERIFY OPTIONS]\n"
+      << "  Use --proof-mode key-knowledge explicitly for legacy PoKC challenge/prove/verify (v1/v2).\n"
       << "  Signature mode never exports private keys or unlocks wallets. Unlock separately before signing.\n"
       << "  .qpa is a private authorisation capability: its holder learns the signature/public key and can delegate proving for this request.\n"
       << "  .qpf is public. Signature possession does not establish private-key knowledge, exclusive control, reserved funds or signing time.\n"
@@ -513,13 +515,13 @@ int ChallengeCreate(int argc, char** argv) {
   allowed.insert(kDiscoveryOptions.begin(), kDiscoveryOptions.end());
   Options options;
   if (!ParseOptions(argc, argv, 3, allowed, &options)) return Usage();
-  std::string mode, signing_kind;
+  std::string mode = "signature-possession", signing_kind;
   if (!One(options, "--proof-mode", &mode, false) ||
-      (!mode.empty() && mode != "key-knowledge" && mode != "signature-possession") ||
+      (mode != "key-knowledge" && mode != "signature-possession") ||
       !One(options, "--signing-kind", &signing_kind, false)) return Usage();
   const bool signature_mode = mode == "signature-possession";
   if ((!signature_mode && options.count("--signing-kind")) ||
-      (signature_mode && signing_kind != "p2pkh" && signing_kind != "p2wpkh")) return Usage();
+      (options.count("--signing-kind") && signing_kind != "p2pkh" && signing_kind != "p2wpkh")) return Usage();
   if (signature_mode && !proofs::kQuietProofSignatureModeEnabled) return SignatureUnavailable();
   std::string network_name, verifier, purpose, message, output_path,
       lifetime_text;
@@ -573,6 +575,16 @@ int ChallengeCreate(int argc, char** argv) {
     }
   }
   if (signature_mode) {
+    if (!options.count("--signing-kind")) {
+      const auto kind = parsed_claims.front().script_kind;
+      if (std::any_of(parsed_claims.begin(), parsed_claims.end(), [kind](const auto& claim) {
+            return claim.script_kind != kind;
+          })) {
+        std::cerr << "mixed script kinds require --signing-kind p2pkh|p2wpkh\n";
+        return kUsage;
+      }
+      signing_kind = proofs::QuietProofScriptKindName(kind);
+    }
     proofs::QuietProofSignatureChallengeOptions selected;
     selected.request = challenge_options;
     selected.signing_kind = signing_kind == "p2pkh" ? proofs::QuietProofScriptKind::kP2pkh
@@ -629,9 +641,9 @@ int Prove(int argc, char** argv) {
   allowed.insert({"--request", "--output", "--rpc-wallet", "--address", "--network", "--proof-mode", "--receipt-input"});
   if (!ParseOptions(argc, argv, 2, allowed, &options))
     return Usage();
-  std::string mode;
+  std::string mode = "signature-possession";
   if (!One(options, "--proof-mode", &mode, false) ||
-      (!mode.empty() && mode != "key-knowledge" && mode != "signature-possession")) return Usage();
+      (mode != "key-knowledge" && mode != "signature-possession")) return Usage();
   if (mode == "signature-possession") return SignatureOperation(options, false);
   if (options.count("--receipt-input")) return Usage();
   std::string request_path, output_path;
@@ -759,9 +771,9 @@ int Verify(int argc, char** argv) {
                   "--min-confirmations", "--minimum-total-sats",
                   "--max-lifetime", "--network", "--proof-mode", "--expected-request", "--max-tip-age"});
   if (!ParseOptions(argc, argv, 3, allowed, &options)) return Usage();
-  std::string mode, expected_path;
+  std::string mode = "signature-possession", expected_path;
   if (!One(options, "--proof-mode", &mode, false) ||
-      (!mode.empty() && mode != "key-knowledge" && mode != "signature-possession") ||
+      (mode != "key-knowledge" && mode != "signature-possession") ||
       !One(options, "--expected-request", &expected_path, false)) return Usage();
   const bool signature_mode = mode == "signature-possession";
   if (!signature_mode && (options.count("--expected-request") || options.count("--max-tip-age"))) return Usage();
@@ -828,7 +840,7 @@ int Verify(int argc, char** argv) {
     const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     if (now < 0) return kIoError;
     proofs::QuietProofSignatureVerifierConfig config;
-    config.modes.allow_signature_possession = true; // Explicit CLI selection only.
+    config.modes.allow_signature_possession = true; // Selected CLI mode; never inferred from input.
     config.policy.now = static_cast<uint64_t>(now);
     config.policy.verifier = verifier;
     config.policy.purpose = purpose;

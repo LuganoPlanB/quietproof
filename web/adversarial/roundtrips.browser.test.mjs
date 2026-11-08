@@ -97,6 +97,7 @@ async function material(name,engine,workflow,lifetime=86400) {
       return route.fulfill(observationResponse(workflow,r.url()));
     });
     await page.goto(origin+'/tool');
+    await page.locator('#qp-request-proof-mode').selectOption('key-knowledge');
     const create=page.getByRole('button',{name:'Create request',exact:true});await create.waitFor();
     await page.getByLabel('Bitcoin network',{exact:true}).selectOption(workflow.network);
     await page.getByLabel('Bitcoin addresses').fill(workflow.claims.map(c=>c.address).join('\n'));assert.equal(requests.length,0);
@@ -117,7 +118,7 @@ async function material(name,engine,workflow,lifetime=86400) {
     assert.equal(inspected.claims,workflow.claims.length);assert.equal(inspected.expires_at-inspected.not_before,lifetime);
     assert.deepEqual(inspected.script_kinds,workflow.claims.map(c=>c.scriptKind));
     await page.screenshot({path:resolve(folder,'browser-request.png'),fullPage:true,animations:'disabled'});
-    const command=[cli,'prove','--request',qpr,'--output',qpf,'--network',workflow.network];
+    const command=[cli,'prove','--proof-mode','key-knowledge','--request',qpr,'--output',qpf,'--network',workflow.network];
     const log=resolve(folder,'native-prove.log'),fd=openSync(log,'w'),startedAt=now(),start=performance.now();let stdout;
     try{
       // Public disposable scalars are native stdin only; never page/worker/URL inputs.
@@ -141,6 +142,7 @@ before(async()=>{await mkdir(directory,{recursive:true});await material('chromiu
 
 async function prepare(page,record) {
   await page.goto(origin+'/verify');
+  await page.locator('#qp-verify-proof-mode').selectOption('key-knowledge');
   await page.getByRole('button',{name:'Verify offline',exact:true}).waitFor();
   await page.waitForFunction(()=>!document.querySelector('.quietproof-verify button[type=submit]').disabled);
   assert.match(await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content'),/script-src 'self' 'wasm-unsafe-eval'/);

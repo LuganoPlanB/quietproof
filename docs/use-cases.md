@@ -5,7 +5,7 @@ description: Custody, audit, proof-of-funds, credit, wallet continuity, and coll
 
 # Where QuietProof can help
 
-QuietProof is most useful when one party needs credible evidence of Bitcoin key control **before** it makes sense to move funds, expose a public key, negotiate a contract, or assemble a collaborative transaction.
+QuietProof is most useful when one party needs request-bound evidence of Bitcoin signature custody **before** it makes sense to move funds, expose a public key, negotiate a contract, or assemble a collaborative transaction.
 
 ## Custody and audit
 
@@ -13,17 +13,21 @@ QuietProof is most useful when one party needs credible evidence of Bitcoin key 
 
 A custodian, exchange, fund, broker, or escrow operator can answer:
 
-> We currently know the keys needed to spend these disclosed native P2WPKH or compressed-key P2PKH outputs.
+> We possess a wallet signature for your exact request about these disclosed native P2WPKH or compressed-key P2PKH outputs.
 
-The proof can be checked without publishing the compressed public keys and without constructing a fake or spend-like transaction.
+The public proof can be checked without publishing the compressed public keys
+or spending the claimed outputs. Native PoSC signing uses fixed synthetic
+BIP322 virtual transactions; it does not fund or broadcast a transaction.
 
-This is a proof-of-key-control building block. A complete proof of reserves must also address liabilities, asset completeness, valuation, and the possibility of shared or borrowed key access.
+Default PoSC permits delegated signature custody and does not prove private-key
+knowledge, signing time or exclusive control. Explicit PoKC has a separate
+key-knowledge relation. A complete proof of reserves must also address liabilities, asset completeness, valuation, and the possibility of shared or borrowed key access.
 
 ### Auditor-to-custodian challenges
 
 An auditor can create a fresh, short-lived request for a known UTXO set. The custodian reviews it and returns a bound proof. The auditor independently checks the output data against Bitcoin and records the challenge as consumed.
 
-This workflow reduces the value of copied historical proofs and cleanly separates key-control evidence from the auditor’s chain, confirmation, value, and policy checks.
+This workflow reduces the value of copied historical proofs and cleanly separates signature-custody evidence from the auditor’s chain, confirmation, value, and policy checks.
 
 ## Qualification before a deal
 
@@ -49,7 +53,7 @@ A marketplace may ask a seller to prove control of a disclosed bond UTXO, or ask
 
 ## Separate proofs in application workflows
 
-Applications checking funds under different keys can request and verify a separate proof for each key. The application must define how those requests and acceptance decisions relate. Key knowledge alone does not establish a common person or organization.
+Applications checking funds under different keys can request and verify a separate proof for each key. The application must define how those requests and acceptance decisions relate. Neither signature custody nor key knowledge establishes a common person or organization.
 
 ## Collaborative Bitcoin protocols
 

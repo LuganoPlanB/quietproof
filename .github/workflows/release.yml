@@ -120,12 +120,12 @@ jobs:
           SIGNATURE_MODE: ${{ matrix.signature && 'ON' || 'OFF' }}
         run: |
           options=()
-          if [[ "$SIGNATURE_MODE" == ON ]]; then options+=(--signature-mode); fi
+          if [[ "$SIGNATURE_MODE" == OFF ]]; then options+=(--no-signature-mode); fi
           python3 quietproof/scripts/build_musl_release.py --sdk-source longfellow-zk \
             --work "$RUNNER_TEMP/musl-release" --output dist --version "$RELEASE_VERSION" --jobs 2 "${options[@]}"
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.signature && 'quietproof-linux-x86_64-musl-signature' || 'quietproof-linux-x86_64-musl' }}
+          name: ${{ matrix.signature && 'quietproof-linux-x86_64-musl' || 'quietproof-linux-x86_64-musl-key-knowledge' }}
           path: dist/*
           if-no-files-found: error
 

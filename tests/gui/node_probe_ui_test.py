@@ -47,7 +47,7 @@ try:
             if scenario == 'multiple-selection':
                 events += ['tab']*6+['enter']+['wait']*16
             script.write_text('\n'.join(events)+'\n')
-            result = subprocess.run([str(executable),'--smoke-test','--theme',theme,'--font-scale',scale,
+            result = subprocess.run([str(executable),'--proof-mode','key-knowledge','--smoke-test','--theme',theme,'--font-scale',scale,
                                      '--request',str(fixtures/'review-v2.qpr'),
                                      '--test-events',str(script),'--screenshot',str(artifacts/(name+'.bmp'))],
                                     env=environment,capture_output=True,text=True,timeout=15)
@@ -83,7 +83,7 @@ try:
                 events += ['tab']*5+['enter']
             script = artifacts/(change+'-invalidate.events')
             script.write_text('\n'.join(events)+'\n')
-            result = subprocess.run([str(executable),'--smoke-test','--test-events',str(script),*args],
+            result = subprocess.run([str(executable),'--proof-mode','key-knowledge','--smoke-test','--test-events',str(script),*args],
                                     env=environment,capture_output=True,text=True,timeout=15)
             (artifacts/(change+'-invalidate.log')).write_text(result.stdout+result.stderr)
             assert result.returncode == 0 and re.search(r'GUI probe: busy=0 report=0',result.stdout), (change,result.stdout,result.stderr)
@@ -94,7 +94,7 @@ try:
         script = artifacts/'advanced-test.events'
         events = ['tab','enter']+['tab']*2+['enter']+['backtab']*5+['enter']+['wait']*25
         script.write_text('\n'.join(events)+'\n')
-        result = subprocess.run([str(executable),'--smoke-test','--request',str(fixtures/'review-v2.qpr'),
+        result = subprocess.run([str(executable),'--proof-mode','key-knowledge','--smoke-test','--request',str(fixtures/'review-v2.qpr'),
                                  '--test-events',str(script)],env=environment,capture_output=True,text=True,timeout=15)
         (artifacts/'advanced-test.log').write_text(result.stdout+result.stderr)
         assert result.returncode == 0 and 'advanced=0' in result.stdout and re.search(r'GUI probe: busy=0 report=1',result.stdout), result.stdout

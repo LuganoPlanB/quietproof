@@ -31,6 +31,11 @@ and artifact digests. Preserve the previous candidate before regenerating
 time-limited public proof fixtures. Run the real crypto suites serially and
 keep build concurrency bounded.
 
+Standard reactor/static/release settings enable PoSC. `quietproof-static` is
+the signature-enabled CI artifact; deliberate disabled builds use
+`--no-signature-mode` and `quietproof-static-key-knowledge`. Public packaging
+contains no private receipts or wallet material.
+
 The deployable directory is `docs/.vitepress/dist`. It includes
 `asset-manifest.json`, `build-provenance.json`, `SOURCE-NOTICE.txt`, corresponding
 source archives and license notices. Verify every manifest entry, the
@@ -43,7 +48,7 @@ Required local gates include native RPC ON/OFF compatibility, cross-build
 separation contracts, real WASM verification, provider policy/cryptography
 ordering, unit/site/packaging tests, the full Chromium/WebKit workflow and
 adversarial suites, resource measurements and root/subpath static hosting.
-Inspect documentation and tools at 390×844 and 1440×900 CSS pixels with 100%
+Inspect documentation and tools at 375×812 and 1440×900 CSS pixels with 100%
 and 200% text. Review the complete intended diff and source/license contents.
 Final branch acceptance and the independent terminal branch review remain
 separate decisions; a local qualification report is not that acceptance.

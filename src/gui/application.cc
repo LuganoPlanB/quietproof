@@ -128,7 +128,7 @@ std::vector<TestEvent> ReadTestEvents(const std::filesystem::path& path) {
       event.key=line=="copy" ? SDLK_c : line=="cut" ? SDLK_x : line=="paste" ? SDLK_v : line=="undo" ? SDLK_z : SDLK_y;
     } else if (line.starts_with("control ")) {
       std::istringstream words(line.substr(8)); std::string extra;
-      if (!(words>>event.control) || event.control<1 || event.control>309 || (words>>extra))
+      if (!(words>>event.control) || event.control<1 || event.control>314 || (words>>extra))
         throw std::runtime_error("Invalid rendering control");
     }
     else if (line.starts_with("text ")) {
@@ -227,20 +227,22 @@ int Run(const Options& options) {
   const auto node_path = preference_path.empty() ? std::filesystem::path{} : preference_path.parent_path()/"node.conf";
   state.node_settings=LoadNodeSettings(node_path,&state.node_settings_status);
   if (options.theme_override) state.preferences.dark=options.dark;
-  if (options.font_override) state.preferences.font_index=options.font_scale==1.5f ? 2 : options.font_scale==1.25f ? 1 : 0;
+  if (options.font_override) state.preferences.font_index=options.font_scale==2.0f ? 3 : options.font_scale==1.5f ? 2 : options.font_scale==1.25f ? 1 : 0;
+  state.signature_mode = options.signature_mode;
   if (options.settings) {state.view=View::Settings;state.focus=5;}
   if (!options.request.empty()) state.OpenRequest(options.request);
+  if (!options.receipt.empty()) SDL_strlcpy(state.receipt_path.data(),options.receipt.string().c_str(),state.receipt_path.size());
   NuklearSession nuklear(window.get(), renderer.get());
   nk_font_atlas* atlas = nullptr;
   nk_sdl_font_stash_begin(&atlas);
-  std::array<nk_font*,3> body{},heading{};
+  std::array<nk_font*,4> body{},heading{};
   const auto path = options.builtin_font ? std::filesystem::path{} : FontPath();
   bool native_font=!path.empty();
   int output_width=0,output_height=0;
   if (SDL_GetRendererOutputSize(renderer.get(),&output_width,&output_height)!=0) SdlError("Read renderer size");
   const float density=std::max(2.0f,static_cast<float>(output_width)/options.width);
-  for (int index=0;index<3;++index) {
-    const float scale=1.0f+index*0.25f;
+  for (int index=0;index<4;++index) {
+    const float scale=index == 3 ? 2.0f : 1.0f+index*0.25f;
     auto add_font=[&](float size) {
       nk_font* font=nullptr;
       if (!path.empty()) font=nk_font_atlas_add_from_file(atlas,path.string().c_str(),size*scale*density,nullptr);
@@ -252,7 +254,7 @@ int Run(const Options& options) {
     heading[index]=add_font(22);
   }
   nk_sdl_font_stash_end();
-  for (int index=0;index<3;++index) {
+  for (int index=0;index<4;++index) {
     body[index]->handle.height/=density;
     heading[index]->handle.height/=density;
   }
@@ -284,7 +286,7 @@ int Run(const Options& options) {
         const bool ready=test.await_proof ? bool(state.completed_proof) : !state.save_busy && !state.save_status.empty();
         if (!ready) {
           if (!test_wait_started) test_wait_started=std::chrono::steady_clock::now();
-          if (std::chrono::steady_clock::now()-*test_wait_started>std::chrono::seconds(120)) throw std::runtime_error("Rendering worker precondition timed out");
+          if (std::chrono::steady_clock::now()-*test_wait_started>std::chrono::seconds(state.signature_job ? 600 : 120)) throw std::runtime_error("Rendering worker precondition timed out");
           ++test_wait_frames;
         } else test_wait_started.reset();
       } else if (!test.capture.empty() || test.resize_width) {
@@ -402,16 +404,16 @@ int Run(const Options& options) {
     state.now = options.test_now.value_or(std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count());
     if (state.wallet_prompt && (!state.request.loaded ||
-        RequestWindowAt(state.request.loaded->statement,state.now) != RequestWindow::Valid)) {
+        RequestWindowAt(*state.request.loaded,state.now) != RequestWindow::Valid)) {
       state.CancelWalletInput(); state.wallet_status = "Request is no longer valid. Wallet password cleared.";
     }
     state.node_busy = node_worker.Running() && !state.wallet_busy && !state.save_busy;
     if (auto result = node_worker.Poll()) state.node_probe.Accept(std::move(*result));
     if (auto progress = node_worker.PollProgress()) {
-      if ((state.wallet_job || state.validation_job) && progress->revision == state.node_probe.revision) {
+      if ((state.wallet_job || state.validation_job || state.signature_job) && progress->revision == state.node_probe.revision) {
         state.proof_progress = *progress;
         if (progress->stage == ProofStage::Prove || progress->stage == ProofStage::Verify)
-          state.wallet_status = "Wallet secrets have been cleared from input. Work continues on the proof worker.";
+          state.wallet_status = state.signature_job ? "Signature custody proof work continues locally. No wallet or key export is used." : "Wallet secrets have been cleared from input. Work continues on the proof worker.";
         if (options.smoke_test) std::cout << "GUI proof stage: " << static_cast<int>(progress->stage)
             << " phase=" << static_cast<int>(progress->phase) << std::endl;
       }
@@ -423,7 +425,7 @@ int Run(const Options& options) {
       state.wallet_cancel_pending = false;
       const bool cleanup_warning = result->cleanup == WalletCleanup::Failed ||
           (result->unlock_attempted && !result->unlock_confirmed && result->cleanup == WalletCleanup::Relocked);
-      const bool current = (state.wallet_job || state.validation_job) && result->revision == state.node_probe.revision;
+      const bool current = (state.wallet_job || state.validation_job || state.signature_job) && result->revision == state.node_probe.revision;
       if (closing_wallet) {
         if (cleanup_warning) {
           closing_wallet = false; state.view = View::Request; state.scroll = {};
@@ -431,7 +433,7 @@ int Run(const Options& options) {
       }
       if (current || cleanup_warning) {
         const auto wallet = result->wallet.value_or("");
-        state.wallet_status = "Wallet "+(wallet.empty() ? std::string("(default unnamed)") : RequestDisplayText(wallet))+": "+result->Message();
+        state.wallet_status = state.signature_job ? "Signature custody: "+result->Message() : "Wallet "+(wallet.empty() ? std::string("(default unnamed)") : RequestDisplayText(wallet))+": "+result->Message();
         if (cleanup_warning) state.wallet_warning = state.wallet_status;
         if (current && (result->status == WalletSessionStatus::PasswordRequired ||
             result->error.code == proofs::BitcoinRpcErrorCode::kWrongPassphrase)) {
@@ -446,6 +448,7 @@ int Run(const Options& options) {
           }
           state.validation_job.reset();
           state.wallet_job.reset();
+          state.signature_job.reset();
         }
       }
     }
@@ -470,11 +473,22 @@ int Run(const Options& options) {
         }
       }
     }
+    if (state.prove_signature) {
+      state.prove_signature = false;
+      if (!node_worker.Running() && state.signature_mode && state.request.loaded && state.request.loaded->signature && !state.completed_proof) {
+        state.signature_job = SignatureJob{state.node_probe.revision,state.request.loaded,std::filesystem::path(state.receipt_path.data())};
+        state.wallet_input->Clear(); state.proof_progress.reset(); state.wallet_cancel_pending = false;
+        state.proof_started = std::chrono::steady_clock::now();
+        state.wallet_busy = node_worker.StartSignature(*state.signature_job);
+        state.wallet_status = "Validating the private receipt for the exact reviewed request. No wallet access is used.";
+        if (!state.wallet_busy) { state.signature_job.reset(); state.wallet_status = "Proof worker unavailable. Start a new attempt explicitly."; }
+      }
+    }
     if (state.prove_wallet) {
       state.prove_wallet = false;
       std::string error;
-      if (!node_worker.Running() && !state.completed_proof && state.request.loaded && state.node_probe.result && state.node_probe.result->selected_wallet) {
-        if (auto config = ConfigureNode(state.node_settings,state.request.loaded->statement.network,&error)) {
+      if (!node_worker.Running() && !state.signature_mode && !state.completed_proof && state.request.loaded && !state.request.loaded->signature && state.node_probe.result && state.node_probe.result->selected_wallet) {
+        if (auto config = ConfigureNode(state.node_settings,state.request.loaded->Network(),&error)) {
           state.wallet_job = WalletSessionJob{state.node_probe.revision,std::move(*config),state.request.loaded,
               state.node_probe.result->selected_wallet,true};
           state.wallet_input->Clear();
@@ -508,7 +522,7 @@ int Run(const Options& options) {
     }
     if (state.test_node && !state.wallet_busy && !state.save_busy) {
       state.test_node = false;
-      const auto network = state.request.loaded ? state.request.loaded->statement.network : state.node_network;
+      const auto network = state.request.loaded ? state.request.loaded->Network() : state.node_network;
       std::string error;
       if (auto configuration = ConfigureNode(state.node_settings,network,&error)) {
         state.CancelWalletInput();
@@ -575,7 +589,7 @@ int Run(const Options& options) {
     std::cout << "GUI save: retained=" << save_retained_before_close << " attempt=" << state.save_attempt
               << " dialog=" << state.save_dialog << " confirm=" << save_confirm_before_close
               << " busy=" << state.save_busy << " status=" << save_status_before_close << '\n';
-    const auto node_network = state.request.loaded ? state.request.loaded->statement.network : state.node_network;
+    const auto node_network = state.request.loaded ? state.request.loaded->Network() : state.node_network;
     std::cout << "GUI node: network=" << proofs::QuietProofNetworkName(node_network)
               << " configured=" << bool(ConfigureNode(state.node_settings,node_network,nullptr))
               << " advanced=" << state.node_advanced << '\n';
@@ -592,10 +606,10 @@ int Run(const Options& options) {
               << " revision=" << state.request.revision << " chooser=" << state.chooser.open
               << " prove=disabled\n";
     if (state.request.loaded)
-      std::cout << "GUI review: version=" << unsigned(state.request.loaded->statement.statement_version)
-                << " window=" << RequestWindowName(RequestWindowAt(state.request.loaded->statement,state.now))
+      std::cout << "GUI review: version=" << unsigned(state.request.loaded->Version())
+                << " window=" << RequestWindowName(RequestWindowAt(*state.request.loaded,state.now))
                 << " claimsExpanded=" << state.claims_expanded
-                << " claimCount=" << state.request.loaded->statement.claims.size() << '\n';
+                << " claimCount=" << state.request.loaded->Claims().size() << '\n';
     std::cout << "GUI state: view=" << ViewName(state.view) << " theme=" << (state.preferences.dark ? "dark" : "light")
               << " fontIndex=" << state.preferences.font_index << " focus=" << state.focus << " scrollY=" << state.scroll.y
               << " pixels=" << output_width << 'x' << output_height

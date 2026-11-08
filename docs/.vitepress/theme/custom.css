@@ -179,6 +179,13 @@ body {
 .quietproof-home {
   margin-top: calc(var(--vp-nav-height) * -1);
   padding-top: var(--vp-nav-height);
+  overflow-wrap: anywhere;
+}
+
+/* Grid children must shrink below their min-content width at enlarged text.
+   The benchmark table keeps its more specific minimum and its own scroller. */
+.quietproof-home * {
+  min-width: 0;
 }
 
 .quietproof-home .planb-hero {
@@ -286,7 +293,7 @@ body {
 
 .quietproof-section-heading {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(18rem, 1.1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
   gap: 2rem clamp(2rem, 7vw, 6rem);
   align-items: end;
   margin-bottom: 2rem;
@@ -382,7 +389,7 @@ body {
 
 .quietproof-contract {
   display: grid;
-  grid-template-columns: minmax(14rem, 0.65fr) minmax(30rem, 1.35fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr));
   gap: 2rem clamp(2rem, 7vw, 5rem);
   margin-top: clamp(2.5rem, 6vw, 4.5rem);
 }
@@ -430,7 +437,7 @@ body {
 
 .quietproof-workload-fit {
   display: grid;
-  grid-template-columns: minmax(14rem, 0.65fr) minmax(30rem, 1.35fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr));
   gap: 2rem clamp(2rem, 7vw, 5rem);
   margin-top: clamp(2.5rem, 6vw, 4rem);
   padding-block: 1.5rem;
@@ -462,7 +469,7 @@ body {
 
 .quietproof-job-list article {
   display: grid;
-  grid-template-columns: 10rem minmax(15rem, 0.8fr) minmax(18rem, 1.2fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
   gap: 1.5rem;
   padding: 1.5rem 0;
   border-bottom: var(--planb-border-soft);
@@ -485,7 +492,7 @@ body {
 
 .quietproof-flow {
   display: grid;
-  grid-template-columns: minmax(16rem, 0.75fr) minmax(28rem, 1.25fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 28rem), 1fr));
   gap: 2rem clamp(2rem, 7vw, 5rem);
 }
 
@@ -547,11 +554,11 @@ body {
 }
 
 .quietproof-flow > .quietproof-inline-link {
-  grid-column: 2;
+  grid-column: 1 / -1;
 }
 .quietproof-depth {
   display: grid;
-  grid-template-columns: minmax(0, 0.85fr) minmax(22rem, 1.15fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
   gap: 3rem clamp(3rem, 8vw, 7rem);
 }
 

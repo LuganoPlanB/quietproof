@@ -18,7 +18,7 @@ option(QUIETPROOF_BUILD_CLI "Build the native command-line application" ${_quiet
 option(QUIETPROOF_BUILD_RPC "Build the native Bitcoin Core RPC library" ${_quietproof_native_default})
 option(QUIETPROOF_BUILD_WASM "Build the WASI browser reactor" OFF)
 option(QUIETPROOF_BUILD_GUI "Build the native Nuklear/SDL2 prover application" OFF)
-option(QUIETPROOF_BUILD_SIGNATURE_MODE "Build and install the Bitcoin ECDSA constraint component" OFF)
+option(QUIETPROOF_BUILD_SIGNATURE_MODE "Build and install the Bitcoin ECDSA constraint component" ON)
 if(QUIETPROOF_BUILD_GUI AND (NOT QUIETPROOF_BUILD_RPC OR CMAKE_SYSTEM_NAME STREQUAL "WASI"))
   message(FATAL_ERROR "QUIETPROOF_BUILD_GUI requires a native build with QUIETPROOF_BUILD_RPC=ON")
 endif()

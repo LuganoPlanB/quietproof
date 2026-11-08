@@ -57,7 +57,7 @@ for(const [name,engine] of [['chromium',chromium],['webkit',webkit]])for(const n
         if(phase==='verification')assert(await page.evaluate(()=>window.__mixed.outcomes.some(o=>o.operation==='verify'&&o.cryptography==='valid')));
         return route.fulfill(observationResponse(workflow,r.url()));
       });
-      await page.goto(origin+'/tool');const create=page.getByRole('button',{name:'Create request',exact:true});await create.waitFor();
+      await page.goto(origin+'/tool');await page.locator('#qp-request-proof-mode').selectOption('key-knowledge');const create=page.getByRole('button',{name:'Create request',exact:true});await create.waitFor();
       await page.getByLabel('Bitcoin network',{exact:true}).selectOption(network);
       await page.getByLabel('Bitcoin addresses').fill([first.address,second.address].join('\n'));assert.equal(requests.length,0);
       await page.getByRole('button',{name:'Look up outputs',exact:true}).click();await page.locator('.quietproof-claims').getByRole('checkbox').first().waitFor();
@@ -73,7 +73,7 @@ for(const [name,engine] of [['chromium',chromium],['webkit',webkit]])for(const n
       const qprBytes=await readFile(qpr),inspected=JSON.parse(execFileSync(cli,['inspect',qpr],{encoding:'utf8'}));
       assert.equal(inspected.statement_version,2);assert.equal(inspected.claims,2);assert.equal(inspected.network,network);
       assert.deepEqual(inspected.script_kinds,['p2wpkh','p2pkh']);assert.equal(inspected.expires_at-inspected.not_before,86400);
-      const command=[cli,'prove','--request',qpr,'--output',qpf,'--network',network],log=stem+'-prove.log',fd=openSync(log,'w');
+      const command=[cli,'prove','--proof-mode','key-knowledge','--request',qpr,'--output',qpf,'--network',network],log=stem+'-prove.log',fd=openSync(log,'w');
       const startedAt=new Date().toISOString();let stdout;
       try{stdout=execFileSync(command[0],command.slice(1),{input:'0'.repeat(63)+'1\n',encoding:'utf8',timeout:600000,stdio:['pipe','pipe',fd]});}
       finally{closeSync(fd);}
@@ -81,7 +81,7 @@ for(const [name,engine] of [['chromium',chromium],['webkit',webkit]])for(const n
         publicDisposableScalars:[1],inputChannel:'native CLI stdin only'};assert.equal(native.summary.result,'proof_created');
       const qpfBytes=await readFile(qpf);assert(qpfBytes.length>40*1024*1024 && qpfBytes.length<60*1024*1024,'one-key proof family');
       assert.deepEqual(qpfBytes.subarray(9,9+qpfBytes.readUInt32BE(5)),qprBytes);
-      phase='verification';await page.goto(origin+'/verify');await page.getByRole('button',{name:'Verify offline',exact:true}).waitFor();
+      phase='verification';await page.goto(origin+'/verify');await page.locator('#qp-verify-proof-mode').selectOption('key-knowledge');await page.getByRole('button',{name:'Verify offline',exact:true}).waitFor();
       assert.match(await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content'),/script-src 'self' 'wasm-unsafe-eval'/);
       await page.getByLabel('Proof file (.qpf)',{exact:true}).setInputFiles(qpf);await page.getByLabel('Expected policy source').selectOption('request');
       await page.getByLabel('Expected request file (.qpr)',{exact:true}).setInputFiles(qpr);

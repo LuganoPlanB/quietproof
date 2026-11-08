@@ -6,14 +6,14 @@ import { phaseLabel, failureResult, observationReasons, claimDetails, fundsEvide
 import { probeProofCapabilities } from '../../wasm/capabilities.mjs';
 import LocalHistory from '../history/LocalHistory.vue';
 const props = defineProps({ wasmUrl: { type: String, required: true } });
-const proof = ref(null), request = ref(null), mode = ref('none');
+const proof = ref(null), request = ref(null), mode = ref('request');
 const network = ref(''), verifier = ref(''), purpose = ref(''), message = ref(''), confirmed = ref(false);
 const result = ref(null), state = ref('idle'), error = ref(''), ready = ref(false);
 const selectedNetwork = ref(''), online = ref(false), minConfirmations = ref('1'), minimumTotalSats = ref('0'), maxAge = ref('300');
 const verification = ref(null), progress = ref(null), now = ref(Date.now()), startedAt = ref(null);
 const history = ref(null), savedRequest = ref(null), expectedInput = ref(null), repeat = ref(false);
 const resultsHeading = ref(null), verifyButton = ref(null), inspectButton = ref(null);
-const proofMode = ref('key-knowledge'), capabilities = ref({ signaturePossession: false });
+const proofMode = ref('signature-possession'), capabilities = ref({ signaturePossession: false });
 const capabilityState = ref('unknown'), capabilityError = ref('');
 const inspectedClaim = computed(() => claimDetails(result.value?.metadata));
 const verifiedClaim = computed(() => claimDetails(verification.value?.metadata));
@@ -131,15 +131,15 @@ function exportResult() {
         <p>Private .qpa authorization receipts are never proof uploads. Keep them in native wallet/prover tools; a receipt exposes the signature and public key to its holder.</p>
         <label for="qp-verify-proof-mode">Proof mode (chosen independently)</label>
         <select id="qp-verify-proof-mode" v-model="proofMode" aria-describedby="qp-verify-mode-help">
-          <option value="key-knowledge">Private-key knowledge (default)</option>
-          <option v-if="capabilities.signaturePossession" value="signature-possession">Signature possession · request-bound authorization</option>
+          <option value="signature-possession">Signature custody (PoSC · default)</option>
+          <option value="key-knowledge">Private-key knowledge (PoKC · explicit legacy choice)</option>
         </select>
         <button type="button" :disabled="capabilityState === 'checking' || busy" @click="checkCapabilities">Check signature support</button>
         <p v-if="capabilityState === 'checking'" role="status">Checking the local verifier’s proof capabilities…</p>
         <p v-else-if="capabilityState === 'ready' && !capabilities.signaturePossession" role="status">Signature possession is unavailable in this verifier build. The existing private-key mode remains available.</p>
         <p v-if="capabilityError" role="status">{{ capabilityError }}</p>
         <p id="qp-verify-mode-help" v-if="proofMode === 'signature-possession'">Require the independently retained expected .qpr request. This verifies knowledge of a request-bound signature, which can be delegated for that exact request. It does not prove private-key knowledge or when the signature was made. The native prover learns the signature/public key; public verifiers receive the .qpf and .qpr. Never upload the private .qpa receipt.</p>
-        <p v-else id="qp-verify-mode-help">Default: private-key knowledge. Proof metadata never changes the selected mode. Checking signature support loads the local verifier and makes no explorer request.</p>
+        <p v-else id="qp-verify-mode-help">Explicit legacy choice: private-key knowledge. Proof metadata never changes the selected mode. Checking signature support loads the local verifier and makes no explorer request.</p>
       </fieldset>
       <fieldset>
         <legend>2. Choose independent expectations</legend>

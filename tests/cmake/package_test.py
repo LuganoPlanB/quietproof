@@ -18,7 +18,7 @@ def main():
     parser.add_argument('--generator', default='Ninja')
     parser.add_argument('--curl-static', action='store_true')
     parser.add_argument('--rpc-enabled', choices=('ON', 'OFF'), default='ON')
-    parser.add_argument('--signature-enabled', choices=('ON', 'OFF'), default='OFF')
+    parser.add_argument('--signature-enabled', choices=('ON', 'OFF'), default='ON')
     args = parser.parse_args()
     args.source, args.work = args.source.resolve(), args.work.resolve()
     args.work.mkdir(parents=True, exist_ok=True)
@@ -89,10 +89,12 @@ def main():
             mode = f'rpc-{int(rpc)}-signature-{int(signature)}'
             build, install = args.work / ('build-' + mode), args.work / ('install-' + mode)
             options = ['-DQUIETPROOF_BUILD_RPC=' + ('ON' if rpc else 'OFF')]
-            # Omission checks the ordinary default. Fresh work trees make this
-            # independent of an earlier ON cache; CTest reuses the same mode.
-            if signature:
-                options += ['-DQUIETPROOF_BUILD_SIGNATURE_MODE=ON']
+            # The enabled variant checks the ordinary default; the legacy-only
+            # variant must deliberately disable the signature component.
+            if not signature:
+                options += ['-DQUIETPROOF_BUILD_SIGNATURE_MODE=OFF']
+            else:
+                options += ['-UQUIETPROOF_BUILD_SIGNATURE_MODE']
             if rpc:
                 options += curl_options
             else:

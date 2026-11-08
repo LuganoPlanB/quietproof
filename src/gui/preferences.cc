@@ -19,14 +19,14 @@ DisplayPreferences LoadPreferences(const std::filesystem::path& path) {
   if (!std::getline(input, theme) || !std::getline(input, font) || std::getline(input, trailing))
     return preferences;
   if ((theme != "theme=light" && theme != "theme=dark") ||
-      (font != "font=0" && font != "font=1" && font != "font=2")) return preferences;
+      (font != "font=0" && font != "font=1" && font != "font=2" && font != "font=3")) return preferences;
   preferences.dark = theme == "theme=dark";
   preferences.font_index = font.back() - '0';
   return preferences;
 }
 
 bool SavePreferences(const std::filesystem::path& path, DisplayPreferences preferences) {
-  if (path.empty() || preferences.font_index < 0 || preferences.font_index > 2) return false;
+  if (path.empty() || preferences.font_index < 0 || preferences.font_index > 3) return false;
   const std::string contents = std::string("theme=") + (preferences.dark ? "dark" : "light") +
                                "\nfont=" + char('0' + preferences.font_index) + "\n";
   return SavePrivatePreferences(path, contents);

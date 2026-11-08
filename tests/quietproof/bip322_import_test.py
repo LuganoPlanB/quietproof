@@ -25,7 +25,7 @@ def main():
         work = Path(directory)
         request_path, signature_path = work/'request.qpr', work/'signature'
         output = work/'receipt.qpa'
-        mode = ['--proof-mode', 'signature-possession']
+        mode = []  # External signing/import is a first-class default operation.
 
         def run(command, expected=0):
             nonlocal count

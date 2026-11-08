@@ -34,24 +34,28 @@ static application. The remaining sections describe the native Core profile.
 
 ## Native command workflow
 
-Discover Bitcoin outputs, create a challenge, prove key control, verify against
+Discover Bitcoin outputs, create a challenge, prove signature custody, verify against
 Bitcoin Core. The [isolated regtest guide](guide/getting-started.md) uses a public,
-disposable externally held key and demonstrates offline proving. On an already
+disposable externally held key and explicitly selects legacy PoKC. On an already
 funded address, the ordinary commands are:
 
 ```sh
 build/quietproof challenge create --network signet --address tb1q... \
   --verifier example.org --purpose proof-of-funds --message 'Proof of control' \
   --output request.qpr
-build/quietproof prove --request request.qpr --output proof.qpf
-build/quietproof verify proof.qpf --network signet --verifier example.org \
+build/quietproof prove --request request.qpr --output proof.qpf --rpc-wallet wallet-name
+build/quietproof verify proof.qpf --expected-request request.qpr --network signet --verifier example.org \
   --purpose proof-of-funds --nonce-store ./nonces
 ```
 
 Replace the placeholder with the full native P2WPKH or compressed-key P2PKH address. Native RPC is the
 default, with no `bitcoin-cli` invocation or automatic backend fallback.
-Plain proving uses the request, output and protected stdin secrets; no Core
-connection or cookie is needed. Explicit Roots wallet-backed proving is described below.
+Default proving uses an explicitly selected signing wallet, or the request and
+private `.qpa` receipt with `--receipt-input` for offline/delegated proving.
+Signature acquisition failure never exports a private key or switches mode.
+Retain the verifier's expected request independently. See the
+[native PoSC guide](guide/signature-possession.md) for signing, import and exact-request policy.
+Legacy PoKC stdin and Roots wallet-backed proving require `--proof-mode key-knowledge`.
 
 ::: warning
 This is free and open source software provided without warranty under
@@ -189,7 +193,7 @@ starting a new request. No mainnet/signet scan-latency guarantee is made.
 The verifier chooses expected metadata, validity/confirmation/value thresholds,
 a durable nonce store and the trusted fully validated node. Discovery supplies
 candidate public claims; the prover receives the canonical request and its
-protected key material. The verifier checks decoding, local policy and the real
+private signature receipt (or explicitly selected PoKC key material). The verifier checks decoding, local policy and the real
 proof before consulting chain evidence, matches exact scripts/amounts/network
 at one common stable tip, applies remaining policy and consumes the nonce once.
 Neither a successful RPC nor the request itself can authorize a proof.
@@ -275,14 +279,14 @@ The explicit form `TXID:VOUT:SATOSHIS:SCRIPT_KIND:KEY_HASH` accepts `p2wpkh` or
 Manual claims cannot be mixed with `--address` or RPC/discovery-only options:
 
 ```sh
-build/quietproof challenge create --network signet --verifier example.org \
+build/quietproof challenge create --proof-mode key-knowledge --network signet --verifier example.org \
   --purpose proof-of-funds --message 'Proof of control' \
   --claim TXID:VOUT:SATOSHIS:p2pkh:KEY_HASH --output request.qpr
 ```
 
 P2PKH proving supports compressed public keys only. An address cannot establish
 that encoding; the supplied key must match its hash using compressed serialization.
-Requests with any P2PKH claim use statement version 2. `inspect` reports
+In explicit PoKC mode, requests with any P2PKH claim use statement version 2. `inspect` reports
 `statement_version`, ordered `script_kinds`, `request_created_at` and
 `proof_created_at` (null for requests). Old four-part claims retain version 1.
 Statement v1 remains implicitly P2WPKH. Statement v2 binds the kind per claim;
@@ -294,7 +298,7 @@ re-encode typed requests as v1 to make them compatible.
 To select the retained subprocess verifier explicitly:
 
 ```sh
-build/quietproof verify proof.qpf --bitcoin-cli /absolute/path/to/bitcoin-cli \
+build/quietproof verify proof.qpf --proof-mode key-knowledge --bitcoin-cli /absolute/path/to/bitcoin-cli \
   --verifier example.org --purpose proof-of-funds --nonce-store ./nonces
 ```
 
@@ -369,7 +373,7 @@ artifacts only until deployment is explicitly authorized.
 
 ### Explicit wallet-backed proving
 
-Use `prove --request request.qpr --output proof.qpf
+Use `prove --proof-mode key-knowledge --request request.qpr --output proof.qpf
 --rpc-datadir /path/to/bitcoin-data` with Bitcoin Roots
 v31.1-roots.3 or newer. It uses `exportaddresskey`
 directly over the existing loopback, cookie-authenticated RPC connection. The
@@ -380,5 +384,5 @@ compressed-key hash across P2WPKH/P2PKH outputs.
 Automatic address selection prefers P2PKH when present, otherwise P2WPKH.
 For same-key mixed requests, `--address` can select either claimed kind.
 Missing RPC support is reported explicitly and never triggers `listdescriptors`.
-Plain proving remains offline. Wallet export temporarily brings a spending key
+Explicit PoKC stdin proving remains offline. Wallet export temporarily brings a spending key
 into the QuietProof process; buffer clearing cannot erase every library/OS copy.

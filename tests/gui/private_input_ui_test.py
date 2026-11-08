@@ -43,12 +43,12 @@ def main():
             environment = dict(os.environ,SDL_VIDEODRIVER='dummy',SDL_RENDER_DRIVER='software',XDG_DATA_HOME=directory,HOME=directory)
             # Only public control commands reach disk. The synthetic input event
             # is generated in a short-lived SDL buffer inside the test process.
-            opening = ['control 3','control 11']+['wait']*12+['control 2','control 304']+['wait']*12
+            opening = ['control 3','control 11']+['wait']*12+['control 2']+['tab']*7+['enter']+['wait']*12
             def run(name,events,theme='light',size=(480,720),scale='1',capture=False):
                 server.idle(); server.calls=[]; server.states=0; server.unlocks=0; server.violation=None
                 server.entered.clear(); server.release.clear()
                 script = artifacts/(name+'.events'); script.write_text('\n'.join(events)+'\n')
-                command = [str(executable),'--smoke-test','--theme',theme,'--font-scale',scale,
+                command = [str(executable),'--proof-mode','key-knowledge','--smoke-test','--theme',theme,'--font-scale',scale,
                            '--width',str(size[0]),'--height',str(size[1]),'--request',str(request),'--test-events',str(script)]
                 if capture: command += ['--screenshot',str(artifacts/(name+'.bmp'))]
                 # Close can arrive during native proving. It keeps SDL alive
@@ -133,7 +133,7 @@ def main():
             server.entered.clear(); server.release.clear()
             script=artifacts/'close-held.events'
             script.write_text('\n'.join(opening+['private-synthetic','enter']+['wait']*6+['quit'])+'\n')
-            process=subprocess.Popen([str(executable),'--smoke-test','--request',str(request),'--test-events',str(script)],env=environment,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            process=subprocess.Popen([str(executable),'--proof-mode','key-knowledge','--smoke-test','--request',str(request),'--test-events',str(script)],env=environment,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
             assert server.entered.wait(5), 'held UI unlock precondition absent'
             captured=b''; deadline=time.monotonic()+5
             while b'GUI wallet close: waiting for bounded cleanup' not in captured and time.monotonic()<deadline:

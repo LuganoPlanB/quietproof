@@ -5,7 +5,9 @@ description: Discover Bitcoin outputs, create a challenge, prove offline, and ve
 
 # Build and try QuietProof
 
-This page is the **native Core-backed regtest tutorial**. For the static
+This page is the **explicit legacy PoKC regtest tutorial**, using a public
+disposable scalar. For the default signature-custody workflow, start with the
+[native PoSC guide](./signature-possession). For the static
 mainnet/signet request tool, external proving and browser verification, start
 with the [browser guide](./browser-tool). Its explorer observations do not
 provide the native verifier's strict chain-state result.
@@ -105,12 +107,12 @@ The verifier supplies its own identity, purpose and message. Discovery is a
 node-wide UTXO scan; the challenge clock starts after it finishes.
 
 ```sh
-"$QP" challenge create --network regtest --address "$ADDRESS" \
+"$QP" challenge create --proof-mode key-knowledge --network regtest --address "$ADDRESS" \
   --verifier example.org --purpose proof-of-funds --message 'Proof of control' \
   --output "$DEMO/request.qpr" --rpc-url "$RPC_URL" --rpc-datadir "$DEMO"
 "$QP" inspect "$DEMO/request.qpr"
 stop_demo
-"$QP" prove --request "$DEMO/request.qpr" --output "$DEMO/proof.qpf"
+"$QP" prove --proof-mode key-knowledge --request "$DEMO/request.qpr" --output "$DEMO/proof.qpf"
 ```
 
 At the protected prompt, enter the published disposable scalar-1 encoding
@@ -130,7 +132,7 @@ verification. If it expires, create a fresh request and proof.
 
 ```sh
 start_demo
-"$QP" verify "$DEMO/proof.qpf" --network regtest \
+"$QP" verify "$DEMO/proof.qpf" --proof-mode key-knowledge --network regtest \
   --verifier example.org --purpose proof-of-funds --max-lifetime 300 \
   --nonce-store "$DEMO/nonces" --rpc-url "$RPC_URL" --rpc-datadir "$DEMO"
 ```
@@ -189,11 +191,11 @@ For an existing native P2WPKH or compressed-key P2PKH address whose key the prov
 fully validated local Core node with `server=1` and the default cookie layout:
 
 ```sh
-build/quietproof challenge create --network signet --address tb1q... \
+build/quietproof challenge create --proof-mode key-knowledge --network signet --address tb1q... \
   --verifier example.org --purpose proof-of-funds --message 'Proof of control' \
   --output request.qpr
-build/quietproof prove --request request.qpr --output proof.qpf
-build/quietproof verify proof.qpf --network signet --verifier example.org \
+build/quietproof prove --proof-mode key-knowledge --request request.qpr --output proof.qpf
+build/quietproof verify proof.qpf --proof-mode key-knowledge --network signet --verifier example.org \
   --purpose proof-of-funds --nonce-store ./nonces
 ```
 

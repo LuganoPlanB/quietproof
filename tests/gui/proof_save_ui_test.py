@@ -44,7 +44,7 @@ def main():
         (preferences/'node.conf').write_text(configuration);(preferences/'node.conf').chmod(0o600)
         # Exercise the normal approval/RPC/prover/result journey once. The
         # preexisting unlocked synthetic wallet needs no password or relock.
-        events=['control 3','control 11']+['wait']*12+['control 2','control 304','await-proof']
+        events=['control 3','control 11']+['wait']*12+['control 2']+['tab']*7+['enter','await-proof']
         def capture(name,theme='light',size=(480,720),scale='1',matrix=False):
             events.append('capture '+str(artifacts/(name+'.bmp')))
             records.append({'name':name,'theme':theme,'width':size[0],'height':size[1],'font_scale':scale,'matrix':matrix})
@@ -82,7 +82,7 @@ def main():
         events+=['control 11','destination '+str(canceled),'control 308']
         capture('dialog-cancel')
         script=artifacts/'matrix.events'; script.write_text('\n'.join(events)+'\n')
-        command=[str(gui),'--smoke-test','--request',str(request),'--test-events',str(script),'--width','480','--height','720']
+        command=[str(gui),'--proof-mode','key-knowledge','--smoke-test','--request',str(request),'--test-events',str(script),'--width','480','--height','720']
         try: value=subprocess.run(command,env=env,capture_output=True,text=True,timeout=240)
         finally:
             wallet.release.set();wallet.idle();wallet.shutdown();wallet.server_close();wallet_thread.join(timeout=4)
@@ -127,7 +127,7 @@ def main():
         thread=threading.Thread(target=server.serve_forever);thread.start()
         try:
             cookie=root/'.cookie';cookie.write_text('__cookie__:'+''.join(chr(97+i) for i in range(12)));cookie.chmod(0o600)
-            command=[str(cli),'verify',str(first_saved),'--verifier','proof-session.example','--purpose','proof-of-control',
+            command=[str(cli),'verify',str(first_saved),'--proof-mode','key-knowledge','--verifier','proof-session.example','--purpose','proof-of-control',
                      '--nonce-store',str(root/'nonces'),'--network','regtest','--rpc-url',f'http://127.0.0.1:{server.server_port}/','--rpc-cookie',str(cookie)]
             verified=subprocess.run(command,capture_output=True,text=True,timeout=120)
             (artifacts/'cli-verify.json').write_text(verified.stdout);(artifacts/'cli-verify.stderr').write_text(verified.stderr)

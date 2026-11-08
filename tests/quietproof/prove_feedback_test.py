@@ -20,12 +20,12 @@ class ProveFeedbackTest(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         request = str(Path(self.directory.name) / 'request.qpr')
         subprocess.run([
-            BINARY, 'challenge', 'create', '--network', 'signet',
+            BINARY, 'challenge', 'create', '--proof-mode', 'key-knowledge', '--network', 'signet',
             '--verifier', 'example.org', '--purpose', 'proof-of-control', '--message', 'test',
             '--claim', '01' + '00' * 31 + ':0:7:751e76e8199196d454941c45d1b3a323f1433bd6',
             '--output', request,
         ], check=True, capture_output=True)
-        self.command = [BINARY, 'prove', '--request', request, '--output',
+        self.command = [BINARY, 'prove', '--proof-mode', 'key-knowledge', '--request', request, '--output',
                         str(Path(self.directory.name) / 'proof.qpf')]
 
     def rejected(self, text, diagnostic):

@@ -7,7 +7,14 @@ namespace quietproof::gui {
 struct ProofJob {
   const WalletSessionJob session;
 };
+struct SignatureJob {
+  uint64_t revision;
+  std::shared_ptr<const LoadedRequest> request;
+  std::filesystem::path receipt_path;
+};
 using ProofProgress = std::function<void(const ProofEvent&)>;
+WalletSessionResult RunSignatureSession(const SignatureJob&, const std::function<bool()>& canceled,
+    const std::function<int64_t()>& clock, const ProofProgress& progress = {});
 // The optional generator is a test seam for deterministic step failures/holds.
 // Production always uses the existing native PoKCProve implementation.
 using ProofGenerator = std::function<bool(const std::array<uint8_t,32>&,

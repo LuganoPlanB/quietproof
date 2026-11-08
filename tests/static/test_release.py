@@ -60,8 +60,8 @@ class MuslCapabilityTests(unittest.TestCase):
                         raise StopAfterConfigure()
                 arguments = ['build_musl_release.py', '--sdk-source', str(root),
                     '--work', str(root / 'work'), '--output', str(root / 'dist'), '--version', '0.1.0']
-                if enabled:
-                    arguments.append('--signature-mode')
+                if not enabled:
+                    arguments.append('--no-signature-mode')
                 with patch('sys.argv', arguments), patch.object(builder, 'run', side_effect=run), \
                      patch.object(builder, 'output', side_effect=output):
                     with self.assertRaises(StopAfterConfigure):

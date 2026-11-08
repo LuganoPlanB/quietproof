@@ -34,6 +34,10 @@ struct ShellState {
   bool node_busy = false;
   bool test_node = false;
   bool prove_wallet = false;
+  bool signature_mode = true;
+  bool prove_signature = false;
+  std::array<char,4096> receipt_path{};
+  std::optional<SignatureJob> signature_job;
   bool submit_wallet = false;
   bool cancel_wallet = false;
   bool wallet_busy = false;
@@ -82,7 +86,7 @@ struct ShellState {
     wallet_input->Clear(); wallet_prompt = false; submit_wallet = false;
     cancel_wallet = true; wallet_job.reset();
     completed_proof.reset();
-    validation_job.reset(); InvalidateSaveDestination(); save_dialog = false; save_path.fill(0);
+    validation_job.reset(); signature_job.reset(); InvalidateSaveDestination(); save_dialog = false; save_path.fill(0);
     wallet_cancel_pending = wallet_busy;
     if (!wallet_busy) proof_progress.reset();
     wallet_status.clear();
@@ -96,7 +100,7 @@ struct ShellState {
   void OpenRequest(const std::filesystem::path& path);
   std::string preference_status;
   nk_scroll scroll{};
-  std::array<struct nk_rect, 310> controls{};
+  std::array<struct nk_rect, 315> controls{};
 };
 void HandleShellKey(ShellState& state, const SDL_KeyboardEvent& key);
 void DrawShell(nk_context* context, ShellState& state, int width, int height,

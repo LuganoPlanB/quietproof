@@ -1,16 +1,17 @@
 ---
 title: Native signature-possession workflow
-description: Explicit stock-wallet authorisation, private receipt delegation and exact-request verification.
+description: Default signature custody, stock-wallet authorisation, private receipt delegation and exact-request verification.
 ---
 
 # Native signature-possession workflow
 
-This optional mode proves knowledge of a signature for the verifier's exact
+The default native PoSC workflow proves knowledge of a signature for the verifier's exact
 request. It does not prove private-key knowledge or signing time. A private
-receipt can delegate that same request to another native prover. Existing
-key-knowledge commands and the native GUI retain their existing defaults.
+receipt can delegate that same request to another native prover. Use
+`--proof-mode key-knowledge` explicitly for legacy PoKC challenge/prove/verify.
+Request or proof versions never select a different mode on your behalf.
 
-## Build the capability explicitly
+## Build the standard capability
 
 Use the pinned base SDK installed as described in the README. No optional SDK
 ECDSA package is required. In separate fresh build directories:
@@ -18,16 +19,17 @@ ECDSA package is required. In separate fresh build directories:
 ```sh
 cmake -S . -B build-signature -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_PREFIX_PATH=/path/to/longfellow-prefix \
-  -DQUIETPROOF_BUILD_SIGNATURE_MODE=ON -DQUIETPROOF_BUILD_RPC=ON
+  -DQUIETPROOF_BUILD_RPC=ON
 cmake --build build-signature --parallel 2
 cmake -S . -B build-signature-offline -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_PREFIX_PATH=/path/to/longfellow-prefix \
-  -DQUIETPROOF_BUILD_SIGNATURE_MODE=ON -DQUIETPROOF_BUILD_RPC=OFF
+  -DQUIETPROOF_BUILD_RPC=OFF
 cmake --build build-signature-offline --parallel 2
 ```
 
-The flag defaults OFF, including ordinary scalar-only builds. Recognised
-signature operations without it return unsupported (exit66). Installed CMake
+Signature support defaults ON. An intentional
+`-DQUIETPROOF_BUILD_SIGNATURE_MODE=OFF` build reports unsupported (exit66) for
+ordinary no-mode signature operations and still supports explicit PoKC. Installed CMake
 consumers request `COMPONENTS signature` and link
 `LongfellowZKQuietProof::signature`; requesting only the base component does not
 discover signing/oracle packages. The test-only libsecp256k1 oracle is not an
@@ -37,7 +39,7 @@ installed production dependency.
 
 Follow [the existing disposable tutorial](./getting-started) using the verified
 Core32.1 binaries in `BITCOIN_BIN`. Its old scalar create/inspect/prove/verify
-commands remain valid. Keep its owned node running after verification and
+commands use explicit `--proof-mode key-knowledge`. Keep its owned node running after verification and
 retain `core`, `DEMO`, `RPC_URL` and `MINER` in the same Bash session. Never use
 a production wallet/datadir for this example. Core32 mining needs sufficiently
 responsive local storage; it has no permission to raise application RPC bounds.
@@ -50,7 +52,7 @@ QP_OFFLINE="$(pwd)/build-signature-offline/quietproof"
 SIGN_ADDRESS=$(core -rpcwallet=funding getnewaddress '' bech32)
 core -rpcwallet=funding sendtoaddress "$SIGN_ADDRESS" 1 >/dev/null
 core generatetoaddress 2 "$MINER" >/dev/null
-"$QP_SIGNATURE" challenge create --proof-mode signature-possession \
+"$QP_SIGNATURE" challenge create \
   --signing-kind p2wpkh --network regtest --address "$SIGN_ADDRESS" \
   --verifier example.org --purpose proof-of-funds --message 'Signature demo' \
   --expires-in 3600 --output "$DEMO/expected.qpr" --rpc-wallet funding \
@@ -59,7 +61,8 @@ core generatetoaddress 2 "$MINER" >/dev/null
 
 The verifier retains `expected.qpr` independently before sending the prover a
 copy. The selected kind must occur in the claims and be available in the selected
-wallet. For P2PKH, create a `legacy` address and explicitly select `p2pkh`; a
+wallet. Homogeneous claims infer that kind when `--signing-kind` is omitted;
+mixed claims require an explicit choice. For P2PKH, create a `legacy` address and select `p2pkh`; a
 `wpkh` descriptor does not imply a `pkh` alias. Review network, audience, purpose,
 nonce/expiry, amounts and exact claims through trusted request creation records.
 Native CLI `inspect` currently does **not** support v3 requests/proofs; browser
@@ -67,10 +70,35 @@ metadata inspection is a separate public capability, not authorisation.
 
 ## Local wallet proving or private receipt delegation
 
+For external signing, use a request for an address already controlled by that
+signer. Export the exact 88-byte application message:
+
+```sh
+"$QP_SIGNATURE" signing-material --request "$DEMO/expected.qpr" \
+  --output "$DEMO/message.txt"
+```
+
+Have a supported signer sign those exact bytes without adding a newline. Keep
+its signature in a current-owner owner-only file, then import it:
+
+```sh
+"$QP_SIGNATURE" import-signature --request "$DEMO/expected.qpr" \
+  --signature-input "$DEMO/private-signature.txt" --signature-format bip322-simple \
+  --receipt-output "$DEMO/private.qpa"
+```
+
+The importer accepts supported BIP322 Simple/Full or `sparrow-json` wrappers;
+metadata cannot override request/address/network checks. Sparrow2.5.6 produces
+compatible P2WPKH Simple signatures; its P2PKH legacy message signatures are not
+compatible BIP322 signatures. Taproot/Schnorr has no Quietproof proof relation.
+The executed signer compatibility matrix is recorded in repository `scripts/sparrow_signer.md`.
+Use the imported receipt in the offline proving command below. No wallet or RPC
+credentials are needed for message export, signature import or receipt-only proving.
+
 Local signing and proving:
 
 ```sh
-"$QP_SIGNATURE" prove --proof-mode signature-possession \
+"$QP_SIGNATURE" prove \
   --request "$DEMO/expected.qpr" --output "$DEMO/online.qpf" \
   --rpc-wallet funding --rpc-url "$RPC_URL" --rpc-datadir "$DEMO"
 ```
@@ -80,10 +108,10 @@ machine with no RPC support. These commands deliberately use different output
 names because existing destinations are never overwritten:
 
 ```sh
-"$QP_SIGNATURE" authorize --proof-mode signature-possession \
+"$QP_SIGNATURE" authorize \
   --request "$DEMO/expected.qpr" --receipt-output "$DEMO/private.qpa" \
   --rpc-wallet funding --rpc-url "$RPC_URL" --rpc-datadir "$DEMO"
-"$QP_OFFLINE" prove --proof-mode signature-possession \
+"$QP_OFFLINE" prove \
   --request "$DEMO/expected.qpr" --receipt-input "$DEMO/private.qpa" \
   --output "$DEMO/delegated.qpf"
 ```
@@ -107,7 +135,7 @@ RAM-erasure guarantee is offered.
 For the delegated result (use `online.qpf` instead for the local alternative):
 
 ```sh
-"$QP_SIGNATURE" verify "$DEMO/delegated.qpf" --proof-mode signature-possession \
+"$QP_SIGNATURE" verify "$DEMO/delegated.qpf" \
   --expected-request "$DEMO/expected.qpr" --network regtest \
   --verifier example.org --purpose proof-of-funds --max-lifetime 3600 \
   --nonce-store "$DEMO/signature-nonces" --rpc-url "$RPC_URL" --rpc-datadir "$DEMO"
@@ -132,8 +160,8 @@ Only public `.qpr` and `.qpf` files belong in the
 [browser handoff](./browser-tool). Signature mode requires the exact expected
 request; browser provider qualification is trusted/non-atomic and always
 `authorizes:false`, without validated-node or global replay acceptance. Native
-proving, real receipts and wallet RPC stay native. The native GUI has no signature
-workflow.
+proving, real receipts and wallet RPC stay native. The [native GUI](native-gui.md)
+defaults to reviewing a v3 request and proving with its private receipt.
 
 Stop only the tutorial's owned node and remove its disposable data with its
 existing cleanup block. [Measured limits](/performance#signature-possession-measurements)
@@ -162,7 +190,7 @@ cmake --build "$RC_ROOT/build-on" --parallel 2
 cmake --install "$RC_ROOT/build-on"
 ```
 
-Omitting the new option in a fresh build also selects OFF. Do not install OFF
+Omitting the option in a fresh build selects ON. Do not install OFF
 over an old ON prefix: CMake does not uninstall old ON headers. Keep installed
 base, RPC and signature consumer checks separate; an OFF package must reject a
 required signature component even if an ON prefix appears later in the search
@@ -172,12 +200,12 @@ path. The scalar/multisignature formats and identities remain unchanged.
    file independently of either installation. Protect that file with current-owner
    owner-only permissions and keep the same bare lowercase nonce namespace.
 2. Select `install-on/bin/quietproof` explicitly for new native invocations and
-   pass `--proof-mode signature-possession` for signature operations. Scalar
-   commands keep their default. No wallet key-export fallback is enabled.
+   use the default signature operations. Legacy scalar commands require
+   `--proof-mode key-knowledge`. No wallet key-export fallback is enabled.
 3. To disable, stop only your owned callers/proving processes and select
    `install-off/bin/quietproof` for subsequent invocations. Recognised signature
    creation/proving/acceptance requests return unsupported before wallet/proof
-   work. Existing scalar commands and proofs remain usable. QuietProof supplies
+   work. Explicit PoKC commands and proofs remain usable. QuietProof supplies
    a CLI/library, not a background configuration service or reload endpoint.
 4. In an embedding application, `QuietProofSignatureVerifierConfig::modes` is
    independently selected local verifier policy. Its
@@ -191,13 +219,13 @@ path. The scalar/multisignature formats and identities remain unchanged.
    disabling does not revoke copies of private receipts or erase acceptance
    history. A fresh engagement needs a new independently issued request.
 
-For the static browser, use a separate fresh cross-build directory, omit
-`--signature-mode` from both `scripts/build_wasm.py` and
+For the static browser, use a separate fresh cross-build directory, pass
+`--no-signature-mode` to both `scripts/build_wasm.py` and
 `scripts/build_static.py`, and load that matched OFF artifact in a fresh worker.
-Check that signature support is unavailable and creation/verification cannot
-select the new mode. Bounded public metadata inspection may remain available;
-it is not cryptographic or funds acceptance. Explicit ON builds require the
-flag in both scripts. Browser replay history is local convenience and is not
+Check that signature support is unavailable and PoSC creation/verification
+reports unsupported without selecting legacy PoKC. Bounded public metadata inspection may remain available;
+it is not cryptographic or funds acceptance. Ordinary builds default ON;
+an explicit `--signature-mode` is also accepted. Browser replay history is local convenience and is not
 the native durable nonce store.
 
 There is no authoritative browser issuer or global acceptance backend. Cached

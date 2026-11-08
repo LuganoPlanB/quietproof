@@ -301,12 +301,12 @@ def workflow(args, major, root):
         return ['--rpc-url', url or node.url, '--rpc-cookie', cookie or node.cookie]
 
     def verify(proof, store, extra=(), native=True, url=None, cookie=None):
-        return [args.cli, 'verify', proof, '--verifier', 'example.org', '--purpose',
+        return [args.cli, 'verify', proof, '--proof-mode', 'key-knowledge', '--verifier', 'example.org', '--purpose',
                 'proof-of-funds', '--nonce-store', store] + (rpc_flags(url, cookie) if native else []) + list(extra)
 
     def request(label):
         path = root / f'{major}-{label}.qpr'
-        run(label, [args.cli, 'challenge', 'create', '--network', 'regtest', '--address', address,
+        run(label, [args.cli, 'challenge', 'create', '--proof-mode', 'key-knowledge', '--network', 'regtest', '--address', address,
                     '--verifier', 'example.org', '--purpose', 'proof-of-funds', '--message',
                     'Proof of control', '--expires-in', '86400', '--output', path] + rpc_flags())
         require(path.stat().st_mode & 0o777 == 0o600, 'request mode must be 0600')
@@ -366,7 +366,7 @@ def workflow(args, major, root):
                                           ('race', race_request, args.cli),
                                           ('spend', spend_request, args.cli)]:
             proof = root / f'{major}-{label}.qpf'
-            command = ([executable, 'prove', '--request', source, '--output', proof]
+            command = ([executable, 'prove', '--proof-mode', 'key-knowledge', '--request', source, '--output', proof]
                        if executable == args.cli else [executable, 'prove', source, proof])
             run(f'{label} offline real proof', command, secret=True)
             require(proof.stat().st_mode & 0o777 == 0o600, 'proof mode must be 0600')
@@ -426,14 +426,14 @@ def workflow(args, major, root):
 
         p2pkh, second = typed_outputs
         rejected_request = root / f'{major}-second-key.qpr'
-        run('reject second key challenge', [args.cli, 'challenge', 'create',
+        run('reject second key challenge', [args.cli, 'challenge', 'create', '--proof-mode', 'key-knowledge',
             '--network', 'regtest', '--verifier', 'example.org', '--purpose', 'proof-of-funds',
             '--claim', claim(p2pkh), '--claim', claim(second), '--output', rejected_request], 65)
         require(not rejected_request.exists(), 'second-key challenge was written')
         for label, coins, keys in [('p2pkh', [p2pkh], SECRET + '\n'),
                 ('mixed-same', [p2pkh, output], SECRET + '\n')]:
             source, proof = root / f'{major}-{label}.qpr', root / f'{major}-{label}.qpf'
-            command = [args.cli, 'challenge', 'create', '--network', 'regtest',
+            command = [args.cli, 'challenge', 'create', '--proof-mode', 'key-knowledge', '--network', 'regtest',
                        '--verifier', 'example.org', '--purpose', 'proof-of-funds',
                        '--expires-in', '86400', '--output', source]
             for coin in coins:
@@ -445,7 +445,7 @@ def workflow(args, major, root):
             run(f'{label} duplicate outpoint across kinds', duplicate_command + ['--claim', claim(coins[0]),
                 '--claim', claim(duplicate)], 65)
             node.stop()
-            run(f'{label} offline real proof', [args.cli, 'prove', '--request', source,
+            run(f'{label} offline real proof', [args.cli, 'prove', '--proof-mode', 'key-knowledge', '--request', source,
                                                '--output', proof], secret=keys)
             node.start()
             total = sum(coin['amount_sats'] for coin in coins)
@@ -474,9 +474,9 @@ def workflow(args, major, root):
         uncompressed = b'\x04' + GENERATOR[0].to_bytes(32, 'big') + GENERATOR[1].to_bytes(32, 'big')
         unsupported = dict(p2pkh, program=hashlib.new('ripemd160', hashlib.sha256(uncompressed).digest()).hexdigest())
         source = root / f'{major}-uncompressed.qpr'
-        run('uncompressed request', [args.cli, 'challenge', 'create', '--network', 'regtest',
+        run('uncompressed request', [args.cli, 'challenge', 'create', '--proof-mode', 'key-knowledge', '--network', 'regtest',
             '--claim', claim(unsupported), '--output', source])
-        run('uncompressed key mismatch', [args.cli, 'prove', '--request', source,
+        run('uncompressed key mismatch', [args.cli, 'prove', '--proof-mode', 'key-knowledge', '--request', source,
             '--output', root / f'{major}-uncompressed.qpf'], 65, secret=True)
         raw = spend_fixture(p2pkh['txid'], p2pkh['vout'], p2pkh['amount_sats'],
                             node.call('validateaddress', miner)['scriptPubKey'], p2pkh=True)

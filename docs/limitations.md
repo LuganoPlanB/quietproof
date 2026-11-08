@@ -16,7 +16,10 @@ are available separately. Please contact us for further information.
 
 ## Knowledge is not ownership
 
-A valid proof shows that the prover knew the matching secret key while creating a challenge-bound proof. It does not show that the prover:
+Default PoSC shows possession of a signature authorizing the exact request.
+The wallet owner can delegate that signature without sharing the secret key.
+Explicit legacy PoKC separately shows knowledge of the matching scalar. Neither
+mode shows that the prover:
 
 - is the only person with access;
 - owns the bitcoin legally or beneficially;
@@ -30,7 +33,7 @@ These questions require organizational, legal, and operational evidence outside 
 
 QuietProof does not discover undisclosed assets or liabilities. It does not prove that assets exceed liabilities, that the claimed UTXOs form a complete reserve set, or that customer balances were calculated correctly.
 
-A proof-of-reserves or solvency system may use QuietProof for its key-control layer, but must add liability commitments, inclusion and completeness mechanisms, and an independently reviewed accounting policy.
+A proof-of-reserves or solvency system may use QuietProof for its selected signature-custody or key-knowledge layer, but must add liability commitments, inclusion and completeness mechanisms, and an independently reviewed accounting policy.
 
 ## A proof is not a lock
 
@@ -40,7 +43,8 @@ Where continued availability matters, monitor outpoints and use the appropriate 
 
 ## The verifier still needs Bitcoin evidence
 
-The zero-knowledge proof checks the key-to-program relation. A chain provider separately checks the outpoint, amount, script, network, confirmations, and unspent state.
+The zero-knowledge proof checks its selected signature-custody or key-knowledge
+relation to the public key fingerprint. A chain provider separately checks the outpoint, amount, script, network, confirmations, and unspent state.
 
 The bundled CLI provider checks a stable current Bitcoin Core tip. A null `gettxout` response is inconclusive, not proof that an output was spent. Historical statements require a separately implemented and authenticated historical provider through the library API.
 

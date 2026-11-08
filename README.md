@@ -2,14 +2,18 @@
 
 > prove you control bitcoin without revealing your public key.
 
-Discover Bitcoin outputs, create a challenge, prove key control, verify against
+Discover Bitcoin outputs, create a challenge, prove signature custody, verify against
 Bitcoin Core. Supply a native P2WPKH or compressed-key P2PKH address; the CLI and C++ library discover
 its candidate outputs and independently recheck them at verification. Proving
-runs offline with the request and protected key input by default; explicit wallet
-mode can obtain one address key from Bitcoin Roots. Native verification
+runs offline with the public request and a private signature receipt, or signs
+with an explicitly selected Core wallet. Native verification
 uses Core RPC directly, without installing or invoking `bitcoin-cli`.
 
-QuietProof uses **PoKC (Proof of Key Control)** for one compressed-key
+QuietProof defaults to **PoSC (Proof of Signature Custody)**: knowledge of a valid
+signature for the exact verifier request. A wallet owner can delegate that signature
+without exporting a private key. **PoKC (Proof of Key Control)** remains available
+through explicit `--proof-mode key-knowledge` for challenge, prove and verify.
+Both workflows cover one compressed-key
 hash across P2WPKH, P2PKH, or mixed outputs. Uncompressed-key P2PKH is unsupported;
 discovery cannot determine key encoding from a P2PKH script alone.
 Up to 16 outputs may share that key hash. Different keys require separate
@@ -57,9 +61,10 @@ chain-evidence and durable nonce boundary.
 
 ## Build
 
-The optional Linux [native prover GUI](docs/guide/native-gui.md) opens public
-requests, obtains a selected Roots wallet key after approval, and saves a
-locally verified proof. Its guide covers installation, wallet support and recovery.
+The optional Linux [native prover GUI](docs/guide/native-gui.md) defaults to PoSC:
+open a public request, choose its private signature receipt, explicitly approve
+proving and save a locally verified public proof. Explicit legacy PoKC can obtain
+a selected Roots wallet key after approval. Its guide covers installation and recovery.
 
 Prebuilt static Linux x86_64 binaries with native RPC support are available from
 [GitHub Releases](https://github.com/LuganoPlanB/quietproof/releases).
@@ -82,13 +87,14 @@ lookup; there is no `bitcoin.conf` parsing or automatic endpoint fallback.
 `-DQUIETPROOF_BUILD_RPC=OFF` removes curl and retains the manual/offline and
 explicit legacy paths.
 
-`-DQUIETPROOF_BUILD_SIGNATURE_MODE=ON` additionally builds and installs the
-experimental Bitcoin ECDSA constraint component. It defaults to OFF and uses
+The standard build includes the experimental Bitcoin ECDSA constraint component
+(`QUIETPROOF_BUILD_SIGNATURE_MODE=ON`) and uses
 the same pinned base SDK. Installed CMake consumers must request the `signature`
 component and link `LongfellowZKQuietProof::signature`; an ordinary package lookup
 loads only the base target. See the [constraint and package contract](spec/signature-ecdsa-constraints.md).
-It enables explicit native signature-possession commands; browser support is
-qualified separately. Existing command defaults remain key knowledge. See the
+Native commands default to signature possession. Deliberate
+`-DQUIETPROOF_BUILD_SIGNATURE_MODE=OFF` builds report unsupported for no-mode
+operations and still support explicit PoKC. See the
 [complete signature workflow](docs/guide/signature-possession.md), including
 verification with the independently retained `expected.qpr`.
 
@@ -98,31 +104,37 @@ can delegate that signature without exporting the key. The
 [independent Sage reference](spec/README.md#posc-signature-custody) checks this
 ECDSA/HASH160 relation against Python and the actual C++ constraints.
 
-| Boundary | Default key knowledge | Optional signature possession |
+| Boundary | Explicit key knowledge (PoKC) | Default signature possession (PoSC) |
 | --- | --- | --- |
 | Witness | Private scalar; existing PoKC relation. | Signature and compressed public key for the exact request; no scalar knowledge required. |
 | Delegation | Existing protected-key workflow. | A private `.qpa` holder can re-prove the same authorised request. |
-| Build/selection | Existing APIs, commands, GUI and wire identities. | Explicit `QUIETPROOF_BUILD_SIGNATURE_MODE=ON` and `--proof-mode signature-possession`; OFF rejects unsupported operations. |
+| Build/selection | `--proof-mode key-knowledge`; unchanged low-level APIs and v1/v2 wire identities. | Standard builds and no-mode commands; deliberate OFF builds reject unsupported operations. |
 | Freshness | Request, chain and replay policy. | Same outer duties; a new proof or timestamp does not establish signing time. |
 
-Create a request by adding `--proof-mode signature-possession --signing-kind
-p2wpkh` (or `p2pkh`) to `challenge create`. The selected kind must occur among
+Create a request with `challenge create`. Homogeneous claims infer their signing
+kind; mixed claims require `--signing-kind p2wpkh` (or `p2pkh`). The selected kind must occur among
 the claims and actually be available in the signing wallet. Review the audience,
 purpose, network, total satoshis and expiry displayed before authorisation.
 
 ```sh
 # Local signing and proving with an explicitly selected stock Core wallet.
-build/quietproof prove --proof-mode signature-possession \
+build/quietproof prove \
   --request request.qpr --output proof.qpf --rpc-wallet wallet-name
 
 # Export a private capability for offline or delegated native proving.
-build/quietproof authorize --proof-mode signature-possession \
+build/quietproof authorize \
   --request request.qpr --receipt-output authorisation.qpa --rpc-wallet wallet-name
-build/quietproof prove --proof-mode signature-possession \
+build/quietproof prove \
   --request request.qpr --receipt-input authorisation.qpa --output delegated.qpf
 
+# External signing: export exact message bytes, then import a protected signature.
+build/quietproof signing-material --request request.qpr --output message.txt
+build/quietproof import-signature --request request.qpr \
+  --signature-input private-signature.txt --signature-format bip322-simple \
+  --receipt-output imported.qpa
+
 # Verifier uses its own retained request, not a replacement from the prover.
-build/quietproof verify delegated.qpf --proof-mode signature-possession \
+build/quietproof verify delegated.qpf \
   --expected-request expected.qpr --network signet --verifier example.org \
   --purpose proof-of-funds --nonce-store ./signature-nonces
 ```
@@ -147,7 +159,7 @@ bounded metadata inspection is a separate capability. Only public `.qpr` and
 receipts remain native. See [state trust and privacy](docs/security.md) and
 [measured signature resources](docs/performance.md#signature-possession-measurements).
 
-## Try an isolated regtest workflow
+## Try an isolated legacy PoKC regtest workflow
 
 Follow the [getting-started guide](docs/guide/getting-started.md) to start a
 private, peerless Core node, fund a reproducible public disposable key fixture,
@@ -155,12 +167,12 @@ and obtain `ADDRESS`, `RPC_URL` and `DEMO`. The proof secret stays outside Core.
 Node administration is separate from these ordinary commands:
 
 ```sh
-build/quietproof challenge create --network regtest --address "$ADDRESS" \
+build/quietproof challenge create --proof-mode key-knowledge --network regtest --address "$ADDRESS" \
   --verifier example.org --purpose proof-of-funds --message 'Proof of control' \
   --output "$DEMO/request.qpr" --rpc-url "$RPC_URL" --rpc-datadir "$DEMO"
 build/quietproof inspect "$DEMO/request.qpr"
-build/quietproof prove --request "$DEMO/request.qpr" --output "$DEMO/proof.qpf"
-build/quietproof verify "$DEMO/proof.qpf" --network regtest \
+build/quietproof prove --proof-mode key-knowledge --request "$DEMO/request.qpr" --output "$DEMO/proof.qpf"
+build/quietproof verify "$DEMO/proof.qpf" --proof-mode key-knowledge --network regtest \
   --verifier example.org --purpose proof-of-funds --max-lifetime 300 \
   --nonce-store "$DEMO/nonces" --rpc-url "$RPC_URL" --rpc-datadir "$DEMO"
 ```
@@ -183,14 +195,14 @@ replay. The store is a durable **file**, not a directory. A current null/spent
 UTXO or unavailable node is `state_inconclusive`; discovery does not reserve
 coins or authenticate historical spending.
 
-For an already funded signet address whose key the prover possesses:
+For an already funded signet address in a supported signing wallet:
 
 ```sh
 build/quietproof challenge create --network signet --address tb1q... \
   --verifier example.org --purpose proof-of-funds --message 'Proof of control' \
   --output request.qpr
-build/quietproof prove --request request.qpr --output proof.qpf
-build/quietproof verify proof.qpf --network signet --verifier example.org \
+build/quietproof prove --request request.qpr --output proof.qpf --rpc-wallet wallet-name
+build/quietproof verify proof.qpf --expected-request request.qpr --network signet --verifier example.org \
   --purpose proof-of-funds --nonce-store ./nonces
 ```
 
@@ -218,7 +230,10 @@ target_link_libraries(my_application PRIVATE LongfellowZKQuietProof::rpc)
 ```
 
 `BitcoinCoreRpc` supplies discovery and fresh chain evidence;
-`CreateQuietProofChallenge` creates the same canonical requests as the CLI.
+`CreateQuietProofChallenge` creates legacy PoKC requests, equivalent to the CLI's
+explicit `--proof-mode key-knowledge`. For PoSC, request the signature component
+and use `CreateQuietProofSignatureChallenge`, `PoKSigProveReceipt` and
+`VerifyQuietProofSignatureDetailed` with independently selected local policy.
 Existing `PoKCProve` and `VerifyQuietProof` handle proving and complete
 policy/evidence verification. `PoKCVerifyProof` alone verifies only the
 zero-knowledge relation. Applications choose verifier policy independently of
@@ -264,7 +279,8 @@ package ON/OFF, sanitizer/static-analysis gates and the optional Sage reference
 setup. Deterministic Sage vectors, protocol, naming and spec checks remain in
 the normal suite. The [normative protocol](spec/quietproof-v1.md) retains statement
 v1's P2WPKH semantics and adds typed statement v2 for P2PKH or mixed claims.
-New proofs use timestamped envelope v2 with the unchanged ownership circuits.
+Explicit PoKC proofs use timestamped envelope v2 with the unchanged ownership circuits;
+default PoSC requests/proofs retain their existing v3 signature relation and encoding.
 Older verifiers that do not support statement v2 reject it as unsupported.
 
 Manual claims and `--bitcoin-cli /absolute/path` remain available in the
@@ -276,17 +292,17 @@ mixed outputs; duplicate outpoints cannot count twice.
 
 ## Use cases
 
-- **Custody attestation:** demonstrate current knowledge of keys controlling specified custody outputs without disclosing their public keys.
-- **Auditor challenges:** answer fresh, single-use key-control challenges without constructing a spend-like transaction.
+- **Custody attestation:** demonstrate custody of a signature authorizing the exact request for disclosed outputs without revealing the signature or public key.
+- **Auditor challenges:** answer fresh, single-use requests with an authorized wallet signature or an explicitly selected PoKC key-knowledge proof.
 - **Disclosed proof of funds:** qualify parties for trades, purchases, lending, or onboarding.
 - **Collateral and escrow preflight:** demonstrate control before negotiating and creating the actual locking or settlement transaction.
-- **Wallet continuity:** disclose common key knowledge across old and new supported outputs off-chain.
+- **Wallet continuity:** disclose a common key fingerprint across supported outputs off-chain, with the selected proof meaning stated explicitly.
 - **Pseudonymous reputation rollover:** transfer reputation or credentials while revealing wallet links to the application.
 - **Collaborative protocols:** verify control of proposed inputs before admitting participants to CoinJoin or other coordinated transactions.
 - **Membership and operator bonds:** demonstrate control of a disclosed economic bond without immediately spending or depositing it.
 - **Liquidity qualification:** pre-qualify channel, liquidity, or federated-service participants before funding begins.
 
-> QuietProof proves challenge-bound key knowledge. It does not prove exclusive ownership, legal title, solvency, liabilities, or that funds are locked or will remain unspent.
+> QuietProof defaults to request-bound signature custody. It does not prove private-key knowledge, signing time, exclusive ownership, legal title, solvency, liabilities, or that funds are locked or will remain unspent. Explicit PoKC separately proves key knowledge.
 
 ## Current metrics
 
@@ -346,11 +362,11 @@ record peak resident memory separately, and run multiple samples.
 
 ## Prove with a Bitcoin Roots wallet
 
-Bitcoin Roots v31.1-roots.3 provides `exportaddresskey`. To obtain a key directly
+For explicit legacy PoKC only, Bitcoin Roots v31.1-roots.3 provides `exportaddresskey`. To obtain a key directly
 from an already loaded, unlocked descriptor wallet:
 
 ```sh
-build/quietproof prove --request request.qpr --output proof.qpf \
+build/quietproof prove --proof-mode key-knowledge --request request.qpr --output proof.qpf \
   --network signet --rpc-url http://127.0.0.1:38332/ \
   --rpc-cookie "$HOME/.config/quietproof/signet.cookie"
 ```
@@ -365,8 +381,8 @@ requests, `--address` can select either claimed kind with the same key hash.
 The returned
 compressed key is checked against the request before proof generation.
 
-Supplying any RPC option (or `--address`) selects wallet mode. Plain `prove`
-still reads protected stdin without RPC; `--network` alone stays offline.
+In explicit PoKC mode, supplying any RPC option (or `--address`) selects wallet mode.
+`prove --proof-mode key-knowledge` reads protected stdin without RPC; `--network` alone stays offline.
 If the node lacks `exportaddresskey`, use stdin mode instead. Authentication,
 locked-wallet, missing-key and malformed-response errors stop the operation;
 there is no private-descriptor export or automatic wallet unlocking fallback.

@@ -94,6 +94,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
       });
       await page.goto(origin + '/tool', { waitUntil: 'domcontentloaded' });
       await page.getByRole('button', { name: 'Look up outputs', exact: true }).waitFor();
+      await page.getByLabel('Proof mode', { exact: true }).selectOption('key-knowledge');
       await page.getByLabel('Bitcoin addresses').fill(fixtures.mainnet.p2wpkh);
       await page.getByRole('button', { name: 'Look up outputs', exact: true }).click();
       await page.locator('.quietproof-claims').getByRole('checkbox').check();
@@ -117,6 +118,25 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
       await page.locator('#localsearch-input').fill('verifier');
       await page.locator('.VPLocalSearchBox a[href]').first().waitFor();
       assert.deepEqual(errors, []);
+    });
+  });
+
+  test(`${name}: homepage PoSC meaning, keyboard handoff and 100%/200% reflow`, { timeout: 120000 }, async () => {
+    await withHostingPage(name, engine, 'home', async page => {
+      for (const [width,height] of [[375,812],[1440,900]]) for (const scale of [1,2]) {
+        await page.setViewportSize({width,height});await page.goto(origin+'/');
+        await page.addStyleTag({content:`html {font-size:${16*scale}px!important}`});
+        await page.evaluate(()=>document.fonts.ready);
+        assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`home ${width}/${scale*100}%`);
+        assert.match(await page.locator('.quietproof-home').innerText(),/PoSC.*default/s);
+        if (process.env.QUIETPROOF_HOSTING_ARTIFACTS) {
+          await mkdir(process.env.QUIETPROOF_HOSTING_ARTIFACTS,{recursive:true});
+          await page.screenshot({path:resolve(process.env.QUIETPROOF_HOSTING_ARTIFACTS,`${name}-home-${width}-${scale*100}.png`),fullPage:true});
+        }
+        await page.locator('.quietproof-actions').getByRole('link',{name:'See what it proves',exact:true}).focus();
+        await page.keyboard.press('Enter');await page.locator('.vp-doc h1').waitFor();
+        assert.match(await page.locator('.vp-doc h1').innerText(),/What QuietProof proves/);
+      }
     });
   });
 

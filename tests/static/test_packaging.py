@@ -85,7 +85,7 @@ class PackagingTests(unittest.TestCase):
             result = subprocess.run(['python3', str(ROOT / 'scripts/qualify_static.py'),
                 '--cross-work', str(root / 'cross'), '--sdk-source', str(root / 'sdk'),
                 '--native-on', str(root / 'native'), '--native-off', str(root / 'offline'),
-                '--evidence', str(evidence)], env=environment, capture_output=True, text=True, timeout=15)
+                '--no-signature-mode', '--evidence', str(evidence)], env=environment, capture_output=True, text=True, timeout=15)
             self.assertNotEqual(result.returncode, 0)
             text = (evidence / 'qualification.json').read_text()
             manifest = json.loads(text)
@@ -134,8 +134,8 @@ class PackagingTests(unittest.TestCase):
                 (wasi / 'VERSION').write_text('34.0\n')
                 args = ['build_wasm.py', '--sdk-source', str(root), '--wasi-sdk', str(wasi),
                         '--work-dir', str(root / 'cross')]
-                if enabled:
-                    args.append('--signature-mode')
+                if not enabled:
+                    args.append('--no-signature-mode')
                 commands = []
                 def run(command, **kwargs):
                     commands.append(list(command))

@@ -31,7 +31,9 @@ are available separately. Please contact us for further information.
 
 ## Build and try the CLI
 
-[Build and try it](/guide/getting-started) gives the dependency, build, Signet request, proof, and verification commands.
+[Native signature custody](/guide/signature-possession) covers the default PoSC build,
+wallet signing or external signature import, private receipts and exact-request verification.
+[Build and try it](/guide/getting-started) retains an explicit legacy PoKC tutorial using a public disposable scalar.
 
 ## Operate it carefully
 

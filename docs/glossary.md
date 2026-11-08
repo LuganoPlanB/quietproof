@@ -17,7 +17,7 @@ A 33-byte secp256k1 key used by supported P2WPKH and P2PKH relations. QuietProof
 
 ### Private key / spend key
 
-The secret scalar that authorizes spending. QuietProof’s prover uses it locally as a private witness. It must never be placed in command arguments, shell history, environment variables, requests, or proof files.
+The secret scalar that authorizes spending. The wallet retains it in default PoSC; explicit legacy PoKC uses it locally as a private witness. It must never be placed in command arguments, shell history, environment variables, requests, or proof files.
 
 ### P2WPKH
 
@@ -46,7 +46,7 @@ A short-lived request created by the verifier. It identifies the verifier, purpo
 
 ### Circuit
 
-The arithmetic rules checked by the zero-knowledge proof. QuietProof has one fixed circuit for a single compressed-key hash, shared across supported script kinds.
+The arithmetic rules checked by the zero-knowledge proof. Each supported proof relation has its own pinned circuit identity. Default PoSC and explicit PoKC both bind one compressed-key hash across supported script kinds.
 
 ### Nonce
 
@@ -54,11 +54,15 @@ A fresh random value used once. Together with durable consumption, it prevents t
 
 ### PoKC
 
-Proof of Key Control, the underlying zero-knowledge relation used by QuietProof.
+Proof of Key Control, the explicit legacy relation proving knowledge of the matching private scalar.
+
+### PoSC
+
+Proof of Signature Custody, the default relation proving possession of a signature for the exact request. A private receipt permits same-request delegation; this does not prove private-key knowledge or signing time.
 
 ### Prover
 
-The party that supplies the private key locally and creates the proof.
+The party that creates the proof using a request-bound signature in default PoSC, or a private scalar in explicit PoKC.
 
 ### Statement
 
@@ -70,7 +74,7 @@ The party or software that checks the proof, expected policy, replay state, and 
 
 ### Witness
 
-Private data used to satisfy a zero-knowledge circuit. Here it includes the spend key and derived intermediate values. “Witness” in the proof-system sense is separate from Bitcoin transaction witness data.
+Private data used to satisfy a zero-knowledge circuit. Default PoSC uses the request-bound signature, compressed public key and derived intermediates; explicit PoKC uses the spend scalar and its derived intermediates. “Witness” in the proof-system sense is separate from Bitcoin transaction witness data.
 
 ### Zero-knowledge proof
 

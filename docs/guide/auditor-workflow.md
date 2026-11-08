@@ -5,8 +5,10 @@ description: A bounded custody-attestation workflow using fresh QuietProof chall
 
 # Auditor workflow
 
-This workflow demonstrates current key knowledge for disclosed native P2WPKH
-or compressed-key P2PKH outputs. It is not a complete proof of reserves or solvency.
+The default workflow demonstrates signature custody for disclosed native P2WPKH
+or compressed-key P2PKH outputs. A signature may be delegated for the same request;
+it does not prove private-key knowledge or exclusive control. Explicit PoKC has
+a separate key-knowledge claim. Neither is a complete proof of reserves or solvency.
 The [browser handoff](./browser-tool) and native Core-backed verifier have
 different chain-evidence and replay boundaries; choose one explicitly.
 
@@ -38,8 +40,8 @@ expected network, independent expected metadata/policy, resource limits and an
 owner-only atomic nonce store. Native RPC is the default; `bitcoin-cli` is only
 an explicitly selected deprecated compatibility path.
 
-For the static browser verifier, retain your own expected `.qpr` or choose an
-independent explicit context. Read crypto, policy and explorer results
+For default PoSC, retain your own exact expected `.qpr` independently. Explicit
+legacy PoKC also permits independently selected context. Read crypto, policy and explorer results
 separately. The pinned explorer is trusted and its observations are non-atomic;
 the browser does not authenticate a chain snapshot or authorize acceptance.
 Device time and editable origin-local history do not provide a durable global

@@ -12,6 +12,7 @@ struct Options {
   bool theme_override = false;
   bool font_override = false;
   bool settings = false;
+  bool signature_mode = true;
   int pixel_scale = 1;
   int width = 480;
   int height = 720;
@@ -19,6 +20,7 @@ struct Options {
   std::filesystem::path screenshot;
   std::filesystem::path test_events;
   std::filesystem::path request;
+  std::filesystem::path receipt;
   std::optional<int64_t> test_now;
 };
 int Run(const Options& options);

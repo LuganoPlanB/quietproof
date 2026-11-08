@@ -31,9 +31,13 @@ tar -xzf quietproof-v0.1.0-linux-x86_64-musl.tar.gz
 ```
 
 Substitute the downloaded version in these filenames. The archive contains the
-CLI with native Bitcoin Core RPC enabled, license notices, the README, and
+CLI with native Bitcoin Core RPC and default PoSC enabled, license notices, the README, and
 `release.json` recording its version, source and SDK commits, compiler and binary
 SHA-256. Bitcoin Core remains a separately operated service.
+
+The explicit legacy-only archive uses a `-key-knowledge` suffix. Its build
+disables signature capability; no-mode operations report unsupported. Select
+`--proof-mode key-knowledge` for its legacy challenge/prove/verify commands.
 
 [`dyne/musl-action`](https://github.com/dyne/musl-action) supplies the x86_64
 compiler and static curl/TLS dependencies. The build uses the pinned Longfellow
@@ -53,3 +57,4 @@ python3 scripts/build_musl_release.py --sdk-source ../longfellow-zk \
 The SDK checkout must match `scripts/build-pins.json`. `CC` and `CXX` can select
 the compiler paths supplied by the action. CMake's `QUIETPROOF_VERSION` sets the
 CLI and installed package version; it does not change protocol or circuit versions.
+Use `--no-signature-mode` only for an intentional legacy-only archive.

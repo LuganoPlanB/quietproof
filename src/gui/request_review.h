@@ -1,6 +1,7 @@
 #pragma once
 
 #include "quietproof/statement.h"
+#include "request.h"
 
 #include <optional>
 #include <string>
@@ -9,6 +10,7 @@
 namespace quietproof::gui {
 enum class RequestWindow { Valid, NotYetValid, Expired, ClockUnavailable, Invalid };
 RequestWindow RequestWindowAt(const proofs::QuietProofStatementV1& statement, int64_t now);
+RequestWindow RequestWindowAt(const LoadedRequest& request, int64_t now);
 const char* RequestWindowName(RequestWindow window);
 const char* RequestWindowMessage(RequestWindow window);
 std::string RequestUtcTime(uint64_t seconds);
@@ -44,4 +46,5 @@ struct RequestReview {
 };
 // Presentation only: no I/O, wallet APIs, replay authorization or chain checks.
 RequestReview InspectRequest(const proofs::QuietProofStatementV1& statement);
+RequestReview InspectRequest(const LoadedRequest& request);
 }  // namespace quietproof::gui

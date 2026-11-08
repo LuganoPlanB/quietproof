@@ -1,6 +1,6 @@
 ---
 title: Technical architecture
-description: How QuietProof separates the PoKC relation, canonical attestation, verifier policy, and Bitcoin evidence.
+description: How QuietProof separates proof relations, canonical attestation, verifier policy, and Bitcoin evidence.
 ---
 
 # Technical architecture
@@ -17,10 +17,21 @@ canonical request · transcript · expiry · nonce · chain evidence
                          │
                          ▼
 CRYPTOGRAPHIC PRIMITIVE
-PoKC: ZK knowledge of one compressed spend key for P2WPKH/P2PKH
+PoSC (default): request-bound signature custody
+PoKC (explicit legacy): private spend-key knowledge
 ```
 
-## PoKC relation
+## Default PoSC relation
+
+PoSC proves knowledge of a valid request-bound low-S ECDSA signature and a
+compressed public key hashing to the disclosed fingerprint. Its v3 statement,
+transcript domain and circuit identity remain separate from PoKC. A private
+`.qpa` receipt can delegate the signature without a scalar; it never belongs in
+public browser uploads. Signature custody does not prove private-key knowledge,
+signing time or exclusive control. See the [native workflow](/guide/signature-possession)
+and [signature profile](/technical/signature-profile).
+
+## Explicit legacy PoKC relation
 
 For the public 20-byte key hash `h`, the prover privately supplies a scalar `x` and proves:
 
@@ -35,7 +46,7 @@ The circuit constrains scalar validity, elliptic-curve multiplication, finite no
 
 The compressed public key is internal witness data, not a public output.
 
-## Fixed circuit
+## Fixed PoKC circuit
 
 PoKC compiles one single-key circuit. All output claims must share its key hash. Mismatched circuit version, digest, Ligero rate, or query count is rejected before proof acceptance.
 
@@ -47,7 +58,7 @@ PoKC compiles one single-key circuit. All output claims must share its key hash.
 
 ## Canonical statement and envelope
 
-Statement v1 means P2WPKH; v2 binds each claim to P2WPKH or compressed-key P2PKH.
+For explicit PoKC, statement v1 means P2WPKH; v2 binds each claim to P2WPKH or compressed-key P2PKH.
 Mixed outputs sharing a key hash reuse one witness. New proofs use timestamped
 envelope v2; typed statements are invalid in legacy envelope v1. Older verifiers
 without statement-v2 support reject typed requests as unsupported. Circuit
@@ -61,6 +72,9 @@ The Fiat–Shamir transcript seed uses a tagged hash over the statement digest, 
 
 ## Policy and chain evidence
 
+Default PoSC integrations use the separate `VerifyQuietProofSignature(...)`
+policy/chain/replay API with independently retained expected-request bytes and
+explicit local acceptance policy. Low-level PoKC APIs keep their relation:
 `PoKCVerifyProof(...)` checks only the zero-knowledge relation. Applications should normally use `VerifyQuietProof(...)`, which applies policy, proof verification, chain evidence, confirmation and value thresholds, optional bridge authorization, and atomic nonce consumption.
 
 The chain provider is independently selected by the verifier. The bundled provider checks a stable current Bitcoin Core tip; authenticated historical state remains an external provider responsibility.

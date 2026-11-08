@@ -101,7 +101,10 @@ for(const [engine,type] of [['chromium',chromium],['webkit',webkit]])test(`${eng
   async function importProof(site,fixture){
     active=fixture;await page.goto(site+'/verify');await page.getByRole('button',{name:'Inspect proof and policy',exact:true}).waitFor();
     if(fixture.metadata.proofMode==='signature-possession')await support();
-    else await page.getByLabel('Expected policy source').selectOption('request');
+    else {
+      await page.locator('#qp-verify-proof-mode').selectOption('key-knowledge');
+      await page.getByLabel('Expected policy source').selectOption('request');
+    }
     await page.getByLabel('Proof file (.qpf)',{exact:true}).setInputFiles(upload(fixture.name+'.qpf',fixture.proof));
     await page.getByLabel('Expected request file (.qpr)',{exact:true}).setInputFiles(upload(fixture.name+'.qpr',fixture.request));
     await page.getByLabel('Verification network (chosen independently)').selectOption('mainnet');
@@ -180,6 +183,7 @@ for(const [engine,type] of [['chromium',chromium],['webkit',webkit]])test(`${eng
     if(signatureMode){await page.getByRole('button',{name:'Check signature support',exact:true}).click();
       await page.locator('#qp-request-proof-mode option[value="signature-possession"]').waitFor({state:'attached'});
       await page.locator('#qp-request-proof-mode').selectOption('signature-possession');}
+    else await page.locator('#qp-request-proof-mode').selectOption('key-knowledge');
     await page.getByRole('button',{name:'Create request',exact:true}).click();
     await page.getByText('1 saved requests; 0 completed check markers.',{exact:true}).waitFor();
     const publicDownload=page.waitForEvent('download');await page.getByRole('link',{name:'Download .qpr request',exact:true}).click();
@@ -246,7 +250,7 @@ for(const [engine,type] of [['chromium',chromium],['webkit',webkit]])test(`${eng
       assert(disabledOrigin,'Actual separately packaged disabled site required.');await importProof(disabledOrigin,legacy);
       await page.getByRole('button',{name:'Check signature support',exact:true}).click();
       await page.getByText('Signature possession is unavailable in this verifier build.',{exact:false}).waitFor();
-      assert.equal(await page.locator('#qp-verify-proof-mode option[value="signature-possession"]').count(),0);
+      assert.equal(await page.locator('#qp-verify-proof-mode option[value="signature-possession"]').count(),1);
       await check('disabled-key-qualified','unspent',/Reported unspent/);
       const disabledStorage=await storage(page);assert.equal(disabledStorage.state?.checks.length??0,0);
       await writeFile(resolve(out,'disabled-storage.json'),JSON.stringify(disabledStorage,null,2));
