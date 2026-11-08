@@ -123,6 +123,7 @@ export default defineConfig({
           { text: "Guide overview", link: "/guide/" },
           { text: "Browser request and verifier", link: "/guide/browser-tool" },
           { text: "Default native PoSC workflow", link: "/guide/signature-possession" },
+          { text: "Sparrow on signet", link: "/guide/sparrow" },
           { text: "Linux prover GUI", link: "/guide/native-gui" },
           { text: "How a proof works", link: "/guide/how-it-works" },
           { text: "Auditor workflow", link: "/guide/auditor-workflow" },

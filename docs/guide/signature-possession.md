@@ -91,7 +91,8 @@ The importer accepts supported BIP322 Simple/Full or `sparrow-json` wrappers;
 metadata cannot override request/address/network checks. Sparrow2.5.6 produces
 compatible P2WPKH Simple signatures; its P2PKH legacy message signatures are not
 compatible BIP322 signatures. Taproot/Schnorr has no Quietproof proof relation.
-The executed signer compatibility matrix is recorded in repository `scripts/sparrow_signer.md`.
+Follow [Sparrow on signet](./sparrow) for the tested disposable-wallet walkthrough;
+the detailed compatibility matrix is recorded in repository `scripts/sparrow_signer.md`.
 Use the imported receipt in the offline proving command below. No wallet or RPC
 credentials are needed for message export, signature import or receipt-only proving.
 
