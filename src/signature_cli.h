@@ -178,3 +178,97 @@ int SignatureAuthorize(int argc, char** argv) {
       !One(options, "--proof-mode", &mode) || mode != "signature-possession") return Usage();
   return SignatureOperation(options, true);
 }
+
+
+// Offline request material and external signature import share the established
+// protected file IO. Signature bytes never appear in argv or diagnostics.
+int SignatureExternal(int argc, char** argv, bool importing) {
+  try {
+    const std::set<std::string> allowed = importing ? std::set<std::string>{
+        "--proof-mode", "--request", "--signature-input", "--signature-format",
+        "--receipt-output", "--network", "--address"} : std::set<std::string>{
+        "--proof-mode", "--request", "--output", "--network", "--address"};
+    Options options;
+    std::string mode, request_path, output_path, network_name, address, input_path, format;
+    if (!ParseOptions(argc, argv, 2, allowed, &options) ||
+        !One(options, "--proof-mode", &mode) || mode != "signature-possession" ||
+        !One(options, "--request", &request_path) ||
+        !One(options, importing ? "--receipt-output" : "--output", &output_path) ||
+        !One(options, "--network", &network_name, false) || !One(options, "--address", &address, false) ||
+        (importing && (!One(options, "--signature-input", &input_path) ||
+                       !One(options, "--signature-format", &format)))) return Usage();
+    if (!proofs::kQuietProofSignatureModeEnabled) return SignatureUnavailable();
+    if (!CheckNewOutputPath(output_path)) return kIoError;
+    std::vector<uint8_t> request;
+    proofs::QuietProofSignatureStatementV3 statement;
+    proofs::QuietProofSignatureInputsV1 inputs;
+    if (!ReadSignatureFile(request_path, proofs::kQuietProofMaxStatementBytes, false, &request) ||
+        !proofs::DecodeQuietProofSignatureStatement(request, &statement) ||
+        !proofs::DeriveQuietProofSignatureInputs(request, &inputs)) {
+      std::cerr << "canonical signature-possession request required\n"; return kData;
+    }
+    if (options.count("--network")) {
+      proofs::QuietProofNetwork network;
+      if (!proofs::QuietProofParseNetwork(network_name, &network)) return Usage();
+      if (network != statement.network) { std::cerr << "Network does not match the request\n"; return kData; }
+    }
+    const auto expected_address = proofs::QuietProofSignatureAddress(statement);
+    if (options.count("--address") && address != expected_address) {
+      std::cerr << "Address does not match the request\n"; return kData;
+    }
+    ShowSignatureRequest(statement);
+    if (!SignatureRequestCurrent(statement)) return kData;
+    if (!importing) {
+      const auto& message = inputs.profile.application_message;
+      if (!WriteSignatureFile(output_path, {message.begin(), message.end()})) return kIoError;
+      auto summary = SignatureRequestSummary(statement);
+      summary["result"] = "signing_material_created";
+      summary["address"] = expected_address;
+      summary["statement_digest"] = ArrayHex(inputs.profile.statement_digest);
+      summary["message"] = std::string(message.begin(), message.end());
+      summary["message_bytes"] = message.size();
+      summary["message_file"] = output_path;
+      std::cout << summary.dump() << '\n';
+      return 0;
+    }
+    PrivateReceipt encoded, receipt;
+    if (!ReadSignatureFile(input_path, 16384, true, &encoded.bytes)) {
+      std::cerr << "signature input must be a bounded regular owner-only file owned by this user\n"; return kIoError;
+    }
+    std::string signature(encoded.bytes.begin(), encoded.bytes.end());
+    struct EraseString { std::string& value; ~EraseString() { SecureErase(value.data(), value.size()); } } erase{signature};
+    if (format == "sparrow-json") {
+      // Treat metadata as assertions, never authority. Native verification below
+      // binds the signature to the request even if metadata has been forged.
+      const auto wrapper = nlohmann::json::parse(signature);
+      std::array<uint8_t, 32> message_hash{};
+      proofs::SHA256 hash;
+      hash.Update(inputs.profile.application_message.data(), inputs.profile.application_message.size());
+      hash.DigestData(message_hash.data());
+      if (wrapper.at("network").get<std::string>() != proofs::QuietProofNetworkName(statement.network) ||
+          wrapper.at("address").get<std::string>() != expected_address ||
+          wrapper.at("scriptKind").get<std::string>() != proofs::QuietProofScriptKindName(statement.signing_kind) ||
+          wrapper.at("messageSha256").get<std::string>() != ArrayHex(message_hash)) {
+        std::cerr << "signature metadata does not match the request\n"; return kData;
+      }
+      format = wrapper.at("format").get<std::string>();
+      SecureErase(signature.data(), signature.size());
+      signature = wrapper.at("signature").get<std::string>();
+    }
+    proofs::QuietProofBip322Format selected;
+    if (format == "bip322-simple") selected = proofs::QuietProofBip322Format::kSimple;
+    else if (format == "bip322-full") selected = proofs::QuietProofBip322Format::kFull;
+    else { std::cerr << "unsupported signature scheme; BIP322 ECDSA required\n"; return kUnsupported; }
+    proofs::QuietProofSignatureAuthorisationError error;
+    if (!proofs::ImportQuietProofBip322Signature(request, selected, signature, &receipt.bytes, &error)) {
+      std::cerr << "external signature rejected: " << proofs::QuietProofSignatureAuthorisationErrorName(error) << '\n';
+      return error == proofs::QuietProofSignatureAuthorisationError::kUnsupported ? kUnsupported : kData;
+    }
+    if (!SignatureRequestCurrent(statement)) return kData;
+    if (!WriteSignatureFile(output_path, receipt.bytes)) return kIoError;
+    std::cout << nlohmann::json({{"result", "receipt_created"}, {"receipt", output_path}, {"private", true}}).dump() << '\n';
+    return 0;
+  } catch (...) {
+    std::cerr << "external signature operation failed; private diagnostics suppressed\n"; return kData;
+  }
+}

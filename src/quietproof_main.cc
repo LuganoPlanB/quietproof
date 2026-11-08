@@ -43,6 +43,8 @@
 #endif
 #include "quietproof/challenge.h"
 #include "quietproof/signature_challenge.h"
+#include "quietproof/bip322_import.h"
+#include "quietproof/signature_address.h"
 #include "quietproof/signature_verifier.h"
 #include "poksig/prover.h"
 #include "quietproof/envelope.h"
@@ -87,6 +89,8 @@ void PrintUsage(std::ostream& output) {
       << "Signature mode (optional build capability; defaults remain key-knowledge):\n"
       << "  quietproof challenge create --proof-mode signature-possession --signing-kind p2pkh|p2wpkh [CHALLENGE OPTIONS]\n"
       << "  quietproof authorize --proof-mode signature-possession --request REQUEST --receipt-output PRIVATE.qpa --rpc-wallet NAME [RPC OPTIONS]\n"
+      << "  quietproof signing-material --proof-mode signature-possession --request REQUEST --output MESSAGE.txt [--network NETWORK] [--address ADDRESS]\n"
+      << "  quietproof import-signature --proof-mode signature-possession --request REQUEST --signature-input PRIVATE --signature-format bip322-simple|bip322-full|sparrow-json --receipt-output PRIVATE.qpa [--network NETWORK] [--address ADDRESS]\n"
       << "  quietproof prove --proof-mode signature-possession --request REQUEST --output PUBLIC.qpf (--receipt-input PRIVATE.qpa | --rpc-wallet NAME [RPC OPTIONS])\n"
       << "  quietproof verify PUBLIC.qpf --proof-mode signature-possession --expected-request ISSUED.qpr --nonce-store FILE [--max-tip-age SECONDS] [VERIFY OPTIONS]\n"
       << "  Signature mode never exports private keys or unlocks wallets. Unlock separately before signing.\n"
@@ -984,6 +988,8 @@ int QuietProofMain(int argc, char** argv) {
   if (argc >= 2 && std::string(argv[1]) == "utxos") return Utxos(argc, argv);
   if (argc >= 2 && std::string(argv[1]) == "prove") return Prove(argc, argv);
   if (argc >= 2 && std::string(argv[1]) == "authorize") return SignatureAuthorize(argc, argv);
+  if (argc >= 2 && std::string(argv[1]) == "signing-material") return SignatureExternal(argc, argv, false);
+  if (argc >= 2 && std::string(argv[1]) == "import-signature") return SignatureExternal(argc, argv, true);
   if (argc >= 3 && std::string(argv[1]) == "verify") return Verify(argc, argv);
   if (argc == 3 && std::string(argv[1]) == "inspect") return Inspect(argv[2]);
   return Usage();

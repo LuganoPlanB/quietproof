@@ -545,6 +545,10 @@ if(BUILD_TESTING)
     --cli $<TARGET_FILE:quietproof-cli> --rpc ${QUIETPROOF_BUILD_RPC}
     ${_signature_cli_capability} ${_signature_cli_fault})
   set_tests_properties(quietproof-signature-cli-test PROPERTIES TIMEOUT 120)
+  add_test(NAME quietproof-bip322-import-test COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/quietproof/bip322_import_test.py
+    --cli $<TARGET_FILE:quietproof-cli> ${_signature_cli_capability})
+  set_tests_properties(quietproof-bip322-import-test PROPERTIES TIMEOUT 120)
   if(QUIETPROOF_BUILD_SIGNATURE_MODE)
     add_executable(quietproof-signature-cli-verify tests/quietproof/signature_cli_verify.cc)
     target_link_libraries(quietproof-signature-cli-verify PRIVATE LongfellowZKQuietProof::signature)
