@@ -113,8 +113,10 @@ Raw `bip322-simple` and `bip322-full` inputs are exact Base64 text files, with
 explicit format. Whitespace and noncanonical Base64 are rejected. Simple is
 P2WPKH only; Full accepts the existing fixed P2WPKH/compressed P2PKH ECDSA
 transaction profile. Installed Sparrow cannot produce P2PKH BIP322 or Full:
-its legacy compact signatures remain unsupported, and its P2TR Schnorr witness
-cannot satisfy Quietproof's ECDSA relation. Full parser support does not claim
+its compressed-P2PKH Standard/Electrum signatures authorize the separate v4
+`bitcoin-message-ecdsa-v1` profile using `--signature-format bitcoin-message`
+or `sparrow-json`. P2WPKH compact headers and P2TR Schnorr witnesses cannot
+satisfy that profile. Full parser support does not claim
 Sparrow Full production. No format conversion changes the signed digest.
 
 Run the opt-in cross-application import tests with actual installed Sparrow:
@@ -127,6 +129,45 @@ python3 tests/quietproof/sparrow_import_test.py --cli /path/to/quietproof \
 These disposable offline integration tests make no chain-state claim. Public
 verification still requires `--expected-request issued.qpr`, the expected
 network/audience/purpose, current chain state, expiry policy and a nonce store.
+
+## Current v4 qualification
+
+The [concise Sparrow guide](../docs/guide/sparrow.md#observed-compatibility) and
+[Core companion](../docs/guide/core-signing.md) give the current workflow and
+measured matrix. P2PKH defaults to `bitcoin-message-ecdsa-v1`; P2WPKH to
+`bip322-ecdsa-v1`. Explicit P2PKH BIP322 uses Full. These are host adapters
+around one unchanged ECDSA/HASH160 circuit, 53 public inputs and one proof.
+All v3 requests and dependent signatures/receipts/proofs require reissuance.
+
+On **2026-11-08, 19:05–19:11 UTC**, actual stock Core 32.1 P2PKH `signmessage`,
+Sparrow 2.5.6 compressed-P2PKH Standard/Electrum (`ECKey.signMessage`) and Sparrow
+P2WPKH BIP322 Simple each completed raw import → RPC-disabled proof → signet
+`valid_current`. Core integrated `authorize` produced the same receipt as its
+external signature. Both Sparrow helper-JSON imports also passed separately;
+they did not create additional proofs. Core P2PKH BIP322 Full authorization
+and import passed, without a fourth public-chain proof. No upstream patches or
+private-key exports were used. Independent root verification at 19:18–19:20 UTC
+rechecked the three public proofs and replay rejection.
+
+| Actual wallet/profile | Sats observed | Request SHA256 | Public proof SHA256 / bytes |
+| --- | ---: | --- | --- |
+| Core P2PKH / Bitcoin Signed Message | 3,000 | `058dcbed282544d78c38dec956fe8ba7d5a6649a3339876ffbc86b5e63e172a1` | `2b0ff9816788960f3c3118414d5b93d5026b20bea29e601759a955d46806630d` / 49,727,432 |
+| Sparrow P2PKH change `m/1/0` / Bitcoin Signed Message | 6,700 | `10ff2dac3fbc047544e8fbca61c9c531206ae37924020e676bea46a123d6ff9a` | `bf90c60af3c65b636c49f7fc0bcaeb78c77172d03c05614d3ec853a78e34692d` / 49,727,624 |
+| Sparrow P2WPKH / BIP322 Simple | 9,343 | `ffa4a0315d77879e69c2f73704261556a0b2ecf4aa51cbe489b2a11e40d8e58c` | `37be7ddf4259453096ee4196932487f69adfc7a35bf14b4c0a628478c56535d4` / 49,727,560 |
+
+The capped funding transaction was
+`4418d5294d06497bc8544b8a8d12f2b0b8e89b3eceb1002f5f77845424cb697e`,
+confirmed at signet height 329983: output 0 was 3,000 sats to Core, output 1
+6,700 sats to Sparrow's owned change key, and the fee was 300 sats. It spent the
+historical 10,000-sat P2PKH output below; that old output is no longer unspent.
+The separate P2WPKH 9,343-sat output was retained. Balances and `valid_current`
+are original observations, not promises about future unspent status.
+
+## Archived v3 observations — unsupported format
+
+The following older run is historical evidence only. Its v3 artifacts and
+legacy-signature rejection describe the superseded BIP322-only contract,
+not the supported v4 behavior above. Do not reuse these requests or proofs.
 
 Observed interoperability on **2026-11-08**, installed Sparrow Server **2.5.6**,
 bundled Drongo commit above, Quietproof ECDSA v3 profile and Bitcoin Core **32.1**:

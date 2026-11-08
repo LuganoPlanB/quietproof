@@ -55,6 +55,10 @@ private `.qpa` receipt with `--receipt-input` for offline/delegated proving.
 Signature acquisition failure never exports a private key or switches mode.
 Retain the verifier's expected request independently. See the
 [native PoSC guide](guide/signature-possession.md) for signing, import and exact-request policy.
+P2PKH defaults to Bitcoin Signed Message; P2WPKH to BIP322. Only PoSC v4 is
+supported; reissue v3 exchanges. See [Core signing](guide/core-signing.md) for
+descriptor P2PKH/`signmessage`, and [Sparrow](guide/sparrow.md) for the measured
+wallet/profile/transport matrix. Receipt proving remains offline.
 Legacy PoKC stdin and Roots wallet-backed proving require `--proof-mode key-knowledge`.
 
 ::: warning

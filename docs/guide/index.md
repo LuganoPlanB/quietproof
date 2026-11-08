@@ -35,6 +35,8 @@ are available separately. Please contact us for further information.
 wallet signing or external signature import, private receipts and exact-request verification.
 [Sparrow on signet](/guide/sparrow) follows actual Sparrow signing, private signature
 import and public-chain verification with a disposable wallet.
+[Stock Core signing](/guide/core-signing) covers compressed P2PKH descriptor
+addresses, `signmessage`, the explicit BIP322 alternative and offline proving.
 [Build and try it](/guide/getting-started) retains an explicit legacy PoKC tutorial using a public disposable scalar.
 
 ## Operate it carefully

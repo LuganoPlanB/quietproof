@@ -97,6 +97,8 @@ Native commands default to signature possession. Deliberate
 operations and still support explicit PoKC. See the
 [complete signature workflow](docs/guide/signature-possession.md), including
 verification with the independently retained `expected.qpr`.
+See the measured [Sparrow](docs/guide/sparrow.md) and
+[stock Core](docs/guide/core-signing.md) workflows for wallet/address selection.
 
 The signature-possession relation is **PoSC (Proof of Signature Custody)**.
 Custody means knowledge of a valid signature for the request; a wallet owner
@@ -115,6 +117,11 @@ Create a request with `challenge create`. Homogeneous claims infer their signing
 kind; mixed claims require `--signing-kind p2wpkh` (or `p2pkh`). The selected kind must occur among
 the claims and actually be available in the signing wallet. Review the audience,
 purpose, network, total satoshis and expiry displayed before authorisation.
+PoSC uses v4 only: P2PKH defaults to `bitcoin-message-ecdsa-v1`, P2WPKH to
+`bip322-ecdsa-v1`. Mixed-kind claims also require an explicit profile. P2PKH
+may explicitly request `--signing-profile bip322-ecdsa-v1` with Full transport.
+Reissue rejected v3 requests and their signatures/receipts/proofs. Profiles and
+raw Base64/helper JSON transports are distinct; all use one unchanged circuit.
 
 ```sh
 # Local signing and proving with an explicitly selected stock Core wallet.
@@ -153,11 +160,11 @@ exclusive control, reserved funds or signing time. Current-funds acceptance stil
 requires expected-request, chain-state and replay policy; creating a proof alone
 does not establish that acceptance.
 
-Native CLI `inspect` does not support v3 signature requests/proofs; the browser's
+Native CLI `inspect` does not support PoSC requests/proofs; the browser's
 bounded metadata inspection is a separate capability. Only public `.qpr` and
 `.qpf` files belong in the browser: native proving, wallet RPC and private
 receipts remain native. See [state trust and privacy](docs/security.md) and
-[measured signature resources](docs/performance.md#signature-possession-measurements).
+[measured signature resources](docs/performance.md#posc-signature-possession-measurements).
 
 ## Try an isolated legacy PoKC regtest workflow
 
@@ -280,7 +287,8 @@ setup. Deterministic Sage vectors, protocol, naming and spec checks remain in
 the normal suite. The [normative protocol](spec/quietproof-v1.md) retains statement
 v1's P2WPKH semantics and adds typed statement v2 for P2PKH or mixed claims.
 Explicit PoKC proofs use timestamped envelope v2 with the unchanged ownership circuits;
-default PoSC requests/proofs retain their existing v3 signature relation and encoding.
+default PoSC requests/proofs use the sole [v4 signing-profile contract](spec/signature-profiles-v4.md)
+with the unchanged ECDSA/HASH160 arithmetic relation.
 Older verifiers that do not support statement v2 reject it as unsupported.
 
 Manual claims and `--bitcoin-cli /absolute/path` remain available in the
@@ -307,7 +315,7 @@ mixed outputs; duplicate outpoints cannot count twice.
 ## Current metrics
 
 The scalar observations below retain their original labels and values.
-Separate [signature-possession measurements](docs/performance.md#signature-possession-measurements)
+Separate [signature-possession measurements](docs/performance.md#posc-signature-possession-measurements)
 cover the current composed circuit and actual 16-output browser verification;
 they are not replacements or scalar-to-signature estimates.
 
