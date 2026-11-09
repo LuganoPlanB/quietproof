@@ -70,7 +70,7 @@ for (const [name,engine] of engines) {
         page.on('pageerror',e=>errors.push(e.message));
         let providerCalls=0;
         await page.route('https://blockstream.info/**',route=>{providerCalls++;return route.fulfill(providerResponse(workflow,route.request().url()));});
-        await page.goto(origin+'/tool');await page.getByRole('button',{name:'Create request',exact:true}).waitFor();
+        await page.goto(origin+'/request');await page.getByRole('button',{name:'Create request',exact:true}).waitFor();
         assert.equal(await page.locator('#qp-request-proof-mode').inputValue(),'signature-possession');
         assert.equal(await page.getByLabel('Purpose',{exact:true}).inputValue(),'proof-of-control');
         assert.equal(await page.getByLabel('Request lifetime').inputValue(),'300');
@@ -116,10 +116,13 @@ for (const [name,engine] of engines) {
         const inspect=page.getByRole('button',{name:'Inspect proof and policy',exact:true});await inspect.waitFor();
         const proofInput=page.getByLabel('Proof file (.qpf)',{exact:true});await proofInput.setInputFiles(upload('public.qpf',proof));
         assert.equal(await page.locator('#qp-verify-proof-mode').inputValue(),'signature-possession');
-        await page.locator('#qp-verify-proof-mode').selectOption('key-knowledge');
-        await page.getByLabel('Expected policy source').selectOption('none');
+        assert.equal(await page.locator('#qp-verify-proof-mode option[value="key-knowledge"]').isDisabled(),true);
+        await proofInput.setInputFiles(upload('legacy.qpf',await readFile(new URL('../../../tests/wasm/fixtures/0.qpf',import.meta.url))));
+        await page.getByLabel('Expected request file (.qpr)',{exact:true}).setInputFiles(upload('retained.qpr',request));
         await inspect.click();await page.getByRole('alert').filter({hasText:'Proof mode does not match'}).waitFor();
         await capture('mismatched-mode',layout);
+        await proofInput.setInputFiles(upload('public.qpf',proof));
+        await page.getByLabel('Expected request file (.qpr)',{exact:true}).setInputFiles([]);
         await support('#qp-verify-proof-mode');
         assert.equal(await page.getByLabel('Expected policy source').inputValue(),'request');
         assert.equal(await page.getByLabel('Expected policy source').locator('option').count(),1);
@@ -161,7 +164,7 @@ for (const [name,engine] of engines) {
         assert.equal(await page.locator('#qp-verify-proof-mode').inputValue(),'signature-possession');
         await capture('disabled-capability',layout);await page.close();
         page=await browser.newPage({viewport:{width:layout[0],height:layout[1]}});
-        await page.goto(disabledOrigin+'/tool');
+        await page.goto(disabledOrigin+'/request');
         const check=page.getByRole('button',{name:'Check signature support',exact:true});await check.focus();await page.keyboard.press('Enter');
         await page.getByText('Signature possession is unavailable in this verifier build.',{exact:false}).waitFor();
         assert.equal(await page.locator('#qp-request-proof-mode option[value="signature-possession"]').count(),1);
@@ -187,7 +190,7 @@ for (const [name,engine] of engines) {
       for(const [width,height,scale] of layouts)for(const [kind,id] of [['p2pkh','2'],['p2wpkh','1']]){
         const page=await browser.newPage({viewport:{width,height},acceptDownloads:true});
         await page.route('https://blockstream.info/**',route=>route.fulfill(providerResponse(workflow,route.request().url())));
-        await page.goto(origin+'/tool');await page.getByLabel('Bitcoin addresses').fill(workflow.claims.map(c=>c.address).join('\n'));
+        await page.goto(origin+'/request');await page.getByLabel('Bitcoin addresses').fill(workflow.claims.map(c=>c.address).join('\n'));
         await page.getByRole('button',{name:'Look up outputs',exact:true}).click();
         const row=page.locator('.quietproof-claims li').filter({hasText:new RegExp(kind.toUpperCase())});
         await row.getByRole('checkbox').check();await page.getByLabel('Intended verifier').fill('profile-parity.example');
@@ -247,14 +250,14 @@ for (const [name,engine] of engines) {
       }
     }finally{await browser.close();}
   });
-  test(`${name}: disabled default PoSC fails without fallback and explicit PoKC still creates requests`,{timeout:180000},async()=>{
+  test(`${name}: disabled default PoSC fails without fallback and PoKC stays unavailable`,{timeout:180000},async()=>{
     const browser=await engine.launch({headless:true,...(name==='chromium'&&chromiumPath?{executablePath:chromiumPath}:{}),...(name==='webkit'&&process.env.QUIETPROOF_WEBKIT_EXECUTABLE?
       {executablePath:process.env.QUIETPROOF_WEBKIT_EXECUTABLE}:{})});
     try {
       const page=await browser.newPage({acceptDownloads:true});
       const workflow=workflows.find(w=>w.id==='mainnet-mixed-same-key');let explorerCalls=0;
       await page.route('https://blockstream.info/**',route=>{explorerCalls++;return route.fulfill(providerResponse(workflow,route.request().url()));});
-      await page.goto(disabledOrigin+'/tool');
+      await page.goto(disabledOrigin+'/request');
       const mode=page.getByLabel('Proof mode',{exact:true});
       assert.equal(await mode.inputValue(),'signature-possession');
       await page.getByLabel('Bitcoin addresses').fill(workflow.claims.map(c=>c.address).join('\n'));
@@ -266,11 +269,7 @@ for (const [name,engine] of engines) {
       assert.equal(await page.getByRole('button',{name:'Create request',exact:true}).isDisabled(),true);
       assert.equal(await mode.inputValue(),'signature-possession');
       assert.equal(await page.getByRole('link',{name:'Download .qpr request',exact:true}).count(),0);
-      await mode.selectOption('key-knowledge');
-      await page.getByRole('button',{name:'Create request',exact:true}).click();
-      const download=page.waitForEvent('download');
-      await page.getByRole('link',{name:'Download .qpr request',exact:true}).click();
-      assert.equal((await readFile(await(await download).path()))[4],2,'explicit legacy mixed request retains v2');
+      assert.equal(await mode.locator('option[value="key-knowledge"]').isDisabled(),true);
       const before=explorerCalls;
       await page.goto(disabledOrigin+'/verify');
       const verificationMode=page.getByLabel('Proof mode (chosen independently)',{exact:true});

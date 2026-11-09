@@ -1,4 +1,5 @@
 <script setup>
+import { WEBSITE_POKC_ENABLED } from '../../proof-modes.mjs';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { setupProofInput } from './input.mjs';
 import { setupProvider } from '../provider/discovery.mjs';
@@ -132,11 +133,11 @@ function exportResult() {
         <label for="qp-verify-proof-mode">Proof mode (chosen independently)</label>
         <select id="qp-verify-proof-mode" v-model="proofMode" aria-describedby="qp-verify-mode-help">
           <option value="signature-possession">Signature custody (PoSC · default)</option>
-          <option value="key-knowledge">Private-key knowledge (PoKC · explicit legacy choice)</option>
+          <option value="key-knowledge" :disabled="!WEBSITE_POKC_ENABLED">Private-key knowledge (PoKC · temporarily unavailable)</option>
         </select>
         <button type="button" :disabled="capabilityState === 'checking' || busy" @click="checkCapabilities">Check signature support</button>
         <p v-if="capabilityState === 'checking'" role="status">Checking the local verifier’s proof capabilities…</p>
-        <p v-else-if="capabilityState === 'ready' && !capabilities.signaturePossession" role="status">Signature possession is unavailable in this verifier build. The existing private-key mode remains available.</p>
+        <p v-else-if="capabilityState === 'ready' && !capabilities.signaturePossession" role="status">Signature possession is unavailable in this verifier build. Use a PoSC-enabled build; PoKC is temporarily unavailable on this website.</p>
         <p v-if="capabilityError" role="status">{{ capabilityError }}</p>
         <p id="qp-verify-mode-help" v-if="proofMode === 'signature-possession'">Require the independently retained expected .qpr request. This verifies knowledge of a request-bound signature, which can be delegated for that exact request. It does not prove private-key knowledge or when the signature was made. The native prover learns the signature/public key; public verifiers receive the .qpf and .qpr. Never upload the private .qpa receipt.</p>
         <p v-else id="qp-verify-mode-help">Explicit legacy choice: private-key knowledge. Proof metadata never changes the selected mode. Checking signature support loads the local verifier and makes no explorer request.</p>

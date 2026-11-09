@@ -1,3 +1,4 @@
+import { WEBSITE_POKC_ENABLED } from '../proof-modes.mjs';
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile, access, readdir } from 'node:fs/promises';
@@ -21,7 +22,7 @@ const bindings={};
 for (const path of ['package-lock.json','web/wasm/asset.mjs','web/wasm/runtime.mjs','web/wasm/codec.mjs','web/wasm/worker.mjs',
   'web/features/request/RequestForm.vue','web/features/request/download.mjs','web/features/verify/ProofInput.vue','web/features/verify/input.mjs',
   'web/features/verify/results.mjs','web/features/provider/discovery.mjs','web/features/provider/verification.mjs','web/features/provider/esplora.mjs',
-  'docs/.vitepress/dist/tool.html','docs/.vitepress/dist/verify.html']) bindings[path]=hash(await readFile(resolve(root,path)));
+  'docs/.vitepress/dist/request.html','docs/.vitepress/dist/verify.html']) bindings[path]=hash(await readFile(resolve(root,path)));
 const wasmPath=resolve(process.env.QUIETPROOF_WASM || resolve(root,'docs/public/wasm/quietproof.wasm'));
 bindings[wasmPath]=hash(await readFile(wasmPath));
 bindings.nativeCLI=hash(await readFile(cli));
@@ -96,7 +97,7 @@ async function material(name,engine,workflow,lifetime=86400) {
       assert.equal(r.method(),'GET');assert.equal(r.postData(),null);
       return route.fulfill(observationResponse(workflow,r.url()));
     });
-    await page.goto(origin+'/tool');
+    await page.goto(origin+'/request');
     await page.locator('#qp-request-proof-mode').selectOption('key-knowledge');
     const create=page.getByRole('button',{name:'Create request',exact:true});await create.waitFor();
     await page.getByLabel('Bitcoin network',{exact:true}).selectOption(workflow.network);

@@ -10,16 +10,17 @@ const origin = process.env.QUIETPROOF_SITE_ORIGIN || 'http://127.0.0.1:4177';
 const evidence = process.env.QUIETPROOF_ACCESSIBILITY_EVIDENCE;
 const fixtureRoot = process.env.QUIETPROOF_VERIFY_FIXTURES;
 assert(fixtureRoot, 'Current public native fixtures required.');
-const proof = await readFile(resolve(fixtureRoot, 'one-key.qpf'));
-const request = await readFile(resolve(fixtureRoot, 'one-key.qpr'));
-const provenance = JSON.parse(await readFile(resolve(fixtureRoot, 'one-key.json')));
+const proof = await readFile(resolve(fixtureRoot, 'signature-p2wpkh.qpf'));
+const request = await readFile(resolve(fixtureRoot, 'signature-p2wpkh.qpr'));
+const provenance = JSON.parse(await readFile(resolve(fixtureRoot, 'signature-p2wpkh.json')));
 assert(provenance.nativeVerified && provenance.expiresAt > Date.now()/1000 + 1800);
 const capped = cappedMemoryArtifact(await readFile(process.env.QUIETPROOF_WASM));
 const upload = (name, buffer) => ({ name, buffer, mimeType: 'application/octet-stream' });
 
-for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
-  test(`${name}: keyboard, ARIA states, reflow, controlled memory failure and real-proof recovery`, { timeout: 600000 }, async () => {
+for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]].filter(([name]) => !process.env.QUIETPROOF_UI_ENGINE || process.env.QUIETPROOF_UI_ENGINE === name)) {
+  test(`${name}: keyboard, ARIA states, reflow, controlled memory failure and real-proof recovery`, { timeout: 600000, skip: process.env.QUIETPROOF_SIGNATURE_MODE === '0' && 'Website requires a PoSC-enabled reactor' }, async () => {
     const browser = await engine.launch({ headless: true,
+      ...(name === 'chromium' && process.env.QUIETPROOF_CHROMIUM_EXECUTABLE ? { executablePath: process.env.QUIETPROOF_CHROMIUM_EXECUTABLE } : {}),
       ...(name === 'webkit' && process.env.QUIETPROOF_WEBKIT_EXECUTABLE ? { executablePath: process.env.QUIETPROOF_WEBKIT_EXECUTABLE } : {}) });
     console.log(`${name} ${browser.version()}; automated DOM/ARIA checks; no actual screen reader`);
     let page, releaseProvider;
@@ -97,9 +98,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
         await page.setViewportSize({width:1440,height:900});
         await page.evaluate(()=>document.querySelector('#qp-a11y-scale')?.remove());
       }
-      await page.goto(origin+'/tool');
-      if (process.env.QUIETPROOF_SIGNATURE_MODE === '0')
-        await page.getByLabel('Proof mode',{exact:true}).selectOption('key-knowledge');
+      await page.goto(origin+'/request');
       const requestFeature=page.getByRole('region',{name:'Create a request',exact:true});
       const lookup=page.getByRole('button',{name:'Look up outputs',exact:true}); await lookup.waitFor();
       await capture('request-empty',requestFeature,lookup);
@@ -129,7 +128,6 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
       assert.equal(await page.getByRole('button',{name:'Check signature support',exact:true}).evaluate(el=>el===document.activeElement),true);
       await page.keyboard.press('Tab');
       assert.equal(await page.evaluate(()=>document.activeElement.id),'qp-policy');
-      await page.getByLabel('Proof mode (chosen independently)',{exact:true}).selectOption('key-knowledge');
       await page.getByLabel('Expected policy source').selectOption('request');
       await page.getByLabel('Expected request file (.qpr)',{exact:true}).setInputFiles(upload('expected.qpr',request));
       await page.getByLabel('Proof file (.qpf)',{exact:true}).setInputFiles(upload('public.qpf',proof));

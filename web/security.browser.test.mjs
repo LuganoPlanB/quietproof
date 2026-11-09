@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { chromium, webkit } from 'playwright';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fixtures, outputFixture } from './features/provider/fixtures.mjs';
 
@@ -10,9 +10,10 @@ const base = process.env.QUIETPROOF_SECURITY_BASE || '';
 const evidence = process.env.QUIETPROOF_SECURITY_SCREENSHOTS;
 const attack = '<img src="https://evil.invalid/x" onerror="window.__xss=1">';
 
-for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
+for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]].filter(([name]) => !process.env.QUIETPROOF_UI_ENGINE || process.env.QUIETPROOF_UI_ENGINE === name)) {
   test(`${name}: static CSP, text rendering, bounded corrupt assets and outbound policy`, { timeout: 120000 }, async () => {
     const browser = await engine.launch({ headless: true,
+      ...(name === 'chromium' && process.env.QUIETPROOF_CHROMIUM_EXECUTABLE ? { executablePath: process.env.QUIETPROOF_CHROMIUM_EXECUTABLE } : {}),
       ...(name === 'webkit' && process.env.QUIETPROOF_WEBKIT_EXECUTABLE ? { executablePath: process.env.QUIETPROOF_WEBKIT_EXECUTABLE } : {}) });
     console.log(`${name} ${browser.version()}; base=${base || '/'}`);
     try {
@@ -43,8 +44,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
       await page.route(/\/(?:wasm\/quietproof|assets\/quietproof\.[a-f0-9]{64})\.wasm$/, route => assetMode === 'missing'
         ? route.fulfill({ status: 404, body: 'missing' }) : assetMode === 'corrupt'
           ? route.fulfill({ body: Buffer.from([0, 1, 2, 3]), contentType: 'application/wasm' }) : route.continue());
-      await page.goto(origin + base + '/tool');
-      await page.getByLabel('Proof mode', { exact: true }).selectOption('key-knowledge');
+      await page.goto(origin + base + '/request');
       const lookup = page.getByRole('button', { name: 'Look up outputs', exact: true });
       await lookup.waitFor();
       assert.equal(requests.filter(r => r.url.startsWith('https://')).length, 0, 'no remote access before action');
@@ -63,13 +63,20 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
       await page.getByLabel('Intended verifier').fill(attack);
       await page.getByLabel('Message (optional').fill(attack);
       const create = page.getByRole('button', { name: 'Create request', exact: true });
-      await create.click();
+      const signatureEnabled = process.env.QUIETPROOF_SIGNATURE_MODE !== '0';
       const preview = page.getByRole('region', { name: 'Canonical request preview' });
-      await preview.waitFor();
-      assert((await preview.innerText()).includes(attack));
-      assert.equal(await preview.locator('img,script,iframe').count(), 0);
+      if (signatureEnabled) {
+        await create.click(); await preview.waitFor();
+        assert((await preview.innerText()).includes(attack));
+        assert.equal(await preview.locator('img,script,iframe').count(), 0);
+      } else {
+        await page.getByText('Signature possession is unavailable in this verifier build.', { exact: false }).first().waitFor();
+        assert.equal(await create.isDisabled(), true);
+        assert.equal(await page.getByLabel('Intended verifier').inputValue(), attack);
+        assert.equal(await page.locator('#qp-request-proof-mode option[value="key-knowledge"]').isDisabled(), true);
+      }
       assert.equal(await page.evaluate(() => window.__xss), 0);
-      assert.deepEqual(violations, [], 'legitimate request/worker path runs under CSP');
+      assert.deepEqual(violations, [], 'legitimate worker path runs under CSP');
       assert.deepEqual(errors, []);
       if (evidence) {
         await mkdir(evidence, { recursive: true });
@@ -85,7 +92,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
       await new Promise(r => setTimeout(r, 100));
       assert(violations.some(v => v.directive === 'script-src-elem' || v.directive === 'script-src'));
       assert.equal(await page.evaluate(() => window.__xss), 0);
-      for (const mode of ['missing', 'corrupt']) {
+      for (const mode of signatureEnabled ? ['missing', 'corrupt'] : []) {
         assetMode = mode;
         await page.getByRole('button', { name: 'Regenerate request', exact: true }).click();
         await page.getByRole('alert').waitFor();
@@ -100,8 +107,8 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
         assert.equal(await page.locator('.quietproof-claims input').count(), 0);
       }
       await page.goto(origin + base + '/verify');
-      await page.getByLabel('Proof mode (chosen independently)', { exact: true }).selectOption('key-knowledge');
-      await page.getByLabel('Expected policy source').selectOption('none');
+      const expected = await readFile(new URL('../tests/wasm/fixtures/signature-p2wpkh.qpr', import.meta.url));
+      await page.getByLabel('Expected request file (.qpr)', { exact: true }).setInputFiles({ name: 'expected.qpr', mimeType: 'application/octet-stream', buffer: expected });
       const before = requests.filter(r => r.url.startsWith('https://blockstream.info/')).length;
       await page.getByLabel('Proof file (.qpf)', { exact: true }).setInputFiles({ name: `${attack}.qpf`, mimeType: 'application/octet-stream', buffer: Buffer.from([1, 2, 3]) });
       await page.getByRole('button', { name: 'Inspect proof and policy', exact: true }).click();

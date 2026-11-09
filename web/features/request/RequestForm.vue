@@ -5,6 +5,8 @@ import { lookupError, selectionSummary, validateForm } from './form.mjs';
 import { setupRequest, setupDownload } from './download.mjs';
 import LocalHistory from '../history/LocalHistory.vue';
 import { probeProofCapabilities } from '../../wasm/capabilities.mjs';
+import SigningInstructions from './SigningInstructions.vue';
+import { WEBSITE_POKC_ENABLED } from '../../proof-modes.mjs';
 
 const props = defineProps({ wasmUrl: { type: String, required: true } });
 
@@ -153,11 +155,11 @@ async function saveRequest() {
       <label for="qp-request-proof-mode">Proof mode</label>
       <select id="qp-request-proof-mode" v-model="proofMode" aria-describedby="qp-request-mode-help">
         <option value="signature-possession">Signature custody (PoSC · default)</option>
-        <option value="key-knowledge">Private-key knowledge (PoKC · explicit legacy choice)</option>
+        <option value="key-knowledge" :disabled="!WEBSITE_POKC_ENABLED">Private-key knowledge (PoKC · temporarily unavailable)</option>
       </select>
       <button type="button" :disabled="capabilityState === 'checking'" @click="checkCapabilities">Check signature support</button>
       <p v-if="capabilityState === 'checking'" role="status">Checking the local verifier’s proof capabilities…</p>
-      <p v-else-if="capabilityState === 'ready' && !capabilities.signaturePossession" role="status">Signature possession is unavailable in this verifier build. The existing private-key mode remains available.</p>
+      <p v-else-if="capabilityState === 'ready' && !capabilities.signaturePossession" role="status">Signature possession is unavailable in this verifier build. Use a PoSC-enabled build; PoKC is temporarily unavailable on this website.</p>
       <p v-if="capabilityError" role="status">{{ capabilityError }}</p>
       <p id="qp-request-mode-help" v-if="proofMode === 'signature-possession'">This requests knowledge of a signature authorizing this exact request, without proving private-key knowledge. The signature may be delegated for the same request. The native prover learns the signature and public key; the verifier receives only the public .qpf proof and .qpr request. Keep .qpa authorization receipts private and outside this page.</p>
       <p v-else id="qp-request-mode-help">Explicit legacy choice: knowledge of the private scalar for the disclosed key fingerprint. Checking signature support loads the local verifier; it makes no explorer request.</p>
@@ -214,6 +216,7 @@ async function saveRequest() {
       <p v-if="requestExpired" role="status">This request has expired according to your device clock. Regenerate it before sending it to a prover.</p>
       <a v-else-if="artifact" class="quietproof-download" :href="artifact.url" :download="artifact.filename">Download .qpr request</a>
       <button type="button" @click="saveRequest">Save this request locally (opt-in required)</button>
+      <SigningInstructions v-if="preview.signing && !requestExpired" :key="preview.signing.message" :material="preview.signing" />
       <h3>Prove outside the browser</h3>
       <p v-if="preview.metadata.proofMode === 'signature-possession'">Retain this independently issued request for verification. Send a copy to the native wallet/prover through your chosen channel. Signing, private receipt handling and proving happen outside the browser. A delegated prover receives a private authorization receipt, not the private scalar.</p>
       <p v-else>Send this request to the prover through your chosen channel. On the prover’s machine, inspect it and use the existing CLI with protected key input or a supported wallet. Private keys stay outside this page.</p>

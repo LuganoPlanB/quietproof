@@ -1,10 +1,18 @@
 # Request feature
 
-`RequestForm.vue` is the `/tool` feature entry in the existing VitePress site.
+`RequestForm.vue` is the `/request` feature entry in the existing VitePress site.
 `form.mjs` owns selection and context rules; `download.mjs` creates and inspects
 canonical request bytes in the existing WASM worker. Public lookup uses the provider feature's public
 `setupProvider` entry and disposes it on input/network changes and unmount.
 Construction and editing perform no explorer fetch.
+
+The website currently offers PoSC only; PoKC selection is disabled in request
+creation and verification. Native CLI and lower-level WASM PoKC support remain.
+`signing.mjs` derives the exact v4 application message from canonical request
+bytes and binds wallet instructions to the selected address/profile/network.
+`SigningInstructions.vue` offers exact-message and RPC-command copy actions,
+with manual-copy fallback. Regeneration, edits and expiry clear old guidance.
+P2PKH BIP322 Full never suggests the incompatible `signmessage` transport.
 
 The optional [local history feature](../history/README.md) keeps canonical
 requests only after opt-in, with an explicit save action for an existing preview.
@@ -54,7 +62,13 @@ and cancellation. `QUIETPROOF_REQUEST_SCREENSHOTS` retains its success/error
 matrix. The preview owns one Blob URL; changes and unmount revoke it. The worker
 is terminated after each creation/inspection or cancellation.
 
-The workflow gate covers mainnet and signet with v1 P2WPKH, typed v2 P2PKH,
+Historical PoKC UI roundtrip gates are explicitly deferred while that website
+choice is disabled; the native and WASM library tests remain enabled.
+`signing.browser.test.mjs` covers the current mainnet/signet PoSC request flow,
+all three supported script/profile combinations, exact native signing-message
+parity, clipboard success/failure, invalidation, expiry and viewport reflow.
+
+The retained legacy workflow gate covers mainnet and signet with v1 P2WPKH, typed v2 P2PKH,
 and mixed P2WPKH/P2PKH requests sharing one key hash. It downloads and parses
 48 fresh requests across the engine/viewport/text-scale matrix, and serially
 creates twelve real native proofs from downloaded requests (one per engine,

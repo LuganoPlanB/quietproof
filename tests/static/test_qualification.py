@@ -255,7 +255,8 @@ class ExhaustiveFixtureTests(unittest.TestCase):
             for name in ['features', 'wasm']:
                 (root / 'web' / name).symlink_to(ROOT / 'web' / name, target_is_directory=True)
             (root / 'web/adversarial/fixtures.mjs').symlink_to(ROOT / 'web/adversarial/fixtures.mjs')
-            for name in ['tool.html', 'verify.html']:
+            (root / 'web/proof-modes.mjs').symlink_to(ROOT / 'web/proof-modes.mjs')
+            for name in ['request.html', 'verify.html']:
                 (root / 'docs/.vitepress/dist' / name).write_text('controlled page')
             (root / 'package-lock.json').write_text('{}')
             cli, wasm = root / 'native-cli', root / 'explicit.wasm'

@@ -12,7 +12,7 @@ import wasmUrl from 'virtual:quietproof-wasm';
 
 <ClientOnly><ProofInput :wasm-url="wasmUrl" /></ClientOnly>
 
-Return to [request creation](./tool) or read the [auditor workflow](./guide/auditor-workflow) and [limits and trust](./limitations).
+Return to [request creation](./request) or read the [auditor workflow](./guide/auditor-workflow) and [limits and trust](./limitations).
 
 The [browser guide](./guide/browser-tool#_3-import-and-choose-independent-expectations)
 explains the retained expected `.qpr`, inspection-only mode, offline verification

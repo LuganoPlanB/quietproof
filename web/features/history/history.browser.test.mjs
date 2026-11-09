@@ -1,3 +1,4 @@
+import { WEBSITE_POKC_ENABLED } from '../../proof-modes.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -33,7 +34,6 @@ async function capture(page, engine, state) {
   await page.setViewportSize({ width: 1440, height: 900 }); await page.evaluate(() => document.querySelector('#qp-history-scale')?.remove());
 }
 async function requestForm(page, workflow) {
-  await page.getByLabel('Proof mode', {exact:true}).selectOption('key-knowledge');
   await page.getByLabel('Bitcoin network', { exact: true }).selectOption(workflow.network);
   await page.getByLabel('Bitcoin addresses').fill(workflow.claims[0].address);
   await page.getByRole('button', { name: 'Look up outputs', exact: true }).click();
@@ -43,7 +43,6 @@ async function requestForm(page, workflow) {
   await page.getByLabel('Message (optional').fill('Public disposable local history round trip');
 }
 async function prepareVerification(page, fixture, saved) {
-  await page.getByLabel('Proof mode (chosen independently)', {exact:true}).selectOption('key-knowledge');
   await page.getByLabel('Proof file (.qpf)', { exact: true }).setInputFiles(fixture.proof);
   if (saved) {
     await page.getByRole('button', { name: 'Use saved request as explicit expectation', exact: true }).click();
@@ -71,14 +70,14 @@ async function rawState(page) {
     };
   }));
 }
-for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
-  const launch = () => engine.launch({ headless: true, ...(name === 'webkit' && process.env.QUIETPROOF_WEBKIT_EXECUTABLE ? { executablePath: process.env.QUIETPROOF_WEBKIT_EXECUTABLE } : {}) });
-  test(`${name}: storage-only opt-in, reload, explicit selection and cross-tab clear`, { timeout: 60000 }, async () => {
+for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]].filter(([name]) => !process.env.QUIETPROOF_UI_ENGINE || process.env.QUIETPROOF_UI_ENGINE === name)) {
+  const launch = () => engine.launch({ headless: true, ...(name === 'chromium' && process.env.QUIETPROOF_CHROMIUM_EXECUTABLE ? { executablePath: process.env.QUIETPROOF_CHROMIUM_EXECUTABLE } : {}), ...(name === 'webkit' && process.env.QUIETPROOF_WEBKIT_EXECUTABLE ? { executablePath: process.env.QUIETPROOF_WEBKIT_EXECUTABLE } : {}) });
+  test(`${name}: storage-only opt-in, reload, explicit selection and cross-tab clear`, { timeout: 60000, skip: process.env.QUIETPROOF_SIGNATURE_MODE === '0' && 'Website request history requires PoSC request creation' }, async () => {
     const browser = await launch(); let context;
     try {
       context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
       const workflow = workflows[0]; await context.route('https://blockstream.info/**', route => route.fulfill(providerResponse(workflow, route.request().url())));
-      const page = await context.newPage(); await page.goto(origin+'/tool'); await ready(page); await manage(page);
+      const page = await context.newPage(); await page.goto(origin+'/request'); await ready(page); await manage(page);
       await page.getByLabel(consentName, { exact: true }).click();
       await page.getByText('0 saved requests; 0 completed check markers.', { exact: true }).waitFor();
       await requestForm(page, workflow); await page.getByRole('button', { name: 'Create request', exact: true }).click();
@@ -96,7 +95,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
       assert.equal((await rawState(page)).requests.length, 0);
     } finally { await context?.close(); await browser.close(); }
   });
-  test(`${name}: missed tab notifications cannot restore a deleted request through manual save`, { timeout: 60000 }, async () => {
+  test(`${name}: missed tab notifications cannot restore a deleted request through manual save`, { timeout: 60000, skip: process.env.QUIETPROOF_SIGNATURE_MODE === '0' && 'Website request history requires PoSC request creation' }, async () => {
     const browser = await launch(); let context;
     try {
       context = await browser.newContext();
@@ -106,7 +105,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
         window.addEventListener = (kind, ...args) => { if (kind !== 'focus') listen(kind, ...args); };
       });
       const workflow = workflows[0]; await context.route('https://blockstream.info/**', route => route.fulfill(providerResponse(workflow, route.request().url())));
-      const page = await context.newPage(); await page.goto(origin+'/tool'); await ready(page); await manage(page);
+      const page = await context.newPage(); await page.goto(origin+'/request'); await ready(page); await manage(page);
       await page.getByLabel(consentName, { exact: true }).click();
       await page.getByText('0 saved requests; 0 completed check markers.', { exact: true }).waitFor();
       await requestForm(page, workflow); await page.getByRole('button', { name: 'Create request', exact: true }).click();
@@ -121,7 +120,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
       assert.equal((await rawState(page)).requests.length, 0);
     } finally { await context?.close(); await browser.close(); }
   });
-  test(`${name}: downloaded request, native prove, real browser checks, reload/tabs/delete/clear`, { timeout: 900000 }, async () => {
+  test(`${name}: downloaded request, native prove, real browser checks, reload/tabs/delete/clear`, { timeout: 900000, skip: !WEBSITE_POKC_ENABLED && 'Historical PoKC proof roundtrip; website PoKC selection disabled' }, async () => {
     await mkdir(directory, { recursive: true }); const browser = await launch();
     const workflow = workflows.find(w => w.network === (name === 'chromium' ? 'mainnet' : 'signet') && w.claims.length === 1 && w.claims[0].scriptKind === (name === 'chromium' ? 'p2wpkh' : 'p2pkh'));
     let context;
@@ -133,7 +132,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
       });
       let explorerRequests = 0;
       await context.route('https://blockstream.info/**', route => { explorerRequests++; assert.equal(route.request().method(), 'GET'); assert.equal(route.request().postData(), null); return route.fulfill(providerResponse(workflow, route.request().url())); });
-      const page = await context.newPage(); await page.goto(origin+'/tool'); await ready(page);
+      const page = await context.newPage(); await page.goto(origin+'/request'); await ready(page);
       await page.getByText('Local history is off. Nothing new is saved.', { exact: true }).waitFor();
       assert.equal(explorerRequests, 0); await capture(page, name, 'request-history-off');
       await manage(page); await page.getByLabel(consentName, { exact: true }).click();
@@ -197,7 +196,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
     } finally { await context?.close(); await browser.close(); }
   });
 
-  test(`${name}: denied private storage leaves real verification and request download available`, { timeout: 300000 }, async () => {
+  test(`${name}: denied private storage leaves real verification and request download available`, { timeout: 300000, skip: !WEBSITE_POKC_ENABLED && 'Depends on the historical PoKC proof roundtrip' }, async () => {
     const fixture = fixtures.get(name); assert(fixture && fixture.expiresAt > Math.floor(Date.now()/1000)+180);
     assert.equal(digest(await readFile(fixture.proof)), fixture.proofSha256); assert.equal(digest(await readFile(fixture.qpr)), fixture.qprSha256);
     const browser = await launch(); let context;
@@ -210,7 +209,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
       await page.goto(origin+'/verify'); await ready(page);
       await page.getByRole('alert').filter({ hasText: 'Local history is unavailable.' }).waitFor(); await prepareVerification(page, fixture, false); await verify(page);
       assert.equal(calls, 0); await capture(page, name, 'storage-unavailable-result');
-      await page.goto(origin+'/tool'); await ready(page); await requestForm(page, workflow); await page.getByRole('button', { name: 'Create request', exact: true }).click();
+      await page.goto(origin+'/request'); await ready(page); await requestForm(page, workflow); await page.getByRole('button', { name: 'Create request', exact: true }).click();
       await page.getByRole('link', { name: 'Download .qpr request', exact: true }).waitFor();
       const downloading = page.waitForEvent('download'); await page.getByRole('link', { name: 'Download .qpr request', exact: true }).click();
       const downloaded = await (await downloading).path(); assert.equal(JSON.parse(execFileSync(cli, ['inspect', downloaded], { encoding: 'utf8' })).network, fixture.network);
@@ -219,7 +218,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
     } finally { await context?.close(); await browser.close(); }
   });
 
-  test(`${name}: failed writes never claim opt-in or clear success; corrupt history can be cleared`, { timeout: 60000 }, async () => {
+  test(`${name}: failed writes never claim opt-in or clear success; corrupt history can be cleared`, { timeout: 60000, skip: process.env.QUIETPROOF_SIGNATURE_MODE === '0' && 'Website request history requires PoSC request creation' }, async () => {
     const browser = await launch(); let quota, corrupt;
     try {
       quota = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });

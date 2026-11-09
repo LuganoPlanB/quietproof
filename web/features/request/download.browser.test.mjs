@@ -10,10 +10,11 @@ const origin = process.env.QUIETPROOF_SITE_ORIGIN || 'http://127.0.0.1:4174';
 const evidence = process.env.QUIETPROOF_REQUEST_SCREENSHOTS;
 const cli = process.env.QUIETPROOF_NATIVE_CLI;
 
-for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
-  test(`${name}: real WASM preview/download/native inspection, invalidation, failure and cancellation`, { timeout: 180000 }, async () => {
+for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]].filter(([name]) => !process.env.QUIETPROOF_UI_ENGINE || process.env.QUIETPROOF_UI_ENGINE === name)) {
+  test(`${name}: real WASM preview/download/native inspection, invalidation, failure and cancellation`, { timeout: 180000, skip: process.env.QUIETPROOF_SIGNATURE_MODE === '0' && 'PoSC-only website cannot create requests with a disabled reactor' }, async () => {
     assert(cli, 'Set QUIETPROOF_NATIVE_CLI to the current native parser.');
     const browser = await engine.launch({ headless: true,
+      ...(name === 'chromium' && process.env.QUIETPROOF_CHROMIUM_EXECUTABLE ? { executablePath: process.env.QUIETPROOF_CHROMIUM_EXECUTABLE } : {}),
       ...(name === 'webkit' && process.env.QUIETPROOF_WEBKIT_EXECUTABLE ? { executablePath: process.env.QUIETPROOF_WEBKIT_EXECUTABLE } : {}) });
     console.log(`${name} ${browser.version()}`);
     try {
@@ -46,10 +47,9 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
           await route.continue().catch(() => {});
         });
         await page.route(/(?:\/web\/wasm\/worker\.mjs|\/assets\/worker-[^/]+\.js)/, route => workerMode === 'error'
-          ? route.fulfill({ contentType: 'text/javascript', body: "self.onmessage=({data})=>self.postMessage({id:data.id,type:data.type==='initialize'?'ready':'error',message:'Injected worker error'});" })
+          ? route.fulfill({ contentType: 'text/javascript', body: "self.onmessage=({data})=>self.postMessage({id:data.id,type:data.type==='initialize'?'ready':'error',capabilities:{signaturePossession:true},message:'Injected worker error'});" })
           : route.continue());
-        await page.goto(origin + '/tool');
-        await page.getByLabel('Proof mode', {exact:true}).selectOption('key-knowledge');
+        await page.goto(origin + '/request');
         const create = page.getByRole('button', { name: 'Create request', exact: true });
         await create.waitFor(); assert.equal(await create.isDisabled(), true);
         assert.equal(wasmFetches, 0);
@@ -59,7 +59,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
         await page.getByLabel('Intended verifier').fill('Example auditor');
         await page.getByLabel('Message (optional').fill('Public fixture control');
         await page.addStyleTag({ content: `html { font-size: ${16 * scale / 100}px !important; } .quietproof-request { font-size: ${16 * scale / 100}px !important; line-height: 1.6; }` });
-        assert.equal(wasmFetches, 0, 'valid editing never loads WASM');
+        assert(wasmFetches > 0, 'explicit lookup checks local PoSC capabilities');
         await create.click();
         const preview = page.getByRole('region', { name: 'Canonical request preview' });
         await preview.waitFor();
@@ -72,10 +72,10 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
           const bytes = await readFile(await result.path());
           assert.deepEqual([...bytes], await page.evaluate(() => window.__requestBytes.at(-1)), 'download equals exact worker result');
           const inspected = JSON.parse(execFileSync(cli, ['inspect', await result.path()], { encoding: 'utf8' }));
-          assert.equal(inspected.network, 'mainnet'); assert.equal(inspected.verifier, 'Example auditor');
+          assert.equal(inspected.network, 'mainnet'); assert.equal(inspected.audience, 'Example auditor');
           assert.equal(inspected.purpose, 'proof-of-control'); assert.equal(inspected.claims, 1);
-          assert.equal(inspected.statement_version, 1); assert.deepEqual(inspected.script_kinds, ['p2wpkh']);
-          assert.equal(inspected.expires_at - inspected.not_before, 300);
+          assert.equal(inspected.request_version, 4); assert.deepEqual([inspected.signing_kind], ['p2wpkh']);
+          assert.equal(inspected.expires_at - inspected.request_created_at, 300);
           return { bytes, inspected };
         }
         const first = await download(), repeated = await download();

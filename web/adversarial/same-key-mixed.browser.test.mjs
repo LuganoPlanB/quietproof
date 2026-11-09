@@ -1,3 +1,4 @@
+import { WEBSITE_POKC_ENABLED } from '../proof-modes.mjs';
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -17,7 +18,7 @@ assert(cli && output,'Supply the current native CLI and new artifact directory.'
 const directory=resolve(output,`same-key-mixed-${Date.now()}-${process.pid}`);
 const root=fileURLToPath(new URL('../../',import.meta.url)),hash=b=>createHash('sha256').update(b).digest('hex');
 const bindings={nativeCLI:hash(await readFile(cli)),harness:hash(await readFile(new URL(import.meta.url)))};
-for(const path of ['package-lock.json','docs/.vitepress/dist/tool.html','docs/.vitepress/dist/verify.html',
+for(const path of ['package-lock.json','docs/.vitepress/dist/request.html','docs/.vitepress/dist/verify.html',
   'web/wasm/runtime.mjs','web/wasm/codec.mjs','web/wasm/worker.mjs','web/features/verify/ProofInput.vue','web/features/provider/verification.mjs'])
   bindings[path]=hash(await readFile(resolve(root,path)));
 const wasmPath=resolve(process.env.QUIETPROOF_WASM || resolve(root,'docs/public/wasm/quietproof.wasm'));
@@ -57,7 +58,7 @@ for(const [name,engine] of [['chromium',chromium],['webkit',webkit]])for(const n
         if(phase==='verification')assert(await page.evaluate(()=>window.__mixed.outcomes.some(o=>o.operation==='verify'&&o.cryptography==='valid')));
         return route.fulfill(observationResponse(workflow,r.url()));
       });
-      await page.goto(origin+'/tool');await page.locator('#qp-request-proof-mode').selectOption('key-knowledge');const create=page.getByRole('button',{name:'Create request',exact:true});await create.waitFor();
+      await page.goto(origin+'/request');await page.locator('#qp-request-proof-mode').selectOption('key-knowledge');const create=page.getByRole('button',{name:'Create request',exact:true});await create.waitFor();
       await page.getByLabel('Bitcoin network',{exact:true}).selectOption(network);
       await page.getByLabel('Bitcoin addresses').fill([first.address,second.address].join('\n'));assert.equal(requests.length,0);
       await page.getByRole('button',{name:'Look up outputs',exact:true}).click();await page.locator('.quietproof-claims').getByRole('checkbox').first().waitFor();
