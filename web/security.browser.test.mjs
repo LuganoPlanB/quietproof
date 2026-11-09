@@ -112,7 +112,11 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]].filter
       const before = requests.filter(r => r.url.startsWith('https://blockstream.info/')).length;
       await page.getByLabel('Proof file (.qpf)', { exact: true }).setInputFiles({ name: `${attack}.qpf`, mimeType: 'application/octet-stream', buffer: Buffer.from([1, 2, 3]) });
       await page.getByRole('button', { name: 'Inspect proof and policy', exact: true }).click();
-      await page.getByRole('alert').filter({ hasText: 'Cannot decode' }).waitFor();
+      await page.getByRole('alert').filter({ hasText: signatureEnabled
+        ? 'Cannot decode' : 'Signature possession is unavailable in this verifier build.' }).waitFor();
+      assert.equal(await page.getByLabel('Proof mode (chosen independently)', { exact: true }).inputValue(), 'signature-possession');
+      assert.equal(await page.getByRole('region', { name: 'Unverified inspection', exact: true }).count(), 0);
+      assert.equal(await page.getByRole('region', { name: 'Verification results', exact: true }).count(), 0);
       assert.equal(requests.filter(r => r.url.startsWith('https://blockstream.info/')).length, before, 'invalid proof causes no explorer access');
       assert.equal(await page.evaluate(() => window.__xss), 0);
       for (const request of requests) {

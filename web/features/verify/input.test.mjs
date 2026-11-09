@@ -36,6 +36,28 @@ test('signature expectations require retained binary requests and encode explici
   const policy = expectedPolicy({ mode: 'request', proofMode: 'signature-possession' }, expected);
   assert.equal(policy.expectedRequest, expected); assert.equal(policy.proofMode, 'signature-possession');
 });
+for (const enabled of [false, true]) {
+  test(`PoSC ${enabled ? 'enabled' : 'disabled'}: malformed proof rejection respects the capability gate`, async () => {
+    const messages = []; let terminated = 0;
+    const tools = setupProofInput({ fetch: async () => new Response(new Uint8Array([1])), workerFactory() {
+      return { terminate() { terminated++; }, postMessage(data) {
+        messages.push(data.type);
+        const reply = data.type === 'initialize'
+          ? { type: 'ready', capabilities: { signaturePossession: enabled } }
+          : { type: 'error' };
+        queueMicrotask(() => this.onmessage({ data: { id: data.id, ...reply } }));
+      } };
+    } });
+    const request = { name: 'expected.qpr', size: 2, arrayBuffer: async () => new ArrayBuffer(2) };
+    try {
+      await assert.rejects(tools.inspect({ proof, request,
+        options: { mode: 'request', proofMode: 'signature-possession' } }),
+        enabled ? /Cannot decode/ : /Signature possession is unavailable/);
+      assert.deepEqual(messages, enabled ? ['initialize', 'inspectProofInput'] : ['initialize']);
+      assert.equal(terminated, 1, 'the owned worker is settled after either rejection');
+    } finally { tools.dispose(); }
+  });
+}
 test('private receipts and renamed QPA1 files are rejected before workers or asset fetch', async () => {
   let fetches=0, workers=0, reads=0;
   const tools=setupProofInput({ fetch() { fetches++; }, workerFactory() { workers++; } });
