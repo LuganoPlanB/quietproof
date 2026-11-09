@@ -1,4 +1,7 @@
-import { test } from 'node:test';
+import { WEBSITE_POKC_ENABLED } from '../../proof-modes.mjs';
+import { test as nodeTest } from 'node:test';
+// Explicitly deferred: these scenarios exercise the temporarily disabled PoKC UI.
+const test = (name, options, fn) => nodeTest(name, { ...options, skip: !WEBSITE_POKC_ENABLED && 'PoKC selection is temporarily disabled on the website' }, fn);
 import assert from 'node:assert/strict';
 import { readFile, mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';

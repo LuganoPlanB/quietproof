@@ -1,22 +1,12 @@
 ---
-title: Create a request
+title: Request tool moved
 outline: false
+head:
+  - - meta
+    - http-equiv: refresh
+      content: '0;url=./request'
 ---
 
-<script setup>
-import RequestForm from '../web/features/request/RequestForm.vue';
-import wasmUrl from 'virtual:quietproof-wasm';
-</script>
+# Request tool moved
 
-# Create a request
-
-<ClientOnly><RequestForm :wasm-url="wasmUrl" /></ClientOnly>
-
-When the external prover returns a .qpf, [verify the proof](./verify) with your retained expected .qpr. Choose offline cryptography or explicitly request fresh explorer observations. Inspection alone does not check cryptography.
-
-Follow the [browser request and verifier guide](./guide/browser-tool) for the
-download, external CLI/wallet proving and independent-expectation handoff.
-See the [auditor workflow](./guide/auditor-workflow) and [limits and trust](./limitations)
-before relying on a proof.
-
-Trust the site and browser delivering this tool. A compromised deployment can replace its verifier and results. Read [browser security and hosting](./browser-security) for input controls, privacy and hosting limitations.
+[Create a request](./request). The browser tool now lives at `/request`.

@@ -1,5 +1,6 @@
 import { validateForm, selectionSummary } from './form.mjs';
 import { loadWasmAsset } from '../../wasm/asset.mjs';
+import { signingMaterial } from './signing.mjs';
 
 const cancelled = () => Object.assign(new Error('Request creation cancelled.'), { name: 'AbortError' });
 
@@ -57,7 +58,9 @@ export function setupRequest({ wasmUrl = '/wasm/quietproof.wasm', fetch: fetcher
       if (!inspected || inspected.byteLength !== bytes.byteLength ||
           new Uint8Array(bytes).some((b, i) => b !== inspected[i]))
         throw new Error('Request inspection did not match its artifact.');
-      return { bytes, metadata, capabilities: ready.capabilities, summary: selectionSummary(metadata.claims) };
+      const signing = await signingMaterial(bytes, metadata, snapshot.claims);
+      check();
+      return { bytes, metadata, signing, capabilities: ready.capabilities, summary: selectionSummary(metadata.claims) };
     } finally {
       clearTimeout(timer); controller.signal.removeEventListener('abort', abort);
       worker?.terminate(); if (active === controller) active = undefined;

@@ -22,6 +22,7 @@ test("VitePress consumes the sibling Plan B theme as a package", () => {
 test("the approachable path and complete reference path are present", () => {
   const requiredPages = [
     "docs/index.md",
+    "docs/request.md",
     "docs/what-it-proves.md",
     "docs/use-cases.md",
     "docs/limitations.md",
@@ -121,6 +122,7 @@ test("site navigation exposes operations, security, performance, circuit, and pr
   const config = read("docs/.vitepress/config.mjs");
 
   for (const route of [
+    "/request",
     "/operations",
     "/guide/browser-tool",
     "/security",

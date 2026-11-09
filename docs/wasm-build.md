@@ -76,10 +76,10 @@ python3 scripts/build_static.py --sdk-source ../longfellow-zk-dyne \
 npm run docs:preview -- --host 127.0.0.1 --port 4178 --strictPort
 ```
 
-Open `http://127.0.0.1:4178/guide/browser-tool`, `/tool` and `/verify`. Stop the
+Open `http://127.0.0.1:4178/guide/browser-tool`, `/request` and `/verify`. Stop the
 owned preview with Ctrl-C before rebuilding, then restart it. For a subpath,
 use `--base /quietproof/`, preview with `DOCS_BASE=/quietproof/` and open
-`http://127.0.0.1:4178/quietproof/tool`. Keep the trailing slash. Supported base
+`http://127.0.0.1:4178/quietproof/request`. Keep the trailing slash. Supported base
 paths contain simple alphanumeric, underscore or hyphen segments.
 
 The output is `docs/.vitepress/dist`: HTML/CSS/JS, SHA256-named WASM, fonts,

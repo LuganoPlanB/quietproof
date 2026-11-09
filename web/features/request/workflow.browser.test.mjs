@@ -1,4 +1,7 @@
-import { test } from 'node:test';
+import { WEBSITE_POKC_ENABLED } from '../../proof-modes.mjs';
+import { test as nodeTest } from 'node:test';
+// Explicitly deferred: these scenarios exercise the temporarily disabled PoKC UI.
+const test = (name, options, fn) => nodeTest(name, { ...options, skip: !WEBSITE_POKC_ENABLED && 'PoKC selection is temporarily disabled on the website' }, fn);
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { openSync, closeSync } from 'node:fs';
@@ -41,7 +44,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
             assert.equal(route.request().method(), 'GET'); assert.equal(route.request().postData(), null);
             return route.fulfill(providerResponse(workflow, route.request().url()));
           });
-          await page.goto(origin + '/tool');
+          await page.goto(origin + '/request');
           await page.getByLabel('Proof mode', {exact:true}).selectOption('key-knowledge');
           const create = page.getByRole('button', { name: 'Create request', exact: true }); await create.waitFor();
           await page.getByLabel('Bitcoin network', { exact: true }).selectOption(workflow.network);

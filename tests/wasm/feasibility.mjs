@@ -31,7 +31,7 @@ const report = { version: 3, signatureMode, supportedBrowsers: [...REQUIRED_ENGI
   wasm: { path: artifact, sha256: digest(wasm), bytes: wasm.length,
     gzip9Bytes: gzipSync(wasm, { level: 9 }).length, brotliBytes: brotliCompressSync(wasm).length },
   fixtures: {}, engines: [], completeness: 'running',
-  budgets: RESOURCE_BUDGETS, site: site ? { directory: site, entry: { path: resolve(site, 'tool.html'), sha256: digest(readFileSync(resolve(site, 'tool.html'))) } } : null,
+  budgets: RESOURCE_BUDGETS, site: site ? { directory: site, entry: { path: resolve(site, 'request.html'), sha256: digest(readFileSync(resolve(site, 'request.html'))) } } : null,
   controlledMemoryFailure: { maximumBytes: 512 * 1024 * 1024, sha256: digest(cappedWasm), scope: 'Test-only module memory ceiling; not physical low-memory hardware.' },
   sources: ['web/wasm/asset.mjs', 'web/wasm/codec.mjs', 'web/wasm/runtime.mjs', 'web/wasm/worker.mjs',
     'tests/wasm/feasibility.mjs', 'tests/wasm/measured-worker.mjs', 'tests/wasm/resources.mjs',
@@ -62,7 +62,7 @@ const server = createServer((request, response) => {
     else if (/^\/(web\/wasm\/[a-z]+|tests\/wasm\/(measured-worker|resources))\.mjs$/.test(path)) {
       local = resolve(root, '.' + path); response.setHeader('Content-Type', 'text/javascript');
     } else if (site && (path === '/' || /^\/assets\/[a-zA-Z0-9_.-]+\.(js|css|woff2)$/.test(path))) {
-      local = resolve(site, path === '/' ? 'tool.html' : '.' + path);
+      local = resolve(site, path === '/' ? 'request.html' : '.' + path);
       response.setHeader('Content-Type', path === '/' ? 'text/html' : path.endsWith('.css') ? 'text/css' : path.endsWith('.woff2') ? 'font/woff2' : 'text/javascript');
     } else { response.writeHead(404).end(); return; }
     response.setHeader('Content-Length', statSync(local).size);

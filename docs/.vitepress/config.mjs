@@ -108,7 +108,7 @@ export default defineConfig({
     logo: { src: "/quietproof-mark.svg", alt: "QuietProof" },
     siteTitle: "QuietProof",
     nav: [
-      { text: "Create a request", link: "/tool" },
+      { text: "Create a request", link: "/request" },
       { text: "What it proves", link: "/what-it-proves" },
       { text: "Use cases", link: "/use-cases" },
       { text: "Guides", link: "/guide/" },

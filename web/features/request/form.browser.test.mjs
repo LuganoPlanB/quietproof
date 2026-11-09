@@ -7,9 +7,10 @@ import { fixtures, outputFixture } from '../provider/fixtures.mjs';
 
 const origin = process.env.QUIETPROOF_SITE_ORIGIN || 'http://127.0.0.1:4174';
 const evidence = process.env.QUIETPROOF_REQUEST_SCREENSHOTS;
-for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
+for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]].filter(([name]) => !process.env.QUIETPROOF_UI_ENGINE || process.env.QUIETPROOF_UI_ENGINE === name)) {
   test(`${name}: explicit lookup, labels, states, selection bounds and network invalidation`, { timeout: 180000 }, async () => {
     const browser = await engine.launch({ headless: true,
+      ...(name === 'chromium' && process.env.QUIETPROOF_CHROMIUM_EXECUTABLE ? { executablePath: process.env.QUIETPROOF_CHROMIUM_EXECUTABLE } : {}),
       ...(name === 'webkit' && process.env.QUIETPROOF_WEBKIT_EXECUTABLE ? { executablePath: process.env.QUIETPROOF_WEBKIT_EXECUTABLE } : {}) });
     console.log(`${name} ${browser.version()}`);
     try {
@@ -27,7 +28,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
           fixture.tx.vout = Array.from({ length: 17 }, () => ({ ...fixture.tx.vout[0] }));
           return route.fulfill({ json: url.endsWith('/utxo') ? (mode === 'empty' ? [] : fixture.utxos) : fixture.tx });
         });
-        await page.goto(origin + '/tool');
+        await page.goto(origin + '/request');
         const lookup = page.getByRole('button', { name: 'Look up outputs', exact: true });
         await lookup.waitFor(); await page.waitForFunction(() => !document.querySelector('button[type=submit]').disabled);
         await page.addStyleTag({ content: `html { font-size: ${16 * scale / 100}px !important; } .quietproof-request { font-size: ${16 * scale / 100}px !important; line-height: 1.6; }` });
@@ -59,7 +60,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
         await page.getByLabel('Request lifetime').fill('86401');
         await page.getByText('Lifetime must be a whole number from 1 to 86400 seconds.', { exact: true }).waitFor();
         await page.getByLabel('Request lifetime').fill('300');
-        await page.getByText('Selection and context are ready for request creation.', { exact: true }).waitFor();
+        await page.getByText(process.env.QUIETPROOF_SIGNATURE_MODE === '0' ? 'Signature possession is unavailable in this verifier build.' : 'Selection and context are ready for request creation.', { exact: true }).waitFor();
         await capture('limits');
         await boxes.nth(0).uncheck(); assert.equal(await boxes.nth(16).isEnabled(), true);
         await page.getByLabel('Bitcoin network', { exact: true }).selectOption('signet');

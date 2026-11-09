@@ -36,7 +36,7 @@ can replace the verifier and results.
 
 ## 1. Create and retain the request
 
-1. Open [Create a request](/tool), choose **Bitcoin network**, and enter one or
+1. Open [Create a request](/request), choose **Bitcoin network**, and enter one or
    two **Bitcoin addresses** sharing the same key fingerprint, one per line.
 2. Select **Look up outputs**. This explicit action sends the addresses to the
    displayed public explorer. Editing the form alone does not query it.
@@ -66,14 +66,36 @@ kind and profile. P2PKH defaults to Bitcoin Signed Message; P2WPKH to BIP322.
 Mixed-kind requests need explicit signer/profile selection. The single PoSC
 format is v4; reissue old v3 exchanges. Retain the exact downloaded request.
 See the measured [wallet/profile matrix](./sparrow#observed-compatibility).
-**Private-key knowledge (PoKC)** is
-an explicit legacy choice. A capability-disabled build reports unsupported and
-never changes the selected mode automatically. PoSC proves signature knowledge
+**Private-key knowledge (PoKC)** is temporarily disabled on the website, for
+both request creation and verification; the native CLI retains its explicit
+legacy mode. A capability-disabled build reports unsupported and never switches
+to PoKC. PoSC proves signature knowledge
 and permits same-request delegation; neither
 mode proves signing time, exclusive control or solvency. See the
 [native signature workflow](./signature-possession).
 
 ## 2. Prove outside the browser
+
+After creating the request, **Sign this request in your wallet** shows the
+exact 88-character message and a **Copy signing message** button. The message
+is derived from the downloaded request bytes, not from the optional context
+message field. Editing or expiring the request removes these instructions.
+
+For native P2WPKH BIP322 Simple and compressed P2PKH legacy signatures, copy
+the complete **Bitcoin Core or Bitcoin Roots** RPC command. It fills in the
+selected address and exact message, connects to localhost, and selects the
+network's default port (8332 mainnet, 38332 signet). Use your wallet's
+`bitcoin-cli` with its normal local RPC authentication. Load and unlock the
+signing wallet first; with multiple loaded wallets, add
+`-rpcwallet="WALLET_NAME"` before `signmessage`. BIP322 Simple requires a
+Core/Roots build that supports BIP322 in this RPC.
+
+For **Sparrow**, open **Tools → Sign/Verify Message**, enter the displayed
+address, paste the copied message, and choose **BIP322 Simple** for P2WPKH or
+**Standard (Electrum)** for the legacy P2PKH profile. Sparrow has no equivalent
+public signing RPC. The explicit P2PKH BIP322 Full alternative requires native
+authorization instead; the page does not offer an incompatible `signmessage`
+command. Signature imports cannot change the request's selected procedure.
 
 The prover uses a compatible native QuietProof build; see
 [native build and isolated regtest tutorial](./getting-started). Replace the

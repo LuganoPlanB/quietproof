@@ -25,6 +25,7 @@ async function openDocumentation(page, url) {
 
 async function withHostingPage(name, engine, artifact, check) {
   const browser = await engine.launch({ headless: true,
+      ...(name === 'chromium' && process.env.QUIETPROOF_CHROMIUM_EXECUTABLE ? { executablePath: process.env.QUIETPROOF_CHROMIUM_EXECUTABLE } : {}),
     ...(name === 'webkit' && process.env.QUIETPROOF_WEBKIT_EXECUTABLE ? { executablePath: process.env.QUIETPROOF_WEBKIT_EXECUTABLE } : {}) });
   let page;
   const pending = new Set();
@@ -46,9 +47,10 @@ async function withHostingPage(name, engine, artifact, check) {
   } finally { await browser.close(); }
 }
 
-for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
+for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]].filter(([name]) => !process.env.QUIETPROOF_UI_ENGINE || process.env.QUIETPROOF_UI_ENGINE === name)) {
   test(`${name}: documentation readiness does not depend on an unfinished image`, { timeout: 120000 }, async () => {
     const browser = await engine.launch({ headless: true,
+      ...(name === 'chromium' && process.env.QUIETPROOF_CHROMIUM_EXECUTABLE ? { executablePath: process.env.QUIETPROOF_CHROMIUM_EXECUTABLE } : {}),
       ...(name === 'webkit' && process.env.QUIETPROOF_WEBKIT_EXECUTABLE ? { executablePath: process.env.QUIETPROOF_WEBKIT_EXECUTABLE } : {}) });
     let releaseImage;
     const imageReleased = new Promise(resolve => { releaseImage = resolve; });
@@ -92,19 +94,24 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
         return url.endsWith('/block-height/0') ? route.fulfill({ body: fixtures.mainnet.genesis })
           : route.fulfill({ json: url.endsWith('/utxo') ? fixture.utxos : fixture.tx });
       });
-      await page.goto(origin + '/tool', { waitUntil: 'domcontentloaded' });
+      await page.goto(origin + '/request', { waitUntil: 'domcontentloaded' });
       await page.getByRole('button', { name: 'Look up outputs', exact: true }).waitFor();
-      await page.getByLabel('Proof mode', { exact: true }).selectOption('key-knowledge');
       await page.getByLabel('Bitcoin addresses').fill(fixtures.mainnet.p2wpkh);
       await page.getByRole('button', { name: 'Look up outputs', exact: true }).click();
       await page.locator('.quietproof-claims').getByRole('checkbox').check();
       await page.getByLabel('Intended verifier').fill('Static artifact qualification');
-      await page.getByRole('button', { name: 'Create request', exact: true }).click();
-      await page.getByRole('region', { name: 'Canonical request preview' }).waitFor();
-      mode = 'stale';
-      await page.getByRole('button', { name: 'Regenerate request', exact: true }).click();
-      await page.getByRole('alert').waitFor();
-      assert.match(await page.getByRole('alert').innerText(), /version mismatch/);
+      if (process.env.QUIETPROOF_SIGNATURE_MODE === '0') {
+        await page.getByText('Signature possession is unavailable in this verifier build.', { exact: false }).first().waitFor();
+        assert.equal(await page.getByRole('button', { name: 'Create request', exact: true }).isDisabled(), true);
+        assert.equal(await page.locator('#qp-request-proof-mode option[value="key-knowledge"]').isDisabled(), true);
+      } else {
+        await page.getByRole('button', { name: 'Create request', exact: true }).click();
+        await page.getByRole('region', { name: 'Canonical request preview' }).waitFor();
+        mode = 'stale';
+        await page.getByRole('button', { name: 'Regenerate request', exact: true }).click();
+        await page.getByRole('alert').waitFor();
+        assert.match(await page.getByRole('alert').innerText(), /version mismatch/);
+      }
       assert.equal(await page.getByRole('link', { name: 'Download .qpr request', exact: true }).count(), 0);
       const response = await page.request.get(origin + '/' + wasmName);
       assert.equal(response.status(), 200);

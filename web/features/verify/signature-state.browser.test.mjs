@@ -44,7 +44,7 @@ async function storage(page){return page.evaluate(async()=>{
     state:state?{...state,requests:state.requests.map(row=>({...row,bytes:[...new Uint8Array(row.bytes)]}))}:null};
 });}
 
-for(const [engine,type] of [['chromium',chromium],['webkit',webkit]])test(`${engine}: public signature funds/export/history ${subpath?'subpath':'full root'} qualification`,{timeout:2400000},async()=>{
+for(const [engine,type] of [['chromium',chromium],['webkit',webkit]])test(`${engine}: public signature funds/export/history ${subpath?'subpath':'full root'} qualification`,{timeout:2400000,skip:!signatureMode&&'Website requires a PoSC-enabled reactor; PoKC UI is disabled'},async()=>{
   const browser=await type.launch({headless:true,...(engine==='webkit'&&process.env.QUIETPROOF_WEBKIT_EXECUTABLE?
     {executablePath:process.env.QUIETPROOF_WEBKIT_EXECUTABLE}:{})});
   const out=resolve(directory,engine);await mkdir(out,{recursive:true});
@@ -171,7 +171,7 @@ for(const [engine,type] of [['chromium',chromium],['webkit',webkit]])test(`${eng
     page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
     // Store an independently created public request, with consent. Native
     // receipt/signature inputs are never used by any page or worker.
-    await page.goto(origin+'/tool');await page.getByRole('button',{name:'Create request',exact:true}).waitFor();
+    await page.goto(origin+'/request');await page.getByRole('button',{name:'Create request',exact:true}).waitFor();
     await page.locator('.quietproof-history summary').click();await page.getByLabel(consent,{exact:true}).check();
     await page.getByLabel('Bitcoin addresses').fill([...new Set(workflow.claims.map(c=>c.address))].join('\n'));
     await page.getByRole('button',{name:'Look up outputs',exact:true}).click();
@@ -247,11 +247,11 @@ for(const [engine,type] of [['chromium',chromium],['webkit',webkit]])test(`${eng
     await page.getByText(`1 saved requests; ${stored.state.checks.length} completed check markers.`,{exact:true}).waitFor();
     await captureHistory('checked');
     if(signatureMode){
-      assert(disabledOrigin,'Actual separately packaged disabled site required.');await importProof(disabledOrigin,legacy);
-      await page.getByRole('button',{name:'Check signature support',exact:true}).click();
-      await page.getByText('Signature possession is unavailable in this verifier build.',{exact:false}).waitFor();
-      assert.equal(await page.locator('#qp-verify-proof-mode option[value="signature-possession"]').count(),1);
-      await check('disabled-key-qualified','unspent',/Reported unspent/);
+      assert(disabledOrigin,'Actual separately packaged disabled site required.');
+      await page.goto(disabledOrigin+'/verify');
+      assert.equal(await page.locator('#qp-verify-proof-mode').inputValue(),'signature-possession');
+      assert.equal(await page.locator('#qp-verify-proof-mode option[value="key-knowledge"]').isDisabled(),true);
+
       const disabledStorage=await storage(page);assert.equal(disabledStorage.state?.checks.length??0,0);
       await writeFile(resolve(out,'disabled-storage.json'),JSON.stringify(disabledStorage,null,2));
     }
